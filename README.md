@@ -1,3 +1,13 @@
+(To be expanded)
+
+## References
+
+Amsel, N., Persson, D., Musco, C., & Gower, R. M. (2025). The Polar Express: Optimal Matrix Sign Methods and Their Application to the Muon Algorithm (arXiv:2505.16932). arXiv. https://doi.org/10.48550/arXiv.2505.16932
+Boissin, T., Massena, T., Mamalet, F., & Serrurier, M. (2025). Turbo-Muon: Accelerating Orthogonality-Based Optimization with Pre-Conditioning (arXiv:2512.04632). arXiv. https://doi.org/10.48550/arXiv.2512.04632
+Newton-Schulz—Docs.modula.systems. (n.d.). Retrieved February 21, 2026, from https://docs.modula.systems/algorithms/newton-schulz/
+
+## Results
+
 == SPD size 256x256 | dtype=torch.bfloat16 | compile=False | precond=aol | l_target=0.05 ==
 -- case gaussian_spd --
 NS3           1.094 ms | resid 5.200e-03 | relerr 2.578e-03 | bad 0
