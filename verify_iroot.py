@@ -2,7 +2,7 @@
 verify_iroot.py — Correctness & stability verification for inverse p-th root.
 
 Tests all methods (uncoupled affine/quad, coupled affine/quad) across
-p ∈ {1, 2, 3, 4, 8} and n ∈ {64, 256}.
+p in {1, 2, 3, 4, 8} and n in {64, 256}.
 """
 
 from __future__ import annotations
@@ -42,78 +42,6 @@ def make_spd(
     return A
 
 
-def run_test(
-    p_val: int,
-    n: int,
-    case: str,
-    device: torch.device,
-    dtype: torch.dtype,
-    g: torch.Generator,
-    resid_thresh: float = 0.10,
-    relerr_thresh: float = 0.10,
-):
-    A = make_spd(n, case, device, dtype, g)
-    A_norm, stats = precond_spd(A, mode="aol", ridge_rel=1e-4, l_target=0.05)
-
-    # Build coefficients
-    pe_affine, pe_quad, _ = build_pe_schedules(
-        l_target=0.05,
-        device=device,
-        coeff_mode="tuned",
-        coeff_seed=0,
-        coeff_safety=1.0,
-        coeff_no_final_safety=False,
-        p_val=p_val,
-    )
-    aff_coeffs = _affine_coeffs(pe_affine)
-    quad_coeffs = _quad_coeffs(pe_quad)
-
-    methods = {
-        "Uncoupled-Affine": lambda: inverse_proot_pe_affine_uncoupled(
-            A_norm, ab_t=aff_coeffs, p_val=p_val, symmetrize_X=True
-        ),
-        "Uncoupled-Quad": lambda: inverse_proot_pe_quadratic_uncoupled(
-            A_norm, abc_t=quad_coeffs, p_val=p_val, symmetrize_X=True
-        ),
-        "Coupled-Affine": lambda: inverse_proot_pe_affine_coupled(
-            A_norm,
-            ab_t=aff_coeffs,
-            p_val=p_val,
-            symmetrize_Y=True,
-            terminal_last_step=True,
-        ),
-        "Coupled-Quad": lambda: inverse_proot_pe_quadratic_coupled(
-            A_norm,
-            abc_t=quad_coeffs,
-            p_val=p_val,
-            symmetrize_Y=True,
-            terminal_last_step=True,
-        ),
-    }
-
-    results = []
-    for name, fn in methods.items():
-        Xn, _ = fn()
-        if not torch.isfinite(Xn).all():
-            results.append((name, float("inf"), float("inf"), "FAIL (non-finite)"))
-            continue
-
-        q = compute_quality_stats(Xn, A_norm, power_iters=0, mv_samples=0, p_val=p_val)
-        relerr = float(
-            iroot_relative_error(Xn.float(), A_norm.float(), p_val=p_val).mean().item()
-        )
-
-        passed = q.residual_fro < resid_thresh and relerr < relerr_thresh
-        status = (
-            "PASS"
-            if passed
-            else f"FAIL (resid={q.residual_fro:.3e}, relerr={relerr:.3e})"
-        )
-        results.append((name, q.residual_fro, relerr, status))
-
-    return results
-
-
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
@@ -127,24 +55,90 @@ def main():
     p_values = [1, 2, 3, 4, 8]
     sizes = [64, 256]
     cases = ["gaussian", "illcond_1e6"]
+    resid_thresh = 0.10
+    relerr_thresh = 0.10
 
     all_pass = True
     print(f"Device: {device} | dtype: {dtype}")
     print("=" * 100)
 
-    with torch.inference_mode():
-        for p_val in p_values:
+    for p_val in p_values:
+        # Build coefficients WITH gradients enabled (tuner uses LBFGS internally)
+        pe_affine, pe_quad, desc = build_pe_schedules(
+            l_target=0.05,
+            device=device,
+            coeff_mode="tuned",
+            coeff_seed=0,
+            coeff_safety=1.0,
+            coeff_no_final_safety=False,
+            p_val=p_val,
+        )
+        aff_coeffs = _affine_coeffs(pe_affine)
+        quad_coeffs = _quad_coeffs(pe_quad)
+
+        with torch.inference_mode():
             for n in sizes:
                 for case in cases:
-                    results = run_test(p_val, n, case, device, dtype, g)
+                    A = make_spd(n, case, device, dtype, g)
+                    A_norm, stats = precond_spd(
+                        A, mode="aol", ridge_rel=1e-4, l_target=0.05
+                    )
+
+                    methods = {
+                        "Uncoupled-Affine": lambda: inverse_proot_pe_affine_uncoupled(
+                            A_norm, ab_t=aff_coeffs, p_val=p_val, symmetrize_X=True
+                        ),
+                        "Uncoupled-Quad": lambda: inverse_proot_pe_quadratic_uncoupled(
+                            A_norm, abc_t=quad_coeffs, p_val=p_val, symmetrize_X=True
+                        ),
+                        "Coupled-Affine": lambda: inverse_proot_pe_affine_coupled(
+                            A_norm,
+                            ab_t=aff_coeffs,
+                            p_val=p_val,
+                            symmetrize_Y=True,
+                            terminal_last_step=True,
+                        ),
+                        "Coupled-Quad": lambda: inverse_proot_pe_quadratic_coupled(
+                            A_norm,
+                            abc_t=quad_coeffs,
+                            p_val=p_val,
+                            symmetrize_Y=True,
+                            terminal_last_step=True,
+                        ),
+                    }
+
                     header = f"p={p_val} n={n} case={case}"
-                    for name, resid, relerr, status in results:
-                        ok = status == "PASS"
-                        mark = "✓" if ok else "✗"
-                        if not ok:
+                    for name, fn in methods.items():
+                        Xn, _ = fn()
+                        if not torch.isfinite(Xn).all():
+                            print(f"  ✗ {header:30s} {name:20s} FAIL (non-finite)")
+                            all_pass = False
+                            continue
+
+                        q = compute_quality_stats(
+                            Xn,
+                            A_norm,
+                            power_iters=0,
+                            mv_samples=0,
+                            p_val=p_val,
+                        )
+                        relerr = float(
+                            iroot_relative_error(
+                                Xn.float(), A_norm.float(), p_val=p_val
+                            )
+                            .mean()
+                            .item()
+                        )
+
+                        passed = (
+                            q.residual_fro < resid_thresh and relerr < relerr_thresh
+                        )
+                        mark = "✓" if passed else "✗"
+                        if not passed:
                             all_pass = False
                         print(
-                            f"  {mark} {header:30s} {name:20s} resid={resid:.3e} relerr={relerr:.3e} {status}"
+                            f"  {mark} {header:30s} {name:20s} "
+                            f"resid={q.residual_fro:.3e} relerr={relerr:.3e}"
                         )
 
     print("=" * 100)
