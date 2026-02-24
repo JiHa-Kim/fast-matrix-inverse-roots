@@ -21,6 +21,6 @@ This section documents each inverse-square-root method in the project, with the 
 
 ## Source of Truth in Code
 
-- Core kernels and scheduling: `isqrt_core.py`
+- Core kernels and scheduling: `fast_iroot/`
 - Benchmark harness and method comparison: `matrix_iroot.py` (and legacy `matrix_isqrt.py`)
 - Quality metrics and diagnostics: `isqrt_metrics.py`

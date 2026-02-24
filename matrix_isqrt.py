@@ -15,9 +15,9 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
 
-from isqrt_core import (
+from fast_iroot import (
     AutoPolicyConfig,
-    IsqrtWorkspace,
+    IsqrtWorkspaceCoupled as IsqrtWorkspace,
     PrecondStats,
     _affine_coeffs,
     _quad_coeffs,
@@ -28,7 +28,7 @@ from isqrt_core import (
     inverse_sqrt_pe_quadratic,
     precond_spd,
 )
-from isqrt_metrics import compute_quality_stats, isqrt_relative_error
+from fast_iroot.metrics import compute_quality_stats, isqrt_relative_error
 
 
 def median(xs: Sequence[float]) -> float:

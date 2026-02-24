@@ -7,7 +7,7 @@ Applies to benchmark names:
 
 Core implementation:
 
-- `isqrt_core.py:inverse_sqrt_ns`
+- `fast_iroot/coupled.py:inverse_sqrt_ns`
 
 ## Multiplier
 

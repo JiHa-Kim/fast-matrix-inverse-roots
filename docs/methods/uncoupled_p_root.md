@@ -21,10 +21,10 @@ $$ X_{k+1} = X_k P_k(Y_k) $$
 
 ## API Usage
 Coupled counterparts strictly evaluate `p=2`. 
-Uncoupled functions within `isqrt_core.py` gracefully handle flexible $p$.
+Uncoupled functions within `fast_iroot/uncoupled.py` gracefully handle flexible $p$.
 
 ```python
-from isqrt_core import inverse_proot_pe_affine_uncoupled, inverse_proot_pe_quadratic_uncoupled
+from fast_iroot.uncoupled import inverse_proot_pe_affine_uncoupled, inverse_proot_pe_quadratic_uncoupled
 
 # For arbitrary roots, e.g., p=4
 X, ws_uncoupled = inverse_proot_pe_quadratic_uncoupled(

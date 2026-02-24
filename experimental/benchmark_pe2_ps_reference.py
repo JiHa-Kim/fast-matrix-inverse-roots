@@ -5,21 +5,21 @@ import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple
 
+import sys
 import torch
+from pathlib import Path
 
-from isqrt_core import (
-    IsqrtWorkspace,
-    _affine_coeffs,
-    _alloc_ws,
-    _matmul_into,
-    _quad_coeffs,
-    _symmetrize_inplace,
-    _ws_ok,
-    build_pe_schedules,
+sys.path.append(str(Path(__file__).parent.parent))
+
+from fast_iroot.coupled import (
+    IsqrtWorkspaceCoupled as IsqrtWorkspace,
     inverse_sqrt_pe_quadratic,
-    precond_spd,
 )
-from isqrt_metrics import compute_quality_stats
+from fast_iroot.coeffs import _affine_coeffs, _quad_coeffs, build_pe_schedules
+from fast_iroot.utils import _matmul_into, _symmetrize_inplace
+from fast_iroot.coupled import _alloc_ws_coupled as _alloc_ws, _ws_ok_coupled as _ws_ok
+from fast_iroot.precond import precond_spd
+from fast_iroot.metrics import compute_quality_stats
 from matrix_isqrt import make_spd_cases
 
 
@@ -121,7 +121,9 @@ class Row:
 @torch.no_grad()
 def eval_runner(
     mats: List[torch.Tensor],
-    runner: Callable[[torch.Tensor, Optional[IsqrtWorkspace]], Tuple[torch.Tensor, IsqrtWorkspace]],
+    runner: Callable[
+        [torch.Tensor, Optional[IsqrtWorkspace]], Tuple[torch.Tensor, IsqrtWorkspace]
+    ],
     device: torch.device,
     precond: str,
     ridge_rel: float,
@@ -194,17 +196,26 @@ def parse_sizes(s: str) -> List[int]:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Rigorous PE2 vs PE2-PS reference benchmark")
+    p = argparse.ArgumentParser(
+        description="Rigorous PE2 vs PE2-PS reference benchmark"
+    )
     p.add_argument("--sizes", type=str, default="256,512,1024")
     p.add_argument("--trials", type=int, default=20)
     p.add_argument("--warmup", type=int, default=4)
     p.add_argument("--timing-reps", type=int, default=40)
     p.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "bf16"])
     p.add_argument("--seed", type=int, default=1234)
-    p.add_argument("--precond", type=str, default="aol", choices=["none", "frob", "aol"])
+    p.add_argument(
+        "--precond", type=str, default="aol", choices=["none", "frob", "aol"]
+    )
     p.add_argument("--ridge-rel", type=float, default=1e-4)
     p.add_argument("--l-target", type=float, default=0.05)
-    p.add_argument("--coeff-mode", type=str, default="auto", choices=["auto", "precomputed", "tuned"])
+    p.add_argument(
+        "--coeff-mode",
+        type=str,
+        default="auto",
+        choices=["auto", "precomputed", "tuned"],
+    )
     p.add_argument("--coeff-seed", type=int, default=0)
     p.add_argument("--coeff-safety", type=float, default=1.0)
     p.add_argument("--coeff-no-final-safety", action="store_true")
@@ -220,7 +231,9 @@ def main() -> None:
         torch.set_float32_matmul_precision("high")
 
     dtype_compute = (
-        torch.float32 if (args.dtype == "fp32" or device.type != "cuda") else torch.bfloat16
+        torch.float32
+        if (args.dtype == "fp32" or device.type != "cuda")
+        else torch.bfloat16
     )
     sizes = parse_sizes(args.sizes)
     cases = ["gaussian_spd", "illcond_1e6", "illcond_1e12", "near_rank_def", "spike"]
@@ -248,12 +261,31 @@ def main() -> None:
         for n in sizes:
             print(f"== size {n}x{n} ==")
 
-            warm = make_spd_cases("gaussian_spd", n, max(1, args.warmup), device, torch.float32, g)
+            warm = make_spd_cases(
+                "gaussian_spd", n, max(1, args.warmup), device, torch.float32, g
+            )
             for A in warm:
                 A = A.to(dtype_compute)
-                A_norm, _ = precond_spd(A, mode=args.precond, ridge_rel=args.ridge_rel, l_target=args.l_target)
-                inverse_sqrt_pe_quadratic(A_norm, abc_t=pe2_coeffs, ws=None, symmetrize_Y=True, terminal_last_step=True)
-                inverse_sqrt_pe_quadratic_ps_ref(A_norm, abc_t=pe2_coeffs, ws=None, symmetrize_Y=True, terminal_last_step=True)
+                A_norm, _ = precond_spd(
+                    A,
+                    mode=args.precond,
+                    ridge_rel=args.ridge_rel,
+                    l_target=args.l_target,
+                )
+                inverse_sqrt_pe_quadratic(
+                    A_norm,
+                    abc_t=pe2_coeffs,
+                    ws=None,
+                    symmetrize_Y=True,
+                    terminal_last_step=True,
+                )
+                inverse_sqrt_pe_quadratic_ps_ref(
+                    A_norm,
+                    abc_t=pe2_coeffs,
+                    ws=None,
+                    symmetrize_Y=True,
+                    terminal_last_step=True,
+                )
 
             for case in cases:
                 mats = make_spd_cases(case, n, args.trials, device, torch.float32, g)
@@ -262,7 +294,11 @@ def main() -> None:
                 r_pe2 = eval_runner(
                     mats,
                     lambda A, ws: inverse_sqrt_pe_quadratic(
-                        A, abc_t=pe2_coeffs, ws=ws, symmetrize_Y=True, terminal_last_step=True
+                        A,
+                        abc_t=pe2_coeffs,
+                        ws=ws,
+                        symmetrize_Y=True,
+                        terminal_last_step=True,
                     ),
                     device=device,
                     precond=args.precond,
@@ -276,7 +312,11 @@ def main() -> None:
                 r_ps = eval_runner(
                     mats,
                     lambda A, ws: inverse_sqrt_pe_quadratic_ps_ref(
-                        A, abc_t=pe2_coeffs, ws=ws, symmetrize_Y=True, terminal_last_step=True
+                        A,
+                        abc_t=pe2_coeffs,
+                        ws=ws,
+                        symmetrize_Y=True,
+                        terminal_last_step=True,
                     ),
                     device=device,
                     precond=args.precond,

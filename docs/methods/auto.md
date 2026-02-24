@@ -6,8 +6,8 @@ Benchmark name:
 
 Policy definitions:
 
-- `isqrt_core.py:AutoPolicyConfig`
-- `isqrt_core.py:choose_auto_method`
+- `fast_iroot/auto_policy.py:AutoPolicyConfig`
+- `fast_iroot/auto_policy.py:choose_auto_method`
 
 ## Candidate Methods
 

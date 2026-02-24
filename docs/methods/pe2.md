@@ -6,7 +6,7 @@ Benchmark name:
 
 Core implementation:
 
-- `isqrt_core.py:inverse_sqrt_pe_quadratic`
+- `fast_iroot/coupled.py:inverse_sqrt_pe_quadratic`
 
 ## Multiplier
 

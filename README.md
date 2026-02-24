@@ -10,17 +10,17 @@ This project prioritizes:
 
 ## Repository Layout
 
-- `isqrt_core.py`
-  - Preconditioning (`precond_spd`)
-  - Iteration kernels (`inverse_sqrt_ns`, `inverse_sqrt_pe_affine`, `inverse_sqrt_pe_quadratic`)
-  - AUTO policy utilities (`AutoPolicyConfig`, `choose_auto_method`)
-  - Coefficient schedule loading/tuning hooks (`build_pe_schedules`)
-- `isqrt_metrics.py`
-  - Quality metrics (residual, symmetry, spectral proxy, apply-to-vector error)
-  - Optional high-cost relative error helper
+- `fast_iroot/`
+  - `precond.py` (Preconditioning logic `precond_spd`)
+  - `coupled.py` (Iteration kernels `inverse_sqrt_ns`, `inverse_sqrt_pe_affine`, `inverse_sqrt_pe_quadratic`)
+  - `uncoupled.py` (Inverse p-root kernels `inverse_proot_pe_affine_uncoupled`, `inverse_proot_pe_quadratic_uncoupled`)
+  - `auto_policy.py` (AUTO policy utilities `AutoPolicyConfig`, `choose_auto_method`)
+  - `coeffs.py` (Coefficient schedule loading/tuning hooks `build_pe_schedules`)
+  - `metrics.py` (Quality metrics)
 - `matrix_isqrt.py`
-  - Main benchmark harness CLI
-  - Case generation, timing, reporting, and method comparison
+  - Main benchmark harness CLI for inverse square root
+- `matrix_iroot.py`
+  - Main benchmark harness CLI for inverse p-roots
 - `coeff_tuner.py`
   - Offline schedule tuning utility
 - `artifacts/benchmarks/`
