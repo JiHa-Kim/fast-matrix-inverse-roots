@@ -1,42 +1,45 @@
-# Uncoupled $p$-th Root Iterations
+# Uncoupled p-th Root Iterations
 
 ## Motivation
-Standard Newton-Schulz and standard Polar-Express formulations (like PE-NS3, PE2) operate as **Coupled Iterations**: they retain dense states $X_k$ and a residual approximation matrix $Y_k$. While iteratively efficient, carrying internal caches (like `Y, Ybuf`) requires holding nearly $\approx 3 \rightarrow 4$ copies of $n \times n$ matrices sequentially inflating peak operations artificially.
 
-Generalizing across $p$-th roots intensifies temporal logic complexities scaling exponentially worse memory thresholds if dense dependencies aren't avoided.
-
-## Uncoupled Mathematics
-The `uncoupled` formulation completely drops $Y_k$ persistence across steps. Instead of mathematically iterating two formulas, we reconstruct $Y$:
+The coupled iteration tracks both `X ≈ A^{-1/p}` and `Y ≈ A·X^p`, requiring 8 workspace tensors.
+The uncoupled formulation drops `Y` persistence, recomputing it each step from `X`:
 
 $$ Y_k = X_k^p A $$
 
-Then update:
+Then:
 
-$$ X_{k+1} = X_k P_k(Y_k) $$
+$$ X_{k+1} = X_k \cdot P_k(Y_k) $$
 
-### Advantages
-1. **Memory Ceiling Drop**: Shrinks required variables to exclusively $X, Xbuf, T1, T2$.
-2. **Simplified $p$-roots**: Decoupled algorithms inherently generalize to arbitrary $p \in \mathbb{N}$ without structural refactoring.
-3. **Optimized Kernel Scaling**: $X_k^2 \rightarrow X_k^4 \rightarrow Y_k$ bounds are natively executed eliminating generic intermediate looping behaviors.
+where `P_k` is a quadratic polynomial with tuned coefficients.
 
-## API Usage
-Coupled counterparts strictly evaluate `p=2`. 
-Uncoupled functions within `fast_iroot/uncoupled.py` gracefully handle flexible $p$.
+## Advantages Over Coupled
+
+1. **Lower memory**: 5 workspace tensors (`X, Xbuf, T1, T2, eye`) vs 8
+2. **Simpler logic**: No Y-tracking or buffer management
+3. **Natural p-generalization**: `X^p` computed via specialized fast paths (p=1,2,3,4) or generic loop
+
+## Performance Optimizations
+
+- **Fused `addmm`**: The final `X_new = a·X + b·(X·Y)` uses a single `_addmm_into` BLAS call
+  instead of separate matmul + copy + mul + add (saves 2 kernel launches per iteration)
+- **p-specific matmul chains**: p=4 uses `X^2 → (X^2)^2` (2 matmuls) instead of generic loop (3 matmuls)
+
+## API
 
 ```python
-from fast_iroot.uncoupled import inverse_proot_pe_affine_uncoupled, inverse_proot_pe_quadratic_uncoupled
+from fast_iroot import inverse_proot_pe_quadratic_uncoupled
 
-# For arbitrary roots, e.g., p=4
-X, ws_uncoupled = inverse_proot_pe_quadratic_uncoupled(
-    A,
-    abc_t=pe_quad_coeffs,
+X, ws = inverse_proot_pe_quadratic_uncoupled(
+    A_norm,
+    abc_t=quad_coeffs,
     p_val=4,
-    ws=None,
-    symmetrize_X=True
+    symmetrize_X=True,
 )
 ```
 
-## When to use
-Refer to evaluation metrics determining thresholding behavior in benchmarking:
-1. $N \le 1024$: Retain the coupled versions natively.
-2. $N \ge 2048$ or heavily constrained memory states: The memory reductions explicitly overpower slight throughput variations prioritizing Uncoupled execution cleanly.
+## When to Use
+
+- Memory-constrained settings (large n, limited GPU memory)
+- p=1 at small sizes (coupled overhead not worth it)
+- When workspace reuse across calls is not needed

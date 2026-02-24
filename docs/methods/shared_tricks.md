@@ -4,32 +4,28 @@ This page captures shared ideas used by all methods.
 
 ## 1) Core State and Objective
 
-Given SPD-ish matrix `A`, all methods maintain:
+Given SPD-ish matrix `A`, the goal is to compute `X ≈ A^{-1/p}` for arbitrary `p ∈ {1, 2, 3, 4, ...}`.
 
-- `X_t`: current inverse-square-root estimate
-- `Y_t`: whitened state, ideally `Y_t = X_t A X_t`
+Coupled methods maintain:
 
-Target:
+- `X_t`: current inverse p-th root estimate
+- `Y_t`: residual state, ideally `Y_t → I`
 
-$$
-X A X \approx I
-$$
-
-Equivalent residual-state goal:
+Target residual:
 
 $$
-Y \to I
+X^p A \approx I
 $$
 
 ## 2) Coupled Update Form
 
-All kernels use a multiplier `B_t = q_t(Y_t)` and update:
+All coupled kernels use a quadratic multiplier `B_t = a_t I + b_t Y + c_t Y²` and update:
 
 $$
-X_{t+1} = X_t B_t,\qquad Y_{t+1} = B_t Y_t B_t
+X_{t+1} = X_t B_t,\qquad Y_{t+1} = B_t^p Y_t \quad (\text{via binary exponentiation for } p \geq 3)
 $$
 
-`Y <- B Y B` is used (instead of `Y <- Y B^2`) to preserve symmetry better in finite precision.
+For `p=2`, the symmetric form `B Y B` is used to preserve symmetry in finite precision.
 
 ## 3) Terminal Last-Step Optimization
 
@@ -74,8 +70,9 @@ Returned:
 
 ## 5) Precision and Buffering Tricks
 
-- GEMMs use preallocated workspace tensors (`IsqrtWorkspace`) to avoid per-iteration allocations.
-- `torch.matmul(..., out=...)` is used for buffer reuse.
+- GEMMs use preallocated workspace tensors to avoid per-iteration allocations.
+- `torch.matmul(..., out=...)` and fused `torch.addmm`/`torch.baddbmm` for zero-copy operations.
+- Binary exponentiation (`_bpow_times_y`) for O(log p) coupled Y-updates.
 - Coefficients are extracted once to CPU scalars/lists to avoid GPU scalar sync overhead.
 - Optional symmetrization is applied on `Y` each full step.
 
@@ -89,13 +86,14 @@ Returned:
 
 ## 7) Quality Metrics Used by Benchmark Harness
 
-`matrix_isqrt.py` reports:
+`matrix_iroot.py` reports:
 
 - wall-clock split: precond + iteration
 - residual median / p95 / max
+- relative error vs eigendecomp (`metrics-mode=full`)
 - optional spectral residual proxy (`power_iters`)
 - symmetry diagnostics (`symX`, `symW`)
 - optional apply-to-vector metric (`mv_samples`)
-- optional relative error vs eigendecomp (`metrics-mode=full`)
+- bad count (NaN/Inf)
 
-This is deliberate: method selection is based on practical preconditioning quality and stability, not only theoretical contraction.
+Method selection is based on practical preconditioning quality and stability, not only theoretical contraction.

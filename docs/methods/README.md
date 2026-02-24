@@ -1,26 +1,27 @@
 # Method Documentation
 
-This section documents each inverse-square-root method in the project, with the exact math model and implementation details used in code.
+This section documents the inverse p-th root methods used in the project.
 
-## Files
+## Active Methods
 
 - `docs/methods/shared_tricks.md`
-  - shared math model
-  - preconditioning pipeline
-  - stability and performance tricks used across methods
-- `docs/methods/ns.md`
-  - Newton-Schulz (`NS3`, `NS4`)
-- `docs/methods/pe_ns3.md`
-  - Polynomial-Express affine schedule (`PE-NS3`)
+  - Shared math model, preconditioning pipeline, stability tricks
 - `docs/methods/pe2.md`
-  - Polynomial-Express quadratic schedule (`PE2`)
+  - Quadratic PE iteration (PE-Quad) — the primary method
 - `docs/methods/uncoupled_p_root.md`
-  - Uncoupled formulations supporting arbitrary $p$-th root iterations and memory minimization routines (`PE-Affine`, `PE-Quad`)
-- `docs/methods/auto.md`
-  - AUTO selection policy and thresholds
+  - Uncoupled formulation for general p-th roots
 
-## Source of Truth in Code
+## Archived (Deprecated)
 
-- Core kernels and scheduling: `fast_iroot/`
-- Benchmark harness and method comparison: `matrix_iroot.py` (and legacy `matrix_isqrt.py`)
-- Quality metrics and diagnostics: `isqrt_metrics.py`
+Affine/NS methods have been archived to `archive/` as they consistently
+underperform quadratic methods:
+- `archive/ns.md` — Newton-Schulz (NS3, NS4)
+- `archive/pe_ns3.md` — Affine PE schedule (PE-NS3)
+- `archive/auto.md` — AUTO selection policy
+- `archive/affine_iterations.py` — All affine iteration code
+
+## Source of Truth
+
+- Core kernels: `fast_iroot/`
+- Benchmark harness: `matrix_iroot.py`
+- Quality metrics: `fast_iroot/metrics.py`
