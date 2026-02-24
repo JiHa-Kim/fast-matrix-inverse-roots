@@ -8,7 +8,7 @@ from .coeffs import _affine_coeffs, _quad_coeffs
 
 
 @dataclass
-class IsqrtWorkspaceCoupled:
+class IrootWorkspaceCoupled:
     X: torch.Tensor
     Xbuf: torch.Tensor
     Y: torch.Tensor
@@ -19,12 +19,15 @@ class IsqrtWorkspaceCoupled:
     eye_mat: torch.Tensor
 
 
-def _alloc_ws_coupled(A: torch.Tensor) -> IsqrtWorkspaceCoupled:
+IsqrtWorkspaceCoupled = IrootWorkspaceCoupled
+
+
+def _alloc_ws_coupled(A: torch.Tensor) -> IrootWorkspaceCoupled:
     shape = A.shape
     n = shape[-1]
     # IMPORTANT: do NOT .contiguous() an expanded identity; that materializes a full batch of I.
     eye = torch.eye(n, device=A.device, dtype=A.dtype).expand_as(A)
-    return IsqrtWorkspaceCoupled(
+    return IrootWorkspaceCoupled(
         X=A.new_empty(shape),
         Xbuf=A.new_empty(shape),
         Y=A.new_empty(shape),
@@ -36,7 +39,7 @@ def _alloc_ws_coupled(A: torch.Tensor) -> IsqrtWorkspaceCoupled:
     )
 
 
-def _ws_ok_coupled(ws: Optional[IsqrtWorkspaceCoupled], A: torch.Tensor) -> bool:
+def _ws_ok_coupled(ws: Optional[IrootWorkspaceCoupled], A: torch.Tensor) -> bool:
     if ws is None:
         return False
     return (
@@ -50,49 +53,31 @@ def _ws_ok_coupled(ws: Optional[IsqrtWorkspaceCoupled], A: torch.Tensor) -> bool
 
 
 @torch.no_grad()
-def inverse_sqrt_ns(
+def inverse_proot_ns_coupled(
     A_norm: torch.Tensor,
     iters: int,
-    ws: Optional[IsqrtWorkspaceCoupled] = None,
+    ws: Optional[IrootWorkspaceCoupled] = None,
     symmetrize_Y: bool = True,
     terminal_last_step: bool = True,
-) -> Tuple[torch.Tensor, IsqrtWorkspaceCoupled]:
-    if not _ws_ok_coupled(ws, A_norm):
-        ws = _alloc_ws_coupled(A_norm)
-    assert ws is not None
-
-    ws.X.copy_(ws.eye_mat)
-    ws.Y.copy_(A_norm)
-
-    T = int(iters)
-    for t in range(T):
-        ws.B.copy_(ws.Y).mul_(-0.5)
-        ws.B.diagonal(dim1=-2, dim2=-1).add_(1.5)
-
-        _matmul_into(ws.X, ws.B, ws.Xbuf)
-        ws.X, ws.Xbuf = ws.Xbuf, ws.X
-
-        # NOTE: if terminal_last_step is True, ws.Y is intentionally not updated on the last step.
-        if terminal_last_step and (t == T - 1):
-            break
-
-        _matmul_into(ws.Y, ws.B, ws.B2)
-        _matmul_into(ws.B, ws.B2, ws.Ybuf)
-        if symmetrize_Y:
-            _symmetrize_inplace(ws.Ybuf, ws.B)
-        ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
-
-    return ws.X, ws
+) -> Tuple[torch.Tensor, IrootWorkspaceCoupled]:
+    ab_t = [(2.0, -1.0)] * iters
+    return inverse_proot_pe_affine_coupled(
+        A_norm=A_norm,
+        ab_t=ab_t,
+        ws=ws,
+        symmetrize_Y=symmetrize_Y,
+        terminal_last_step=terminal_last_step,
+    )
 
 
 @torch.no_grad()
-def inverse_sqrt_pe_affine(
+def inverse_proot_pe_affine_coupled(
     A_norm: torch.Tensor,
     ab_t: Sequence[Tuple[float, float]] | torch.Tensor,
-    ws: Optional[IsqrtWorkspaceCoupled] = None,
+    ws: Optional[IrootWorkspaceCoupled] = None,
     symmetrize_Y: bool = True,
     terminal_last_step: bool = True,
-) -> Tuple[torch.Tensor, IsqrtWorkspaceCoupled]:
+) -> Tuple[torch.Tensor, IrootWorkspaceCoupled]:
     if not _ws_ok_coupled(ws, A_norm):
         ws = _alloc_ws_coupled(A_norm)
     assert ws is not None
@@ -109,12 +94,11 @@ def inverse_sqrt_pe_affine(
         _matmul_into(ws.X, ws.B, ws.Xbuf)
         ws.X, ws.Xbuf = ws.Xbuf, ws.X
 
-        # NOTE: if terminal_last_step is True, ws.Y is intentionally not updated on the last step.
         if terminal_last_step and (t == T - 1):
             break
 
-        _matmul_into(ws.Y, ws.B, ws.B2)
-        _matmul_into(ws.B, ws.B2, ws.Ybuf)
+        _matmul_into(ws.Y, ws.B, ws.Ybuf)
+
         if symmetrize_Y:
             _symmetrize_inplace(ws.Ybuf, ws.B)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
@@ -123,13 +107,13 @@ def inverse_sqrt_pe_affine(
 
 
 @torch.no_grad()
-def inverse_sqrt_pe_quadratic(
+def inverse_proot_pe_quadratic_coupled(
     A_norm: torch.Tensor,
     abc_t: Sequence[Tuple[float, float, float]] | torch.Tensor,
-    ws: Optional[IsqrtWorkspaceCoupled] = None,
+    ws: Optional[IrootWorkspaceCoupled] = None,
     symmetrize_Y: bool = True,
     terminal_last_step: bool = True,
-) -> Tuple[torch.Tensor, IsqrtWorkspaceCoupled]:
+) -> Tuple[torch.Tensor, IrootWorkspaceCoupled]:
     if not _ws_ok_coupled(ws, A_norm):
         ws = _alloc_ws_coupled(A_norm)
     assert ws is not None
@@ -148,12 +132,11 @@ def inverse_sqrt_pe_quadratic(
         _matmul_into(ws.X, ws.B, ws.Xbuf)
         ws.X, ws.Xbuf = ws.Xbuf, ws.X
 
-        # NOTE: if terminal_last_step is True, ws.Y is intentionally not updated on the last step.
         if terminal_last_step and (t == T - 1):
             break
 
-        _matmul_into(ws.Y, ws.B, ws.B2)
-        _matmul_into(ws.B, ws.B2, ws.Ybuf)
+        _matmul_into(ws.Y, ws.B, ws.Ybuf)
+
         if symmetrize_Y:
             _symmetrize_inplace(ws.Ybuf, ws.B)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
