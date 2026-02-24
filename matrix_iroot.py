@@ -27,6 +27,8 @@ from fast_iroot import (
     inverse_proot_pe_quadratic_uncoupled,
     inverse_sqrt_pe_affine,
     inverse_sqrt_pe_quadratic,
+    inverse_proot_pe_affine_coupled,
+    inverse_proot_pe_quadratic_coupled,
     precond_spd,
 )
 from fast_iroot.metrics import compute_quality_stats, iroot_relative_error
@@ -270,12 +272,13 @@ def _build_runner(
 
         return run
 
-    if chosen == "PE-Affine-Coupled" and p_val == 2:
+    if chosen == "PE-Affine-Coupled":
 
         def run(A_norm: torch.Tensor, ws: Optional[object]):
-            return inverse_sqrt_pe_affine(
+            return inverse_proot_pe_affine_coupled(
                 A_norm,
                 ab_t=pe_affine_coeffs,
+                p_val=p_val,
                 ws=ws,
                 symmetrize_Y=symmetrize_Y,
                 terminal_last_step=True,
@@ -283,12 +286,13 @@ def _build_runner(
 
         return run
 
-    if chosen == "PE-Quad-Coupled" and p_val == 2:
+    if chosen == "PE-Quad-Coupled":
 
         def run(A_norm: torch.Tensor, ws: Optional[object]):
-            return inverse_sqrt_pe_quadratic(
+            return inverse_proot_pe_quadratic_coupled(
                 A_norm,
                 abc_t=pe_quad_coeffs,
+                p_val=p_val,
                 ws=ws,
                 symmetrize_Y=symmetrize_Y,
                 terminal_last_step=True,
@@ -618,9 +622,12 @@ def main():
                     l_target=args.l_target,
                 )
 
-                methods_to_run = ["PE-Affine", "PE-Quad"]
-                if p_val == 2:
-                    methods_to_run.extend(["PE-Affine-Coupled", "PE-Quad-Coupled"])
+                methods_to_run = [
+                    "PE-Affine",
+                    "PE-Quad",
+                    "PE-Affine-Coupled",
+                    "PE-Quad-Coupled",
+                ]
 
                 rows: List[Tuple[str, BenchResult]] = []
                 for name in methods_to_run:
