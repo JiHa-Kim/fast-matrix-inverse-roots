@@ -75,6 +75,11 @@ def compute_chebyshev_coeffs(
     Compute Chebyshev coefficients for func(x) over [l_min, l_max].
     Uses discrete orthogonality matching numpy.polynomial.chebyshev.chebfit.
     """
+    if degree < 0:
+        raise ValueError(f"degree must be >= 0, got {degree}")
+    if l_min >= l_max:
+        raise ValueError(f"l_min ({l_min}) must be strictly less than l_max ({l_max})")
+
     # Chebyshev nodes in [-1, 1]
     k = np.arange(degree + 1)
     nodes_std = np.cos((2 * k + 1) * np.pi / (2 * (degree + 1)))
@@ -116,6 +121,11 @@ def apply_inverse_chebyshev_with_coeffs(
         raise ValueError(f"B must have shape [..., {n}, :], got {B.shape}")
     if B.device != A.device or B.dtype != A.dtype:
         raise ValueError("A and B must have matching dtype and device")
+
+    if l_min >= l_max:
+        raise ValueError(f"l_min ({l_min}) must be strictly less than l_max ({l_max})")
+    if degree < 0:
+        raise ValueError(f"degree must be >= 0, got {degree}")
 
     if not _ws_ok_chebyshev(ws, B):
         ws = _alloc_ws_chebyshev(B)

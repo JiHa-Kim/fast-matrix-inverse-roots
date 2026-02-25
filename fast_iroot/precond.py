@@ -36,6 +36,8 @@ def precond_spd(
     increases exactly by the shift, i.e., `|a_ii + s| = |a_ii| + s`. This holds
     true for matrices with non-negative diagonals, such as SPD matrices.
     """
+    if A.is_complex():
+        raise ValueError("precond_spd does not support complex tensors")
     _check_square(A)
     # -------- precondition (scale) --------
     if mode == "none":

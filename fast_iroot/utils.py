@@ -44,6 +44,10 @@ def _addmm_into(
     elif mat1.dim() == 3:
         torch.baddbmm(bias, mat1, mat2, beta=beta, alpha=alpha, out=out)
     else:
+        if not out.is_contiguous():
+            raise ValueError(
+                "out must be contiguous for batched addmm_into with dim > 3"
+            )
         batch_shape = mat1.shape[:-2]
         n, m = mat1.shape[-2], mat2.shape[-1]
         k = math.prod(batch_shape) if len(batch_shape) else 1
@@ -69,9 +73,10 @@ def _bpow_times_y(
     B, Y are inputs. tmp1, tmp2 are scratch buffers (same shape).
     `out`, `tmp1`, and `tmp2` must not alias `B` or `Y`.
     """
+    if out is B or out is Y or tmp1 is B or tmp1 is Y or tmp2 is B or tmp2 is Y:
+        raise ValueError("aliasing not allowed for out, tmp1, tmp2 with B or Y")
     if p <= 0:
-        out.copy_(Y)
-        return
+        raise ValueError("p must be positive")
     if p == 1:
         torch.matmul(B, Y, out=out)
         return
@@ -111,3 +116,67 @@ def _bpow_times_y(
 
     if cur_res is not out:
         out.copy_(cur_res)
+
+
+@torch.no_grad()
+def _bpow(
+    B: torch.Tensor,
+    p: int,
+    out: torch.Tensor,
+    tmp1: torch.Tensor,
+    tmp2: torch.Tensor,
+) -> None:
+    """Compute B^p into `out` using binary exponentiation.
+
+    `out`, `tmp1`, and `tmp2` must not alias `B`.
+    """
+    if out is B or tmp1 is B or tmp2 is B:
+        raise ValueError("aliasing not allowed for out, tmp1, tmp2 with B")
+    if p <= 0:
+        raise ValueError("p must be positive")
+    if p == 1:
+        out.copy_(B)
+        return
+    if p == 2:
+        torch.matmul(B, B, out=out)
+        return
+    if p == 4:
+        torch.matmul(B, B, out=tmp1)
+        torch.matmul(tmp1, tmp1, out=out)
+        return
+
+    bits = [(p >> i) & 1 for i in range(p.bit_length())]
+
+    cur_base = B
+    cur_res = None
+
+    for i, bit in enumerate(bits):
+        if bit:
+            if cur_res is None:
+                if cur_base is B:
+                    out.copy_(cur_base)
+                    cur_res = out
+                else:
+                    cur_res = cur_base
+            else:
+                for buf in (out, tmp1, tmp2):
+                    if buf is not cur_base and buf is not cur_res:
+                        next_res = buf
+                        break
+                torch.matmul(cur_base, cur_res, out=next_res)
+                cur_res = next_res
+
+        if i < len(bits) - 1:
+            for buf in (out, tmp1, tmp2):
+                if buf is not cur_base and buf is not cur_res:
+                    next_base = buf
+                    break
+            torch.matmul(cur_base, cur_base, out=next_base)
+            cur_base = next_base
+
+    if cur_res is not out:
+        if cur_res is not None:
+            out.copy_(cur_res)
+        else:
+            # Should not happen for p > 0
+            pass

@@ -134,6 +134,8 @@ def compute_quality_stats(
     _validate_p_val(p_val)
     _check_square(X)
     _check_square(A)
+    if X.shape != A.shape:
+        raise ValueError(f"X.shape {X.shape} must perfectly match A.shape {A.shape}")
     n = A.shape[-1]
     batch = A.shape[:-2]
 

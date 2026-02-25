@@ -7,7 +7,7 @@ from .utils import (
     _matmul_into,
     _addmm_into,
     _symmetrize_inplace,
-    _bpow_times_y,
+    _bpow,
     _validate_p_val,
     _check_square,
 )
@@ -139,7 +139,7 @@ def inverse_sqrt_pe_quadratic(
         _matmul_into(ws.Y, ws.B, ws.B2)
         _matmul_into(ws.B, ws.B2, ws.Ybuf)
         if symmetrize_Y:
-            _symmetrize_inplace(ws.Ybuf, ws.B)
+            _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
 
     return ws.X, ws
@@ -179,18 +179,21 @@ def inverse_proot_pe_quadratic_coupled(
 
         if p_val == 1:
             _matmul_into(ws.B, ws.Y, ws.Ybuf)
-        elif p_val == 2:
-            _matmul_into(ws.Y, ws.B, ws.B2)
-            _matmul_into(ws.B, ws.B2, ws.Ybuf)
-        elif p_val == 4:
-            _matmul_into(ws.B, ws.B, ws.B2)
+        elif p_val % 2 == 0:
+            p_half = p_val // 2
+            _bpow(ws.B, p_half, out=ws.B2, tmp1=ws.Xbuf, tmp2=ws.Ybuf)
             _matmul_into(ws.B2, ws.Y, ws.Xbuf)
-            _matmul_into(ws.B2, ws.Xbuf, ws.Ybuf)
+            _matmul_into(ws.Xbuf, ws.B2, ws.Ybuf)
         else:
-            _bpow_times_y(ws.B, ws.Y, p_val, out=ws.Ybuf, tmp1=ws.B2, tmp2=ws.Xbuf)
+            p_half = (p_val - 1) // 2
+            _bpow(ws.B, p_half, out=ws.B2, tmp1=ws.Xbuf, tmp2=ws.Ybuf)
+            _matmul_into(ws.B, ws.Y, ws.Xbuf)
+            _matmul_into(ws.B2, ws.Xbuf, ws.Ybuf)
+            _matmul_into(ws.Ybuf, ws.B2, ws.Xbuf)
+            ws.Ybuf.copy_(ws.Xbuf)
 
         if symmetrize_Y:
-            _symmetrize_inplace(ws.Ybuf, ws.B)
+            _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
 
     return ws.X, ws
@@ -243,18 +246,21 @@ def inverse_solve_pe_quadratic_coupled(
 
         if p_val == 1:
             _matmul_into(ws.B, ws.Y, ws.Ybuf)
-        elif p_val == 2:
-            _matmul_into(ws.Y, ws.B, ws.B2)
-            _matmul_into(ws.B, ws.B2, ws.Ybuf)
-        elif p_val == 4:
-            _matmul_into(ws.B, ws.B, ws.B2)
+        elif p_val % 2 == 0:
+            p_half = p_val // 2
+            _bpow(ws.B, p_half, out=ws.B2, tmp1=ws.tmp, tmp2=ws.Ybuf)
             _matmul_into(ws.B2, ws.Y, ws.tmp)
-            _matmul_into(ws.B2, ws.tmp, ws.Ybuf)
+            _matmul_into(ws.tmp, ws.B2, ws.Ybuf)
         else:
-            _bpow_times_y(ws.B, ws.Y, p_val, out=ws.Ybuf, tmp1=ws.B2, tmp2=ws.tmp)
+            p_half = (p_val - 1) // 2
+            _bpow(ws.B, p_half, out=ws.B2, tmp1=ws.tmp, tmp2=ws.Ybuf)
+            _matmul_into(ws.B, ws.Y, ws.tmp)
+            _matmul_into(ws.B2, ws.tmp, ws.Ybuf)
+            _matmul_into(ws.Ybuf, ws.B2, ws.tmp)
+            ws.Ybuf.copy_(ws.tmp)
 
         if symmetrize_Y:
-            _symmetrize_inplace(ws.Ybuf, ws.B)
+            _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
 
     return ws.Z, ws
