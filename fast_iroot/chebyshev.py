@@ -3,6 +3,7 @@ from typing import Optional, Tuple, Callable
 
 import torch
 import numpy as np
+import functools
 
 from .utils import _matmul_into, _check_square
 
@@ -43,9 +44,6 @@ def _ws_ok_chebyshev(ws: Optional[ChebyshevApplyWorkspace], B: torch.Tensor) -> 
         and _ok(ws.Z)
         and _ok(ws.tmp)
     )
-
-
-import functools
 
 
 @functools.lru_cache(maxsize=128)
