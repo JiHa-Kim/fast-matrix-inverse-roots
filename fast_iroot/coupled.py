@@ -206,11 +206,13 @@ def inverse_solve_pe_quadratic_coupled(
     symmetrize_Y: bool = True,
     terminal_last_step: bool = True,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
-    """Coupled quadratic PE iteration for computing A^{-1} M (inverse solving).
+    """Coupled quadratic PE iteration for computing an inverse-like solve on M.
 
-    This functionally equivalent to solving X * A_norm = I to get X = A_norm^{-1}
-    and returning X * M_norm, but doing it directly via Z_{k+1} = Z_k B_k
-    without materializing X.
+    This function continuously applies the generated coupled polynomial preconditioners
+    as Z_{k+1} = B_k Z_k. Note that because B_k are dynamically generated left-to-right
+    and applied iteratively, the final output corresponds to Z_T = B_{T-1}...B_1 B_0 M_norm.
+    This is NOT generally equivalent to (B_0 B_1...B_{T-1}) M_norm approx A_norm^{-1} M_norm
+    unless the sequential B_k matrices commute.
     """
     if not _ws_ok_inverse_solve(ws, A_norm, M_norm):
         ws = _alloc_ws_inverse_solve(A_norm, M_norm)

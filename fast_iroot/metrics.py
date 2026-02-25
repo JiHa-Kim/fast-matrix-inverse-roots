@@ -114,7 +114,7 @@ def compute_quality_stats(
 
     Assumptions:
       - A is SPD-ish (at least for "exact" reference and solve-based probes).
-      - X is an approximate A^{-1/2}.
+      - X is an approximate A^{-1/2} for p_val=2, or A^{-1/p} for general p_val.
     """
     _validate_p_val(p_val)
     n = A.shape[-1]
