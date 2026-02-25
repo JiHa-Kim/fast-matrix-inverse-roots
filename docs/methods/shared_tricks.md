@@ -72,6 +72,7 @@ Returned:
 
 - GEMMs use preallocated workspace tensors to avoid per-iteration allocations.
 - `torch.matmul(..., out=...)` and fused `torch.addmm`/`torch.baddbmm` for zero-copy operations.
+- Arbitrary batch dimensions (e.g., `(..., n, n)`) are fully supported by internal routines like `_addmm_into` which reshape and fallback to `baddbmm` dynamically.
 - Binary exponentiation (`_bpow_times_y`) for O(log p) coupled Y-updates.
 - Coefficients are extracted once to CPU scalars/lists to avoid GPU scalar sync overhead.
 - Optional symmetrization is applied on `Y` each full step.

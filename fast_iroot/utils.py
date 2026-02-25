@@ -40,8 +40,17 @@ def _addmm_into(
     """out = beta * bias + alpha * (mat1 @ mat2).  Fused BLAS call."""
     if mat1.dim() == 2:
         torch.addmm(bias, mat1, mat2, beta=beta, alpha=alpha, out=out)
-    else:
+    elif mat1.dim() == 3:
         torch.baddbmm(bias, mat1, mat2, beta=beta, alpha=alpha, out=out)
+    else:
+        batch_shape = mat1.shape[:-2]
+        n, m = mat1.shape[-2], mat2.shape[-1]
+        k = int(torch.tensor(batch_shape).prod().item()) if len(batch_shape) else 1
+        outv = out.reshape(k, n, m)
+        biasv = bias.reshape(k, n, m)
+        m1v = mat1.reshape(k, n, mat1.shape[-1])
+        m2v = mat2.reshape(k, mat2.shape[-2], m)
+        torch.baddbmm(biasv, m1v, m2v, beta=beta, alpha=alpha, out=outv)
     return out
 
 
