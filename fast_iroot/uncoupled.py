@@ -24,7 +24,7 @@ class IrootWorkspaceUncoupled:
 def _alloc_ws_uncoupled(A: torch.Tensor) -> IrootWorkspaceUncoupled:
     shape = A.shape
     n = shape[-1]
-    eye = torch.eye(n, device=A.device, dtype=A.dtype).expand_as(A)
+    eye = torch.eye(n, device=A.device, dtype=A.dtype).expand_as(A).clone()
     return IrootWorkspaceUncoupled(
         X=A.new_empty(shape),
         Xbuf=A.new_empty(shape),

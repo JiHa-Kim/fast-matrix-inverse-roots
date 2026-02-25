@@ -42,7 +42,7 @@ def _alloc_ws_coupled(A: torch.Tensor) -> IrootWorkspaceCoupled:
     shape = A.shape
     n = shape[-1]
     # IMPORTANT: do NOT .contiguous() an expanded identity; that materializes a full batch of I.
-    eye = torch.eye(n, device=A.device, dtype=A.dtype).expand_as(A)
+    eye = torch.eye(n, device=A.device, dtype=A.dtype).expand_as(A).clone()
     return IrootWorkspaceCoupled(
         X=A.new_empty(shape),
         Xbuf=A.new_empty(shape),
