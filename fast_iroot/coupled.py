@@ -5,6 +5,7 @@ import torch
 
 from .utils import (
     _matmul_into,
+    _addmm_into,
     _symmetrize_inplace,
     _bpow_times_y,
     _validate_p_val,
@@ -21,7 +22,6 @@ class IrootWorkspaceCoupled:
     Ybuf: torch.Tensor
     B: torch.Tensor
     B2: torch.Tensor
-    eye_mat: torch.Tensor
 
 
 @dataclass
@@ -39,9 +39,6 @@ IsqrtWorkspaceCoupled = IrootWorkspaceCoupled
 
 def _alloc_ws_coupled(A: torch.Tensor) -> IrootWorkspaceCoupled:
     shape = A.shape
-    n = shape[-1]
-    # Store a single (n, n) identity; copy_() will broadcast it to the full batch shape.
-    eye = torch.eye(n, device=A.device, dtype=A.dtype)
     return IrootWorkspaceCoupled(
         X=A.new_empty(shape),
         Xbuf=A.new_empty(shape),
@@ -49,7 +46,6 @@ def _alloc_ws_coupled(A: torch.Tensor) -> IrootWorkspaceCoupled:
         Ybuf=A.new_empty(shape),
         B=A.new_empty(shape),
         B2=A.new_empty(shape),
-        eye_mat=eye,
     )
 
 
@@ -60,13 +56,6 @@ def _ws_ok_coupled(ws: Optional[IrootWorkspaceCoupled], A: torch.Tensor) -> bool
     def _ok(t: torch.Tensor) -> bool:
         return t.device == A.device and t.dtype == A.dtype and t.shape == A.shape
 
-    def _ok_eye(t: torch.Tensor) -> bool:
-        return (
-            t.device == A.device
-            and t.dtype == A.dtype
-            and t.shape == (A.shape[-1], A.shape[-1])
-        )
-
     return (
         _ok(ws.X)
         and _ok(ws.Xbuf)
@@ -74,7 +63,6 @@ def _ws_ok_coupled(ws: Optional[IrootWorkspaceCoupled], A: torch.Tensor) -> bool
         and _ok(ws.Ybuf)
         and _ok(ws.B)
         and _ok(ws.B2)
-        and _ok_eye(ws.eye_mat)
     )
 
 
@@ -129,14 +117,13 @@ def inverse_sqrt_pe_quadratic(
         ws = _alloc_ws_coupled(A_norm)
     assert ws is not None
 
-    ws.X.copy_(ws.eye_mat)
+    ws.X.zero_()
+    ws.X.diagonal(dim1=-2, dim2=-1).fill_(1)
     ws.Y.copy_(A_norm)
     coeffs = _quad_coeffs(abc_t)
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        from .utils import _addmm_into
-
         _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
         ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
 
@@ -171,14 +158,13 @@ def inverse_proot_pe_quadratic_coupled(
         ws = _alloc_ws_coupled(A_norm)
     assert ws is not None
 
-    ws.X.copy_(ws.eye_mat)
+    ws.X.zero_()
+    ws.X.diagonal(dim1=-2, dim2=-1).fill_(1)
     ws.Y.copy_(A_norm)
     coeffs = _quad_coeffs(abc_t)
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        from .utils import _addmm_into
-
         _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
         ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
 
@@ -226,6 +212,10 @@ def inverse_solve_pe_quadratic_coupled(
     each B_k depends on the evolving Y_k, so they generally do not commute across steps.
     """
     _check_square(A_norm)
+    if M_norm.shape[-2] != A_norm.shape[-1]:
+        raise ValueError(
+            f"M_norm must have shape[..., {A_norm.shape[-1]}, :], got {M_norm.shape}"
+        )
     if not _ws_ok_inverse_solve(ws, A_norm, M_norm):
         ws = _alloc_ws_inverse_solve(A_norm, M_norm)
     assert ws is not None
@@ -236,8 +226,6 @@ def inverse_solve_pe_quadratic_coupled(
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        from .utils import _addmm_into
-
         _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
         ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
 

@@ -77,36 +77,27 @@ def _bpow_times_y(
         return
 
     # General binary exponentiation for p >= 3
-    # Collect binary digits (LSB first)
-    bits = []
-    pp = p
-    while pp > 0:
-        bits.append(pp & 1)
-        pp >>= 1
+    bits = [(p >> i) & 1 for i in range(p.bit_length())]
 
-    # cur_base cycles through B <-> tmp1
-    # cur_result cycles through Y <-> out <-> tmp2
     cur_base = B
-    next_base = tmp1
-    cur_result = Y
-    next_result = out
+    cur_res = Y
 
     for i, bit in enumerate(bits):
         if bit:
-            torch.matmul(cur_base, cur_result, out=next_result)
-            cur_result, next_result = next_result, cur_result
-            # Ensure next_result is a *different* buffer from cur_result
-            if next_result is Y:
-                next_result = tmp2
-            elif next_result is out:
-                next_result = tmp2
-            elif next_result is tmp2:
-                next_result = out if cur_result is not out else tmp2
+            for buf in (out, tmp1, tmp2):
+                if buf is not cur_base and buf is not cur_res:
+                    next_res = buf
+                    break
+            torch.matmul(cur_base, cur_res, out=next_res)
+            cur_res = next_res
 
         if i < len(bits) - 1:
+            for buf in (out, tmp1, tmp2):
+                if buf is not cur_base and buf is not cur_res:
+                    next_base = buf
+                    break
             torch.matmul(cur_base, cur_base, out=next_base)
-            cur_base, next_base = next_base, cur_base
+            cur_base = next_base
 
-    # Copy to out if result is not already there
-    if cur_result is not out:
-        out.copy_(cur_result)
+    if cur_res is not out:
+        out.copy_(cur_res)

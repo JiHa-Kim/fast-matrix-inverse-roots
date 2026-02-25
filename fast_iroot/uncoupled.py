@@ -20,20 +20,15 @@ class IrootWorkspaceUncoupled:
     Xbuf: torch.Tensor
     T1: torch.Tensor
     T2: torch.Tensor
-    eye_mat: torch.Tensor
 
 
 def _alloc_ws_uncoupled(A: torch.Tensor) -> IrootWorkspaceUncoupled:
     shape = A.shape
-    n = shape[-1]
-    # Store a single (n, n) identity; copy_() will broadcast it to the full batch shape.
-    eye = torch.eye(n, device=A.device, dtype=A.dtype)
     return IrootWorkspaceUncoupled(
         X=A.new_empty(shape),
         Xbuf=A.new_empty(shape),
         T1=A.new_empty(shape),
         T2=A.new_empty(shape),
-        eye_mat=eye,
     )
 
 
@@ -44,16 +39,7 @@ def _ws_ok_uncoupled(ws: Optional[IrootWorkspaceUncoupled], A: torch.Tensor) -> 
     def _ok(t: torch.Tensor) -> bool:
         return t.device == A.device and t.dtype == A.dtype and t.shape == A.shape
 
-    def _ok_eye(t: torch.Tensor) -> bool:
-        return (
-            t.device == A.device
-            and t.dtype == A.dtype
-            and t.shape == (A.shape[-1], A.shape[-1])
-        )
-
-    return (
-        _ok(ws.X) and _ok(ws.Xbuf) and _ok(ws.T1) and _ok(ws.T2) and _ok_eye(ws.eye_mat)
-    )
+    return _ok(ws.X) and _ok(ws.Xbuf) and _ok(ws.T1) and _ok(ws.T2)
 
 
 @torch.no_grad()
@@ -70,7 +56,8 @@ def inverse_proot_pe_quadratic_uncoupled(
         ws = _alloc_ws_uncoupled(A_norm)
     assert ws is not None
 
-    ws.X.copy_(ws.eye_mat)
+    ws.X.zero_()
+    ws.X.diagonal(dim1=-2, dim2=-1).fill_(1)
     coeffs = _quad_coeffs(abc_t)
 
     for a, b, c in coeffs:

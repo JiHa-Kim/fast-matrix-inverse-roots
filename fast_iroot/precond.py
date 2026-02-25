@@ -90,6 +90,8 @@ def precond_spd(
 
     # -------- optional diagonal shift to improve Gershgorin lower bound --------
     if l_target > 0.0:
+        if l_target >= 1.0:
+            raise ValueError(f"l_target must be < 1.0, got {l_target}")
         abs_row_sum2 = A_norm.abs().sum(dim=-1)
         diag = A_norm.diagonal(dim1=-2, dim2=-1)
         off = abs_row_sum2 - diag.abs()
