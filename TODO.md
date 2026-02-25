@@ -15,10 +15,10 @@ Refer to [BUGS.md](file:///d:/GitHub/JiHa-Kim/fast-matrix-inverse-roots/BUGS.md)
 - [x] Separate `true_interval` from `fit_interval`.
 
 ### Phase 2: $p=2$ Matrix Runtime
-- [ ] Implement `fast` mode (storing $X$ and $Y$).
-- [ ] Implement `low_mem` mode (storing only $X$).
-- [ ] Add residual checks ($|I-Y|_F$).
-- [ ] Benchmark against inverse Newton.
+- [x] Implement `coupled` mode (storing $X$ and $Y$).
+- [x] Implement `uncoupled` mode (storing only $X$).
+- [x] Add residual checks ($|I-Y|_F$).
+- [x] Benchmark against inverse Newton.
 
 ### Phase 3: Generic $p$ Support
 - [ ] Generalize scalar objective and polynomial parameterization.
@@ -27,7 +27,7 @@ Refer to [BUGS.md](file:///d:/GitHub/JiHa-Kim/fast-matrix-inverse-roots/BUGS.md)
 - [ ] Implement conservative interval certification (sampling + padding).
 
 ### Phase 4: Advanced Features
-- [ ] Specialized $p=1$ and $p=4$ branches.
+- [ ] Specialized $p=1$ and $p=4$ branches (for p=1, also implement an algorithm for direct matmat/matvec products solving $AX=B$ beyond just $A^{-1}$ then $A^{-1}B$ for numerical stability)
 - [ ] Support for higher-degree polynomial families.
 - [ ] Online schedule selection.
 - [ ] Mixed precision support (bf16/fp16/fp32/fp64).
