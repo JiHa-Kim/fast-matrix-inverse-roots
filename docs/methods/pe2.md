@@ -43,7 +43,7 @@ $$
 
 ## Performance Optimizations
 
-- Fused `addmm`/`baddbmm` for uncoupled X-update (saves 2 kernel launches/iter)
+- Fused `addmm`/`baddbmm` for polynomial evaluations in both coupled and uncoupled paths (saves multiple kernel launches/iter)
 - Binary exponentiation for coupled Y-update (`_bpow_times_y`): O(log p) matmuls
 - `matmul(out=...)` throughout for zero-allocation iterations
 - Pre-extracted CPU coefficient triples

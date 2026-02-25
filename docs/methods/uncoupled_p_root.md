@@ -24,6 +24,7 @@ where `P_k` is a quadratic polynomial with tuned coefficients.
 - **Fused `addmm`**: The final `X_new = a·X + b·(X·Y)` uses a single `_addmm_into` BLAS call
   instead of separate matmul + copy + mul + add (saves 2 kernel launches per iteration)
 - **p-specific matmul chains**: p=4 uses `X^2 → (X^2)^2` (2 matmuls) instead of generic loop (3 matmuls)
+- **Binary exponentiation**: General $p \geq 5$ delegates to `_bpow_times_y` for $O(\log p)$ matmuls instead of an $O(p)$ naive loop.
 
 ## API
 
