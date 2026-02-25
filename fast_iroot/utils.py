@@ -60,7 +60,7 @@ def _bpow_times_y(
         torch.matmul(B, tmp1, out=out)
         return
     if p == 4:
-        # B^2 -> tmp1, B^2*Y -> tmp2, B^2*(B^2*Y) -> out  (3 matmuls)
+        # B^2 -> tmp1, B^2*Y -> tmp2, B^4*Y -> out  (3 matmuls)
         torch.matmul(B, B, out=tmp1)
         torch.matmul(tmp1, Y, out=tmp2)
         torch.matmul(tmp1, tmp2, out=out)

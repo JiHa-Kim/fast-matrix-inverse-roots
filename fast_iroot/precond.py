@@ -79,21 +79,24 @@ def precond_spd(
     A_norm = A_pre / u.unsqueeze(-1).unsqueeze(-1)
 
     # -------- optional diagonal shift to improve Gershgorin lower bound --------
-    # Note: a final row-sum normalization may scale the lower bound back down, so
-    # this is an improvement heuristic, not a strict post-normalization guarantee.
     if l_target > 0.0:
         abs_row_sum2 = A_norm.abs().sum(dim=-1)
         diag = A_norm.diagonal(dim1=-2, dim2=-1)
         off = abs_row_sum2 - diag.abs()
         g_lo = (diag - off).min(dim=-1)[0]  # per batch element
-        shift = (float(l_target) - g_lo).clamp_min(0.0)
+
+        # If we shift the diagonal by s, the new row sum becomes exactly 1 + s.
+        # So the new normalized Gershgorin lower bound is:
+        # g_new = (diag + s - off) / (1 + s)
+        # Setting g_new = l_target  =>  s = (l_target - g_lo) / (1 - l_target)
+        shift = (float(l_target) - g_lo) / max(1.0 - float(l_target), 1e-6)
+        shift = shift.clamp_min(0.0)
 
         if torch.any(shift > 0):
             A_norm = A_norm.clone()
             A_norm.diagonal(dim1=-2, dim2=-1).add_(shift.unsqueeze(-1))
-            abs_row_sum3 = A_norm.abs().sum(dim=-1)
-            u2 = abs_row_sum3.max(dim=-1)[0].clamp_min(eps)
-            A_norm = A_norm / u2.unsqueeze(-1).unsqueeze(-1)
+            # New normalizer is simply 1 + shift since original max row sum was 1
+            A_norm = A_norm / (1.0 + shift).unsqueeze(-1).unsqueeze(-1)
 
     # -------- final Gershgorin lower bound (per batch) --------
     abs_row_sum4 = A_norm.abs().sum(dim=-1)

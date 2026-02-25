@@ -3,8 +3,8 @@ from typing import Optional, Sequence, Tuple
 
 import torch
 
-from .utils import _matmul_into, _symmetrize_inplace
 from .coeffs import _quad_coeffs
+from .utils import _bpow_times_y, _addmm_into, _matmul_into, _symmetrize_inplace
 
 
 def _validate_p_val(p_val: int) -> None:
@@ -66,26 +66,15 @@ def inverse_proot_pe_quadratic_uncoupled(
         elif p_val == 2:
             _matmul_into(ws.X, ws.X, ws.T1)
             _matmul_into(ws.T1, A_norm, ws.T2)
-        elif p_val == 3:
-            _matmul_into(ws.X, ws.X, ws.T1)
-            _matmul_into(ws.T1, ws.X, ws.T2)
-            _matmul_into(ws.T2, A_norm, ws.T1)
-            ws.T2.copy_(ws.T1)
         elif p_val == 4:
             _matmul_into(ws.X, ws.X, ws.T1)  # X^2
             _matmul_into(ws.T1, ws.T1, ws.T2)  # X^4
             _matmul_into(ws.T2, A_norm, ws.T1)
             ws.T2.copy_(ws.T1)
         else:
-            ws.T1.copy_(ws.X)
-            for _ in range(p_val - 1):
-                _matmul_into(ws.T1, ws.X, ws.T2)
-                ws.T1.copy_(ws.T2)
-            _matmul_into(ws.T1, A_norm, ws.T2)  # Y in T2
+            _bpow_times_y(ws.X, A_norm, p_val, out=ws.T2, tmp1=ws.T1, tmp2=ws.Xbuf)
 
-        _matmul_into(ws.T2, ws.T2, ws.T1)  # Y^2 in T1
-        ws.T1.mul_(c)
-        ws.T1.add_(ws.T2, alpha=b)
+        _addmm_into(ws.T2, ws.T2, ws.T2, beta=b, alpha=c, out=ws.T1)
         ws.T1.diagonal(dim1=-2, dim2=-1).add_(a)  # B in T1
 
         _matmul_into(ws.X, ws.T1, ws.Xbuf)

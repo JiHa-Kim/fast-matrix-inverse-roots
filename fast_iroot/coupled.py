@@ -13,7 +13,6 @@ class IrootWorkspaceCoupled:
     Xbuf: torch.Tensor
     Y: torch.Tensor
     Ybuf: torch.Tensor
-    Y2: torch.Tensor
     B: torch.Tensor
     B2: torch.Tensor
     eye_mat: torch.Tensor
@@ -25,7 +24,6 @@ class InverseSolveWorkspaceCoupled:
     Zbuf: torch.Tensor
     Y: torch.Tensor
     Ybuf: torch.Tensor
-    Y2: torch.Tensor
     B: torch.Tensor
     B2: torch.Tensor
 
@@ -48,7 +46,6 @@ def _alloc_ws_coupled(A: torch.Tensor) -> IrootWorkspaceCoupled:
         Xbuf=A.new_empty(shape),
         Y=A.new_empty(shape),
         Ybuf=A.new_empty(shape),
-        Y2=A.new_empty(shape),
         B=A.new_empty(shape),
         B2=A.new_empty(shape),
         eye_mat=eye,
@@ -67,7 +64,6 @@ def _ws_ok_coupled(ws: Optional[IrootWorkspaceCoupled], A: torch.Tensor) -> bool
         and _ok(ws.Xbuf)
         and _ok(ws.Y)
         and _ok(ws.Ybuf)
-        and _ok(ws.Y2)
         and _ok(ws.B)
         and _ok(ws.B2)
         and _ok(ws.eye_mat)
@@ -84,7 +80,6 @@ def _alloc_ws_inverse_solve(
         Zbuf=M.new_empty(shape_M),
         Y=A.new_empty(shape_A),
         Ybuf=A.new_empty(shape_A),
-        Y2=A.new_empty(shape_A),
         B=A.new_empty(shape_A),
         B2=A.new_empty(shape_A),
     )
@@ -107,7 +102,6 @@ def _ws_ok_inverse_solve(
         and _ok_m(ws.Zbuf)
         and _ok_a(ws.Y)
         and _ok_a(ws.Ybuf)
-        and _ok_a(ws.Y2)
         and _ok_a(ws.B)
         and _ok_a(ws.B2)
     )
@@ -132,9 +126,9 @@ def inverse_sqrt_pe_quadratic(
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        _matmul_into(ws.Y, ws.Y, ws.Y2)
-        ws.B.copy_(ws.Y2).mul_(c)
-        ws.B.add_(ws.Y, alpha=b)
+        from .utils import _addmm_into
+
+        _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
         ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
 
         _matmul_into(ws.X, ws.B, ws.Xbuf)
@@ -173,9 +167,9 @@ def inverse_proot_pe_quadratic_coupled(
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        _matmul_into(ws.Y, ws.Y, ws.Y2)
-        ws.B.copy_(ws.Y2).mul_(c)
-        ws.B.add_(ws.Y, alpha=b)
+        from .utils import _addmm_into
+
+        _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
         ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
 
         _matmul_into(ws.X, ws.B, ws.Xbuf)
@@ -228,9 +222,9 @@ def inverse_solve_pe_quadratic_coupled(
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        _matmul_into(ws.Y, ws.Y, ws.Y2)
-        ws.B.copy_(ws.Y2).mul_(c)
-        ws.B.add_(ws.Y, alpha=b)
+        from .utils import _addmm_into
+
+        _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
         ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
 
         _matmul_into(ws.B, ws.Z, ws.Zbuf)

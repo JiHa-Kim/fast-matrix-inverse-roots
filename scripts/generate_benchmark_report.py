@@ -3,6 +3,7 @@ import subprocess
 import datetime
 import argparse
 import re
+import torch
 
 
 def run_benchmark(p_val, sizes="256,512", trials=5):
@@ -122,19 +123,7 @@ def main():
         f.write(f"- **Sizes**: {args.sizes}\n")
         f.write("- **Compiled**: Yes (`torch.compile(mode='max-autotune')`)\n")
         f.write(f"- **Trials per case**: {args.trials}\n")
-        # Determine actual hardware from a quick run
-        test_out = subprocess.run(
-            [
-                "uv",
-                "run",
-                "python",
-                "-c",
-                "import torch; print(f'GPU (bf16)' if torch.cuda.is_available() else 'CPU (fp32)')",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        hw = test_out.stdout.strip()
+        hw = "GPU (bf16)" if torch.cuda.is_available() else "CPU (fp32)"
         f.write(f"- **Hardware**: {hw}\n")
         f.write(
             "- **Methods Compared**: `Inverse-Newton` (baseline), `PE-Quad` (uncoupled quadratic), `PE-Quad-Coupled` (coupled quadratic).\n\n"
