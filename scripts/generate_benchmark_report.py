@@ -76,8 +76,6 @@ def parse_output_to_table(out_str, p_val):
             m_resid = re.search(r"resid\s+(\d+\.\d+e[-+]\d+)", line)
             m_yres = re.search(r"Y_res\s+(\d+\.\d+e[-+]\d+)", line)
             m_relerr = re.search(r"relerr\s+(\d+\.\d+e[-+]\d+)", line)
-            m_symx = re.search(r"symX\s+(\d+\.\d+e[-+]\d+)", line)
-            m_symw = re.search(r"symW\s+(\d+\.\d+e[-+]\d+)", line)
 
             total_time = m_time.group(1) if m_time else "-"
             iter_time = m_time.group(3) if m_time else "-"
@@ -122,7 +120,7 @@ def main():
 
         f.write("## Methodology\n")
         f.write(f"- **Sizes**: {args.sizes}\n")
-        f.write(f"- **Compiled**: Yes (`torch.compile(mode='max-autotune')`)\n")
+        f.write("- **Compiled**: Yes (`torch.compile(mode='max-autotune')`)\n")
         f.write(f"- **Trials per case**: {args.trials}\n")
         # Determine actual hardware from a quick run
         test_out = subprocess.run(

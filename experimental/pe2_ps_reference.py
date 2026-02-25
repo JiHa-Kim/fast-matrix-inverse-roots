@@ -45,9 +45,9 @@ def pe2_ps_y_update_reference(
 def _coeff_terms(a: float, b: float, c: float) -> Tuple[float, ...]:
     """Small helper retained with the reference for symbolic sanity checks."""
     return (
-        a * a,               # Y^1
-        2.0 * a * b,         # Y^2
-        b * b + 2.0 * a * c, # Y^3
-        2.0 * b * c,         # Y^4
-        c * c,               # Y^5
+        a * a,  # Y^1
+        2.0 * a * b,  # Y^2
+        b * b + 2.0 * a * c,  # Y^3
+        2.0 * b * c,  # Y^4
+        c * c,  # Y^5
     )

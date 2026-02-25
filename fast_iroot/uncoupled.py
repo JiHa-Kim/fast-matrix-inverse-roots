@@ -41,13 +41,7 @@ def _ws_ok_uncoupled(ws: Optional[IrootWorkspaceUncoupled], A: torch.Tensor) -> 
     def _ok(t: torch.Tensor) -> bool:
         return t.device == A.device and t.dtype == A.dtype and t.shape == A.shape
 
-    return (
-        _ok(ws.X)
-        and _ok(ws.Xbuf)
-        and _ok(ws.T1)
-        and _ok(ws.T2)
-        and _ok(ws.eye_mat)
-    )
+    return _ok(ws.X) and _ok(ws.Xbuf) and _ok(ws.T1) and _ok(ws.T2) and _ok(ws.eye_mat)
 
 
 @torch.no_grad()

@@ -132,9 +132,7 @@ def main():
                 for n in sizes:
                     for case in cases:
                         A = make_spd(n, case, device, dtype, g)
-                        torch.randn(
-                            n, n // 2, device=device, dtype=dtype, generator=g
-                        )
+                        torch.randn(n, n // 2, device=device, dtype=dtype, generator=g)
 
                         A_norm, stats = precond_spd(
                             A, mode="aol", ridge_rel=1e-4, l_target=0.05
