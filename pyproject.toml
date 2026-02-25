@@ -27,3 +27,6 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch" }
 torchvision = { index = "pytorch" }
+
+[tool.pytest.ini_options]
+pythonpath = "."
