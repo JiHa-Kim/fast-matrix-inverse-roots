@@ -62,7 +62,7 @@ $$
 4. Optional floor enforcement:
 - Gershgorin-style lower proxy
 - diagonal shift if needed to enforce `l_target`
-- properly scaling renormalizer by `1 + shift` to lock the explicit lower bounds
+- properly scaling renormalizer by `r + shift` to lock the explicit lower bounds
 
 Returned:
 - normalized `A_norm`
