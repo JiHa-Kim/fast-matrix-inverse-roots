@@ -3,7 +3,13 @@ from typing import Optional, Sequence, Tuple
 
 import torch
 
-from .utils import _matmul_into, _symmetrize_inplace, _bpow_times_y
+from .utils import (
+    _matmul_into,
+    _symmetrize_inplace,
+    _bpow_times_y,
+    _validate_p_val,
+    _check_square,
+)
 from .coeffs import _quad_coeffs
 
 
@@ -31,16 +37,11 @@ class InverseSolveWorkspaceCoupled:
 IsqrtWorkspaceCoupled = IrootWorkspaceCoupled
 
 
-def _validate_p_val(p_val: int) -> None:
-    if not isinstance(p_val, int) or p_val <= 0:
-        raise ValueError("p_val must be a positive integer")
-
-
 def _alloc_ws_coupled(A: torch.Tensor) -> IrootWorkspaceCoupled:
     shape = A.shape
     n = shape[-1]
-    # IMPORTANT: do NOT .contiguous() an expanded identity; that materializes a full batch of I.
-    eye = torch.eye(n, device=A.device, dtype=A.dtype).expand_as(A).clone()
+    # Store a single (n, n) identity; copy_() will broadcast it to the full batch shape.
+    eye = torch.eye(n, device=A.device, dtype=A.dtype)
     return IrootWorkspaceCoupled(
         X=A.new_empty(shape),
         Xbuf=A.new_empty(shape),
@@ -59,6 +60,13 @@ def _ws_ok_coupled(ws: Optional[IrootWorkspaceCoupled], A: torch.Tensor) -> bool
     def _ok(t: torch.Tensor) -> bool:
         return t.device == A.device and t.dtype == A.dtype and t.shape == A.shape
 
+    def _ok_eye(t: torch.Tensor) -> bool:
+        return (
+            t.device == A.device
+            and t.dtype == A.dtype
+            and t.shape == (A.shape[-1], A.shape[-1])
+        )
+
     return (
         _ok(ws.X)
         and _ok(ws.Xbuf)
@@ -66,7 +74,7 @@ def _ws_ok_coupled(ws: Optional[IrootWorkspaceCoupled], A: torch.Tensor) -> bool
         and _ok(ws.Ybuf)
         and _ok(ws.B)
         and _ok(ws.B2)
-        and _ok(ws.eye_mat)
+        and _ok_eye(ws.eye_mat)
     )
 
 
@@ -116,6 +124,7 @@ def inverse_sqrt_pe_quadratic(
     terminal_last_step: bool = True,
 ) -> Tuple[torch.Tensor, IsqrtWorkspaceCoupled]:
     """Coupled quadratic PE iteration for p=2 (inverse square root)."""
+    _check_square(A_norm)
     if not _ws_ok_coupled(ws, A_norm):
         ws = _alloc_ws_coupled(A_norm)
     assert ws is not None
@@ -157,6 +166,7 @@ def inverse_proot_pe_quadratic_coupled(
 ) -> Tuple[torch.Tensor, IrootWorkspaceCoupled]:
     """Coupled quadratic PE iteration for general p (inverse p-th root)."""
     _validate_p_val(p_val)
+    _check_square(A_norm)
     if not _ws_ok_coupled(ws, A_norm):
         ws = _alloc_ws_coupled(A_norm)
     assert ws is not None
@@ -212,8 +222,10 @@ def inverse_solve_pe_quadratic_coupled(
     as Z_{k+1} = B_k Z_k. Note that because B_k are dynamically generated left-to-right
     and applied iteratively, the final output corresponds to Z_T = B_{T-1}...B_1 B_0 M_norm.
     This is NOT generally equivalent to (B_0 B_1...B_{T-1}) M_norm approx A_norm^{-1} M_norm
-    unless the sequential B_k matrices commute.
+    unless the sequential B_k matrices commute. This non-commutativity is expected because
+    each B_k depends on the evolving Y_k, so they generally do not commute across steps.
     """
+    _check_square(A_norm)
     if not _ws_ok_inverse_solve(ws, A_norm, M_norm):
         ws = _alloc_ws_inverse_solve(A_norm, M_norm)
     assert ws is not None

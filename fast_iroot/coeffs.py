@@ -16,6 +16,8 @@ def _quad_coeffs(
     abc_t: Sequence[Tuple[float, float, float]] | torch.Tensor,
 ) -> List[Tuple[float, float, float]]:
     if isinstance(abc_t, torch.Tensor):
+        if abc_t.ndim != 2 or abc_t.shape[1] != 3:
+            raise ValueError(f"abc_t tensor must have shape (T, 3), got {abc_t.shape}")
         abc_cpu = abc_t.detach().to(device="cpu", dtype=torch.float64)
         return [
             (float(abc_cpu[t, 0]), float(abc_cpu[t, 1]), float(abc_cpu[t, 2]))
@@ -75,7 +77,10 @@ def build_pe_schedules(
         )
         base_desc = f"tuned(l_target={l_target}, seed={coeff_seed})"
 
-    s = max(float(coeff_safety), 1.0)
+    s = float(coeff_safety)
+    if s < 1.0:
+        raise ValueError(f"coeff_safety must be >= 1.0, got {s}")
+
     if s > 1.0:
         pe_quad[:, 1].div_(s)
         pe_quad[:, 2].div_(s * s)

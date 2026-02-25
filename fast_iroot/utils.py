@@ -2,6 +2,16 @@ from typing import Optional
 import torch
 
 
+def _check_square(A: torch.Tensor) -> None:
+    if A.ndim < 2 or A.shape[-1] != A.shape[-2]:
+        raise ValueError(f"Matrix must be square, got shape {A.shape}")
+
+
+def _validate_p_val(p_val: int) -> None:
+    if not isinstance(p_val, int) or p_val <= 0:
+        raise ValueError("p_val must be a positive integer")
+
+
 @torch.no_grad()
 def _symmetrize_inplace(M: torch.Tensor, tmp: Optional[torch.Tensor] = None) -> None:
     if tmp is None:

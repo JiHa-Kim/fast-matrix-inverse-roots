@@ -4,12 +4,14 @@ from typing import Optional, Sequence, Tuple
 import torch
 
 from .coeffs import _quad_coeffs
-from .utils import _bpow_times_y, _addmm_into, _matmul_into, _symmetrize_inplace
-
-
-def _validate_p_val(p_val: int) -> None:
-    if not isinstance(p_val, int) or p_val <= 0:
-        raise ValueError("p_val must be a positive integer")
+from .utils import (
+    _bpow_times_y,
+    _addmm_into,
+    _matmul_into,
+    _symmetrize_inplace,
+    _validate_p_val,
+    _check_square,
+)
 
 
 @dataclass
@@ -24,7 +26,8 @@ class IrootWorkspaceUncoupled:
 def _alloc_ws_uncoupled(A: torch.Tensor) -> IrootWorkspaceUncoupled:
     shape = A.shape
     n = shape[-1]
-    eye = torch.eye(n, device=A.device, dtype=A.dtype).expand_as(A).clone()
+    # Store a single (n, n) identity; copy_() will broadcast it to the full batch shape.
+    eye = torch.eye(n, device=A.device, dtype=A.dtype)
     return IrootWorkspaceUncoupled(
         X=A.new_empty(shape),
         Xbuf=A.new_empty(shape),
@@ -41,7 +44,16 @@ def _ws_ok_uncoupled(ws: Optional[IrootWorkspaceUncoupled], A: torch.Tensor) -> 
     def _ok(t: torch.Tensor) -> bool:
         return t.device == A.device and t.dtype == A.dtype and t.shape == A.shape
 
-    return _ok(ws.X) and _ok(ws.Xbuf) and _ok(ws.T1) and _ok(ws.T2) and _ok(ws.eye_mat)
+    def _ok_eye(t: torch.Tensor) -> bool:
+        return (
+            t.device == A.device
+            and t.dtype == A.dtype
+            and t.shape == (A.shape[-1], A.shape[-1])
+        )
+
+    return (
+        _ok(ws.X) and _ok(ws.Xbuf) and _ok(ws.T1) and _ok(ws.T2) and _ok_eye(ws.eye_mat)
+    )
 
 
 @torch.no_grad()
@@ -53,6 +65,7 @@ def inverse_proot_pe_quadratic_uncoupled(
     symmetrize_X: bool = True,
 ) -> Tuple[torch.Tensor, IrootWorkspaceUncoupled]:
     _validate_p_val(p_val)
+    _check_square(A_norm)
     if not _ws_ok_uncoupled(ws, A_norm):
         ws = _alloc_ws_uncoupled(A_norm)
     assert ws is not None

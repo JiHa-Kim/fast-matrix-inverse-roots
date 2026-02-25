@@ -6,6 +6,8 @@ from typing import Optional
 
 import torch
 
+from .utils import _validate_p_val, _check_square
+
 
 @dataclass
 class QualityStats:
@@ -20,11 +22,6 @@ class QualityStats:
 def _bnorm(x: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     # Frobenius/vector norm over the last two dims (works for (..., n, 1) and (..., n, k))
     return torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True).clamp_min(eps)
-
-
-def _validate_p_val(p_val: int) -> None:
-    if not isinstance(p_val, int) or p_val <= 0:
-        raise ValueError("p_val must be a positive integer")
 
 
 def _ensure_eye(Af: torch.Tensor, eye_mat: Optional[torch.Tensor]) -> torch.Tensor:
@@ -68,7 +65,9 @@ def _agg_nan_if_empty(v: torch.Tensor) -> float:
 def exact_inverse_proot(
     A: torch.Tensor, p_val: int = 2, eps: float = 1e-20
 ) -> torch.Tensor:
+    """Exact inverse p-th root. Eigenvalues are clamped to eps to prevent blow-ups."""
     _validate_p_val(p_val)
+    _check_square(A)
     # Supports batching: A shape (..., n, n)
     eigvals, V = torch.linalg.eigh(A.double())
     eigvals = eigvals.clamp_min(eps)
@@ -87,6 +86,8 @@ def iroot_relative_error(
     Xhat: torch.Tensor, A: torch.Tensor, p_val: int = 2
 ) -> torch.Tensor:
     _validate_p_val(p_val)
+    _check_square(Xhat)
+    _check_square(A)
     # Returns per-batch relative Fro error (shape: batch)
     Xref = exact_inverse_proot(A, p_val=p_val)
     denom = torch.linalg.matrix_norm(Xref, ord="fro").clamp_min(1e-12)
@@ -117,6 +118,8 @@ def compute_quality_stats(
       - X is an approximate A^{-1/2} for p_val=2, or A^{-1/p} for general p_val.
     """
     _validate_p_val(p_val)
+    _check_square(X)
+    _check_square(A)
     n = A.shape[-1]
     batch = A.shape[:-2]
 
@@ -170,8 +173,8 @@ def compute_quality_stats(
     else:
         mv_err = float("nan")
 
-    # Power iteration on R (dominant eigenvalue-magnitude style estimate, not
-    # generally a true spectral norm for non-normal R).
+    # Estimate ||R||_2 via power iteration on R^T R.
+    # For sufficient iterations, this is a standard spectral norm estimator.
     if power_iters > 0:
         it = int(power_iters)
         v = torch.randn(*batch, n, 1, device=Af.device, dtype=Af.dtype)

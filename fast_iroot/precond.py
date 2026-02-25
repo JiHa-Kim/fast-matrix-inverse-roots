@@ -4,6 +4,8 @@ from typing import Tuple
 
 import torch
 
+from .utils import _check_square
+
 
 @dataclass
 class PrecondStats:
@@ -27,6 +29,14 @@ def precond_spd(
     lambda_max_power_iters: int = 8,
     lambda_max_safety: float = 1.02,
 ) -> Tuple[torch.Tensor, PrecondStats]:
+    """
+    Preconditions a symmetric positive definite (SPD) matrix.
+
+    Note: The diagonal shift logic assumes that the absolute value of the diagonal
+    increases exactly by the shift, i.e., `|a_ii + s| = |a_ii| + s`. This holds
+    true for matrices with non-negative diagonals, such as SPD matrices.
+    """
+    _check_square(A)
     # -------- precondition (scale) --------
     if mode == "none":
         A_pre = A
@@ -85,18 +95,15 @@ def precond_spd(
         off = abs_row_sum2 - diag.abs()
         g_lo = (diag - off).min(dim=-1)[0]  # per batch element
 
-        # If we shift the diagonal by s, the new row sum becomes exactly 1 + s.
-        # So the new normalized Gershgorin lower bound is:
-        # g_new = (diag + s - off) / (1 + s)
-        # Setting g_new = l_target  =>  s = (l_target - g_lo) / (1 - l_target)
-        shift = (float(l_target) - g_lo) / max(1.0 - float(l_target), 1e-6)
+        r = abs_row_sum2.max(dim=-1)[0].clamp_min(eps)
+        den = max(1.0 - float(l_target), 1e-6)
+        shift = (float(l_target) * r - g_lo) / den
         shift = shift.clamp_min(0.0)
 
         if torch.any(shift > 0):
             A_norm = A_norm.clone()
             A_norm.diagonal(dim1=-2, dim2=-1).add_(shift.unsqueeze(-1))
-            # New normalizer is simply 1 + shift since original max row sum was 1
-            A_norm = A_norm / (1.0 + shift).unsqueeze(-1).unsqueeze(-1)
+            A_norm = A_norm / (r + shift).unsqueeze(-1).unsqueeze(-1)
 
     # -------- final Gershgorin lower bound (per batch) --------
     abs_row_sum4 = A_norm.abs().sum(dim=-1)
