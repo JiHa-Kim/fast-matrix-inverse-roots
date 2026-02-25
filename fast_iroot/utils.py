@@ -1,3 +1,4 @@
+import math
 from typing import Optional
 import torch
 
@@ -45,7 +46,7 @@ def _addmm_into(
     else:
         batch_shape = mat1.shape[:-2]
         n, m = mat1.shape[-2], mat2.shape[-1]
-        k = int(torch.tensor(batch_shape).prod().item()) if len(batch_shape) else 1
+        k = math.prod(batch_shape) if len(batch_shape) else 1
         outv = out.reshape(k, n, m)
         biasv = bias.reshape(k, n, m)
         m1v = mat1.reshape(k, n, mat1.shape[-1])

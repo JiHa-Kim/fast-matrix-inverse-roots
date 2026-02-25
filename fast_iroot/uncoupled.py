@@ -67,10 +67,9 @@ def inverse_proot_pe_quadratic_uncoupled(
             _matmul_into(ws.X, ws.X, ws.T1)
             _matmul_into(ws.T1, A_norm, ws.T2)
         elif p_val == 4:
-            _matmul_into(ws.X, ws.X, ws.T1)  # X^2
-            _matmul_into(ws.T1, ws.T1, ws.T2)  # X^4
-            _matmul_into(ws.T2, A_norm, ws.T1)
-            ws.T2.copy_(ws.T1)
+            _matmul_into(ws.X, ws.X, ws.T2)  # X^2
+            _matmul_into(ws.T2, ws.T2, ws.T1)  # X^4
+            _matmul_into(ws.T1, A_norm, ws.T2)
         else:
             _bpow_times_y(ws.X, A_norm, p_val, out=ws.T2, tmp1=ws.T1, tmp2=ws.Xbuf)
 

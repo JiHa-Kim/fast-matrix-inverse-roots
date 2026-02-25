@@ -13,6 +13,14 @@ from .uncoupled import (
     IrootWorkspaceUncoupled,
     inverse_proot_pe_quadratic_uncoupled,
 )
+from .metrics import (
+    QualityStats,
+    compute_quality_stats,
+    exact_inverse_proot,
+    exact_inverse_sqrt,
+    iroot_relative_error,
+    isqrt_relative_error,
+)
 
 __all__ = [
     "AutoPolicyConfig",
@@ -29,4 +37,10 @@ __all__ = [
     "precond_spd",
     "IrootWorkspaceUncoupled",
     "inverse_proot_pe_quadratic_uncoupled",
+    "QualityStats",
+    "compute_quality_stats",
+    "exact_inverse_proot",
+    "exact_inverse_sqrt",
+    "iroot_relative_error",
+    "isqrt_relative_error",
 ]

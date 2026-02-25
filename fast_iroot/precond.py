@@ -49,7 +49,9 @@ def precond_spd(
         d = torch.rsqrt(A.abs().sum(dim=-1).clamp_min(eps))
         A_pre = (d.unsqueeze(-1) * A) * d.unsqueeze(-2)
     else:
-        raise ValueError(f"unknown preconditioner: {mode}")
+        raise ValueError(
+            f"unknown preconditioner: {mode}. Supported modes are 'none', 'frob', 'aol'."
+        )
 
     # -------- ridge if requested --------
     if ridge_rel > 0.0:

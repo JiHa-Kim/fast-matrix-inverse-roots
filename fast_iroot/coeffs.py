@@ -18,11 +18,21 @@ def _quad_coeffs(
     if isinstance(abc_t, torch.Tensor):
         if abc_t.ndim != 2 or abc_t.shape[1] != 3:
             raise ValueError(f"abc_t tensor must have shape (T, 3), got {abc_t.shape}")
+        if abc_t.shape[0] == 0:
+            raise ValueError(
+                "abc_t must contain at least one (a,b,c) coefficient triple"
+            )
         abc_cpu = abc_t.detach().to(device="cpu", dtype=torch.float64)
         return [
             (float(abc_cpu[t, 0]), float(abc_cpu[t, 1]), float(abc_cpu[t, 2]))
             for t in range(int(abc_cpu.shape[0]))
         ]
+
+    if len(abc_t) == 0:
+        raise ValueError("abc_t must contain at least one (a,b,c) coefficient triple")
+    for item in abc_t:
+        if len(item) != 3:
+            raise ValueError(f"Each item in abc_t must be a triple, got {item}")
     return [(float(a), float(b), float(c)) for (a, b, c) in abc_t]
 
 
@@ -39,6 +49,11 @@ def build_pe_schedules(
 
     Returns (pe_quad_tensor, description_string).
     """
+    if coeff_mode not in ("precomputed", "auto", "tuned"):
+        raise ValueError(
+            f"Unknown coeff_mode: '{coeff_mode}'. Supported modes are 'precomputed', 'auto', 'tuned'."
+        )
+
     pe4_005 = torch.tensor(
         [
             [3.9021484662, -7.5907070592, 4.8608311100],

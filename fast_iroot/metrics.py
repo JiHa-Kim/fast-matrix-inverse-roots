@@ -44,9 +44,16 @@ def _ensure_eye(Af: torch.Tensor, eye_mat: Optional[torch.Tensor]) -> torch.Tens
     if eye_mat.shape == Af.shape:
         return eye_mat
 
+    if len(eye_mat.shape) >= 2 and eye_mat.shape[-2:] == (n, n):
+        try:
+            torch.broadcast_shapes(eye_mat.shape, Af.shape)
+            return eye_mat
+        except RuntimeError:
+            pass
+
     raise ValueError(
         f"eye_mat has incompatible shape {tuple(eye_mat.shape)} for A shape "
-        f"{tuple(Af.shape)}; expected {(n, n)} or {tuple(Af.shape)}"
+        f"{tuple(Af.shape)}; expected broadcastable shape ending in {(n, n)}"
     )
 
 
@@ -121,6 +128,9 @@ def compute_quality_stats(
       - A is SPD-ish (at least for "exact" reference and solve-based probes).
       - X is an approximate A^{-1/2} for p_val=2, or A^{-1/p} for general p_val.
     """
+    if A.is_complex() or X.is_complex():
+        raise ValueError("compute_quality_stats does not support complex tensors.")
+
     _validate_p_val(p_val)
     _check_square(X)
     _check_square(A)
