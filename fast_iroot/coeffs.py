@@ -54,7 +54,7 @@ def build_pe_schedules(
         coeff_mode == "precomputed"
         or (
             coeff_mode == "auto"
-            and math.isclose(float(l_target), 0.05, rel_tol=0.0, abs_tol=1e-12)
+            and math.isclose(float(l_target), 0.05, rel_tol=0.0, abs_tol=1e-6)
         )
     )
     if use_precomputed:

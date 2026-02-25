@@ -216,6 +216,10 @@ def inverse_solve_pe_quadratic_coupled(
         raise ValueError(
             f"M_norm must have shape[..., {A_norm.shape[-1]}, :], got {M_norm.shape}"
         )
+    if M_norm.device != A_norm.device:
+        raise ValueError("A_norm and M_norm must be on the same device")
+    if M_norm.dtype != A_norm.dtype:
+        raise ValueError("A_norm and M_norm must have the same dtype")
     if not _ws_ok_inverse_solve(ws, A_norm, M_norm):
         ws = _alloc_ws_inverse_solve(A_norm, M_norm)
     assert ws is not None

@@ -10,6 +10,21 @@ class AutoPolicyConfig:
     kappa_ns3_max: float
     kappa_pe2_min: float
 
+    def __post_init__(self):
+        if self.policy not in ("size_rho", "interval", "combined"):
+            raise ValueError(f"Unknown auto policy: {self.policy}")
+        if self.n_switch < 1:
+            raise ValueError("n_switch must be >= 1")
+        if self.rho_switch <= 0 or self.kappa_ns3_max <= 0 or self.kappa_pe2_min <= 0:
+            raise ValueError("Thresholds must be positive")
+        if (
+            self.policy in ("interval", "combined")
+            and self.kappa_ns3_max > self.kappa_pe2_min
+        ):
+            raise ValueError(
+                "kappa_ns3_max cannot be strictly greater than kappa_pe2_min"
+            )
+
 
 def choose_auto_method(n: int, stats: PrecondStats, cfg: AutoPolicyConfig) -> str:
     # Return one of: "NS3", "PE-NS3", "PE2"

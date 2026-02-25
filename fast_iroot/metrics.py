@@ -72,7 +72,7 @@ def exact_inverse_proot(
     eigvals, V = torch.linalg.eigh(A.double())
     eigvals = eigvals.clamp_min(eps)
     D = torch.diag_embed(eigvals ** (-1.0 / p_val))
-    X = V @ D @ V.mT
+    X = V @ D @ V.mH
     return X.to(dtype=A.dtype)
 
 
@@ -88,6 +88,10 @@ def iroot_relative_error(
     _validate_p_val(p_val)
     _check_square(Xhat)
     _check_square(A)
+    if Xhat.shape != A.shape:
+        raise ValueError(
+            f"Xhat and A must have compatible shapes, got {Xhat.shape} and {A.shape}"
+        )
     # Returns per-batch relative Fro error (shape: batch)
     Xref = exact_inverse_proot(A, p_val=p_val)
     denom = torch.linalg.matrix_norm(Xref, ord="fro").clamp_min(1e-12)
