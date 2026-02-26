@@ -8,9 +8,10 @@ import pytest
 from fast_iroot.utils import _addmm_into
 from fast_iroot.coupled import (
     inverse_solve_pe_quadratic_coupled,
+    inverse_proot_pe_quadratic_coupled,
     InverseSolveWorkspaceCoupled,
 )
-from fast_iroot import build_pe_schedules, precond_spd
+from fast_iroot import build_pe_schedules, precond_spd, apply_inverse_root
 from fast_iroot.metrics import isqrt_relative_error, exact_inverse_proot
 
 
@@ -118,3 +119,56 @@ def test_coupled_pe_vs_exact():
 
     rel_diff = torch.linalg.matrix_norm(Z - Z_exact) / torch.linalg.matrix_norm(Z_exact)
     assert rel_diff < 0.05
+
+
+def test_symmetrize_every_validation():
+    A = torch.randn(4, 4)
+    A = (A @ A.mT) + torch.eye(4) * 0.1
+    M = torch.eye(4)
+    abc_t = [(1.2, -0.2, 0.0)]
+
+    with pytest.raises(ValueError, match="symmetrize_every"):
+        inverse_proot_pe_quadratic_coupled(
+            A, abc_t=abc_t, p_val=3, symmetrize_every=0
+        )
+
+    with pytest.raises(ValueError, match="symmetrize_every"):
+        inverse_solve_pe_quadratic_coupled(
+            A, M, abc_t=abc_t, p_val=3, symmetrize_every=0
+        )
+
+
+def test_apply_inverse_root_symmetrize_every_passthrough():
+    n = 8
+    torch.manual_seed(7)
+    A = torch.randn(n, n)
+    A = (A @ A.mT) / n + torch.eye(n) * 0.1
+    A_norm, _ = precond_spd(A, mode="frob", l_target=0.1)
+    M = torch.eye(n)
+
+    abc_t, _ = build_pe_schedules(
+        l_target=0.1,
+        device=A_norm.device,
+        p_val=3,
+        coeff_mode="tuned",
+        coeff_seed=0,
+        coeff_safety=1.0,
+        coeff_no_final_safety=False,
+    )
+    abc_coeffs = [
+        (a, b, c)
+        for a, b, c in zip(
+            abc_t[:, 0].tolist(), abc_t[:, 1].tolist(), abc_t[:, 2].tolist()
+        )
+    ]
+
+    Z1, _ = apply_inverse_root(
+        A_norm, M, abc_coeffs, p_val=3, symmetrize_Y=True, symmetrize_every=1
+    )
+    Z2, _ = apply_inverse_root(
+        A_norm, M, abc_coeffs, p_val=3, symmetrize_Y=True, symmetrize_every=2
+    )
+
+    assert torch.isfinite(Z1).all()
+    assert torch.isfinite(Z2).all()
+    assert Z1.shape == Z2.shape == M.shape

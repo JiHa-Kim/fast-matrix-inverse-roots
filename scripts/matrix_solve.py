@@ -115,6 +115,7 @@ def _build_solve_runner(
     cheb_degree: int,
     p_val: int = 2,
     l_min: float = 0.05,
+    symmetrize_every: int = 1,
 ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
     if method == "PE-Quad-Inverse-Multiply":
         ws_unc = None
@@ -144,6 +145,7 @@ def _build_solve_runner(
                 p_val=p_val,
                 ws=ws_cpl,
                 symmetrize_Y=True,
+                symmetrize_every=symmetrize_every,
                 terminal_last_step=True,
             )
             return Zn
@@ -183,6 +185,7 @@ def eval_solve_method(
     timing_reps: int,
     p_val: int = 2,
     l_min: float = 0.05,
+    symmetrize_every: int = 1,
 ) -> SolveBenchResult:
     ms_iter_list: List[float] = []
     err_list: List[float] = []
@@ -220,6 +223,7 @@ def eval_solve_method(
             cheb_degree=cheb_degree,
             p_val=p_val,
             l_min=l_min_eff,
+            symmetrize_every=symmetrize_every,
         )
 
         # measure memory
@@ -302,11 +306,19 @@ def main():
     p.add_argument("--l-target", type=float, default=0.05)
     p.add_argument("--timing-reps", type=int, default=5)
     p.add_argument(
+        "--symmetrize-every",
+        type=int,
+        default=1,
+        help="Apply Y symmetrization every k non-terminal steps in coupled apply (k>=1).",
+    )
+    p.add_argument(
         "--cheb-degree", type=int, default=32, help="Degree for Chebyshev polynomial"
     )
     p.add_argument("--compile", action="store_true")
 
     args = p.parse_args()
+    if int(args.symmetrize_every) < 1:
+        raise ValueError(f"--symmetrize-every must be >= 1, got {args.symmetrize_every}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
@@ -345,7 +357,8 @@ def main():
             k = args.k
             print(f"\n== SPD Size {n}x{n} | RHS {n}x{k} | dtype={dtype_compute} ==")
             print(
-                f"precond={args.precond} | l_target={args.l_target} | p={p_val} | cheb_deg={args.cheb_degree}"
+                f"precond={args.precond} | l_target={args.l_target} | p={p_val} | "
+                f"cheb_deg={args.cheb_degree} | symEvery={args.symmetrize_every}"
             )
 
             for case in cases:
@@ -384,6 +397,7 @@ def main():
                         timing_reps=args.timing_reps,
                         p_val=p_val,
                         l_min=args.l_target,  # Assumed via preconditioning
+                        symmetrize_every=args.symmetrize_every,
                     )
                     rows.append((name, rr))
 

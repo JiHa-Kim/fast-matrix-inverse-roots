@@ -227,6 +227,7 @@ def _build_runner(
     method: str,
     pe_quad_coeffs: Sequence[Tuple[float, float, float]],
     symmetrize_Y: bool,
+    symmetrize_every: int,
     p_val: int = 2,
 ) -> Callable[[torch.Tensor, Optional[object]], Tuple[torch.Tensor, object]]:
     """Returns a function runner(A_norm, ws) -> (Xn, ws2) with method choice fixed."""
@@ -244,6 +245,7 @@ def _build_runner(
                 p_val=p_val,
                 ws=ws,
                 symmetrize_Y=symmetrize_Y,
+                symmetrize_every=symmetrize_every,
                 terminal_last_step=True,
             )
 
@@ -271,6 +273,7 @@ def _build_runner(
                 p_val=p_val,
                 ws=ws,
                 symmetrize_Y=symmetrize_Y,
+                symmetrize_every=symmetrize_every,
                 terminal_last_step=True,
             )
 
@@ -288,6 +291,7 @@ def eval_method(
     pe_quad_coeffs: Sequence[Tuple[float, float, float]],
     timing_reps: int,
     symmetrize_Y: bool,
+    symmetrize_every: int,
     compute_relerr: bool,
     power_iters: int,
     mv_samples: int,
@@ -345,6 +349,7 @@ def eval_method(
             method=method,
             pe_quad_coeffs=pe_quad_coeffs,
             symmetrize_Y=symmetrize_Y,
+            symmetrize_every=symmetrize_every,
             p_val=p_val,
         )
 
@@ -484,12 +489,20 @@ def main():
     p.add_argument("--timing-reps", type=int, default=1)
     p.add_argument("--no-symmetrize-y", action="store_true")
     p.add_argument(
+        "--symmetrize-every",
+        type=int,
+        default=1,
+        help="Apply Y symmetrization every k non-terminal steps (k>=1).",
+    )
+    p.add_argument(
         "--metrics-mode", type=str, default="full", choices=["full", "coupled"]
     )
     p.add_argument("--power-iters", type=int, default=0)
     p.add_argument("--mv-samples", type=int, default=0)
     p.add_argument("--hard-probe-iters", type=int, default=0)
     args = p.parse_args()
+    if int(args.symmetrize_every) < 1:
+        raise ValueError(f"--symmetrize-every must be >= 1, got {args.symmetrize_every}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
@@ -538,8 +551,9 @@ def main():
                 f"== SPD size {n}x{n} | dtype={dtype_compute} | compile={args.compile} | "
                 f"precond={args.precond} | l_target={args.l_target} | lmax=row_sum | terminal=True | "
                 f"timing_reps={max(1, args.timing_reps)} | symY={not args.no_symmetrize_y} | "
+                f"symEvery={args.symmetrize_every} | "
                 f"metrics={args.metrics_mode} | power_it={args.power_iters} | "
-                f"mv_k={args.mv_samples} | hard_it={args.hard_probe_iters} =="
+                f"mv_k={args.mv_samples} | hard_it={args.hard_probe_iters} ==" 
             )
 
             # Warmup
@@ -587,6 +601,7 @@ def main():
                         pe_quad_coeffs=pe_quad_coeffs,
                         timing_reps=args.timing_reps,
                         symmetrize_Y=not args.no_symmetrize_y,
+                        symmetrize_every=args.symmetrize_every,
                         compute_relerr=(args.metrics_mode == "full"),
                         power_iters=args.power_iters,
                         mv_samples=args.mv_samples,

@@ -112,10 +112,14 @@ def inverse_sqrt_pe_quadratic(
     abc_t: Sequence[Tuple[float, float, float]] | torch.Tensor,
     ws: Optional[IsqrtWorkspaceCoupled] = None,
     symmetrize_Y: bool = True,
+    symmetrize_every: int = 1,
     terminal_last_step: bool = True,
 ) -> Tuple[torch.Tensor, IsqrtWorkspaceCoupled]:
     """Coupled quadratic PE iteration for p=2 (inverse square root)."""
     _check_square(A_norm)
+    sym_every = int(symmetrize_every)
+    if sym_every < 1:
+        raise ValueError(f"symmetrize_every must be >= 1, got {symmetrize_every}")
     if not _ws_ok_coupled(ws, A_norm):
         ws = _alloc_ws_coupled(A_norm)
     assert ws is not None
@@ -138,7 +142,7 @@ def inverse_sqrt_pe_quadratic(
 
         _matmul_into(ws.Y, ws.B, ws.B2)
         _matmul_into(ws.B, ws.B2, ws.Ybuf)
-        if symmetrize_Y:
+        if symmetrize_Y and ((t + 1) % sym_every == 0):
             # ws.B2 is used as scratch here; contents destroyed.
             _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
@@ -153,11 +157,15 @@ def inverse_proot_pe_quadratic_coupled(
     p_val: int = 2,
     ws: Optional[IrootWorkspaceCoupled] = None,
     symmetrize_Y: bool = True,
+    symmetrize_every: int = 1,
     terminal_last_step: bool = True,
 ) -> Tuple[torch.Tensor, IrootWorkspaceCoupled]:
     """Coupled quadratic PE iteration for general p (inverse p-th root)."""
     _validate_p_val(p_val)
     _check_square(A_norm)
+    sym_every = int(symmetrize_every)
+    if sym_every < 1:
+        raise ValueError(f"symmetrize_every must be >= 1, got {symmetrize_every}")
 
     # p=2 has an optimized coupled implementation (avoids an extra B->B2 copy).
     if p_val == 2:
@@ -166,6 +174,7 @@ def inverse_proot_pe_quadratic_coupled(
             abc_t=abc_t,
             ws=ws,
             symmetrize_Y=symmetrize_Y,
+            symmetrize_every=sym_every,
             terminal_last_step=terminal_last_step,
         )
         return X, ws2
@@ -212,7 +221,7 @@ def inverse_proot_pe_quadratic_coupled(
             _matmul_into(ws.Ybuf, ws.B2, ws.B)
             ws.Ybuf, ws.B = ws.B, ws.Ybuf
 
-        if symmetrize_Y:
+        if symmetrize_Y and ((t + 1) % sym_every == 0):
             # ws.B2 is used as scratch here; contents destroyed.
             _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
@@ -228,6 +237,7 @@ def inverse_solve_pe_quadratic_coupled(
     p_val: int = 2,
     ws: Optional[InverseSolveWorkspaceCoupled] = None,
     symmetrize_Y: bool = True,
+    symmetrize_every: int = 1,
     terminal_last_step: bool = True,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """Coupled quadratic PE iteration for computing an inverse-like solve on M.
@@ -238,6 +248,9 @@ def inverse_solve_pe_quadratic_coupled(
     """
     _validate_p_val(p_val)
     _check_square(A_norm)
+    sym_every = int(symmetrize_every)
+    if sym_every < 1:
+        raise ValueError(f"symmetrize_every must be >= 1, got {symmetrize_every}")
     if M_norm.shape[-2] != A_norm.shape[-1]:
         raise ValueError(
             f"M_norm must have shape[..., {A_norm.shape[-1]}, :], got {M_norm.shape}"
@@ -291,7 +304,7 @@ def inverse_solve_pe_quadratic_coupled(
             _matmul_into(ws.Ybuf, ws.B2, ws.B)
             ws.Ybuf, ws.B = ws.B, ws.Ybuf
 
-        if symmetrize_Y:
+        if symmetrize_Y and ((t + 1) % sym_every == 0):
             # ws.B2 is used as scratch here; contents destroyed.
             _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y

@@ -11,6 +11,7 @@ def apply_inverse(
     abc_t: Sequence[Tuple[float, float, float]] | torch.Tensor,
     ws: Optional[InverseSolveWorkspaceCoupled] = None,
     symmetrize_Y: bool = True,
+    symmetrize_every: int = 1,
     terminal_last_step: bool = True,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """
@@ -26,6 +27,7 @@ def apply_inverse(
         p_val=1,
         ws=ws,
         symmetrize_Y=symmetrize_Y,
+        symmetrize_every=symmetrize_every,
         terminal_last_step=terminal_last_step,
     )
 
@@ -38,6 +40,7 @@ def apply_inverse_root(
     p_val: int = 2,
     ws: Optional[InverseSolveWorkspaceCoupled] = None,
     symmetrize_Y: bool = True,
+    symmetrize_every: int = 1,
     terminal_last_step: bool = True,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """
@@ -53,5 +56,6 @@ def apply_inverse_root(
         p_val=p_val,
         ws=ws,
         symmetrize_Y=symmetrize_Y,
+        symmetrize_every=symmetrize_every,
         terminal_last_step=terminal_last_step,
     )
