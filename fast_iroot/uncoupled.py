@@ -49,9 +49,15 @@ def inverse_proot_pe_quadratic_uncoupled(
     p_val: int = 2,
     ws: Optional[IrootWorkspaceUncoupled] = None,
     symmetrize_X: bool = True,
+    assume_spd: bool = True,
 ) -> Tuple[torch.Tensor, IrootWorkspaceUncoupled]:
     _validate_p_val(p_val)
     _check_square(A_norm)
+    assume_spd = bool(assume_spd)
+    if not assume_spd and bool(symmetrize_X):
+        raise ValueError(
+            "symmetrize_X=True requires assume_spd=True for inverse_proot_pe_quadratic_uncoupled"
+        )
     if not _ws_ok_uncoupled(ws, A_norm):
         ws = _alloc_ws_uncoupled(A_norm)
     assert ws is not None

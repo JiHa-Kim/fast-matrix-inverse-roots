@@ -21,6 +21,9 @@ from .uncoupled import (
 from .apply import (
     InverseApplyAutoWorkspace,
     apply_inverse,
+    apply_inverse_sqrt_spd,
+    apply_inverse_sqrt_non_spd,
+    apply_inverse_sqrt_gram_spd,
     apply_inverse_root,
     apply_inverse_root_auto,
 )
@@ -61,6 +64,9 @@ __all__ = [
     "iroot_relative_error",
     "isqrt_relative_error",
     "apply_inverse",
+    "apply_inverse_sqrt_spd",
+    "apply_inverse_sqrt_non_spd",
+    "apply_inverse_sqrt_gram_spd",
     "apply_inverse_root",
     "apply_inverse_root_auto",
     "InverseApplyAutoWorkspace",

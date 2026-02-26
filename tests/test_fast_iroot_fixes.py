@@ -1,5 +1,6 @@
 import sys
 import os
+import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -7,16 +8,27 @@ import torch
 import pytest
 from fast_iroot.utils import _addmm_into
 from fast_iroot.coupled import (
+    inverse_sqrt_pe_quadratic,
     inverse_solve_pe_quadratic_coupled,
     inverse_proot_pe_quadratic_coupled,
 )
 from fast_iroot import (
     apply_inverse_root,
     apply_inverse_root_auto,
+    apply_inverse_sqrt_spd,
+    apply_inverse_sqrt_non_spd,
+    apply_inverse_sqrt_gram_spd,
     build_pe_schedules,
+    inverse_proot_pe_quadratic_uncoupled,
+    precond_gram_spd,
     precond_spd,
 )
-from fast_iroot.metrics import isqrt_relative_error, exact_inverse_proot
+from fast_iroot.metrics import (
+    isqrt_relative_error,
+    exact_inverse_proot,
+    iroot_relative_error,
+    compute_quality_stats,
+)
 
 
 def test_addmm_into_multibatch_shape():
@@ -305,3 +317,265 @@ def test_apply_inverse_root_auto_strategy_validation():
 
     with pytest.raises(ValueError, match="expected_reuse"):
         apply_inverse_root_auto(A, M, abc_t=abc_t, p_val=2, expected_reuse=0)
+
+
+def test_coupled_non_spd_uses_general_y_update():
+    torch.manual_seed(2026)
+    n = 5
+    A = torch.randn(n, n, dtype=torch.float32)
+    A = A + 0.25 * torch.eye(n, dtype=A.dtype)
+    abc_t = [(1.1, -0.2, 0.05)]
+
+    _, ws = inverse_proot_pe_quadratic_coupled(
+        A,
+        abc_t=abc_t,
+        p_val=3,
+        symmetrize_Y=False,
+        terminal_last_step=False,
+        assume_spd=False,
+    )
+
+    a, b, c = abc_t[0]
+    A2 = A @ A
+    B = b * A + c * A2
+    B.diagonal().add_(a)
+    Y_ref = (B @ B @ B) @ A
+    assert torch.allclose(ws.Y, Y_ref, atol=1e-5, rtol=1e-5)
+
+
+def test_non_spd_requires_symmetrize_off():
+    A = torch.randn(4, 4)
+    M = torch.randn(4, 3)
+    abc_t = [(1.2, -0.2, 0.0)]
+
+    with pytest.raises(ValueError, match="assume_spd"):
+        inverse_proot_pe_quadratic_coupled(
+            A,
+            abc_t=abc_t,
+            p_val=2,
+            symmetrize_Y=True,
+            assume_spd=False,
+        )
+
+    with pytest.raises(ValueError, match="assume_spd"):
+        inverse_solve_pe_quadratic_coupled(
+            A,
+            M,
+            abc_t=abc_t,
+            p_val=2,
+            symmetrize_Y=True,
+            assume_spd=False,
+        )
+
+    with pytest.raises(ValueError, match="assume_spd"):
+        inverse_proot_pe_quadratic_uncoupled(
+            A,
+            abc_t=abc_t,
+            p_val=2,
+            symmetrize_X=True,
+            assume_spd=False,
+        )
+
+    with pytest.raises(ValueError, match="SPD-only"):
+        inverse_sqrt_pe_quadratic(
+            A,
+            abc_t=abc_t,
+            symmetrize_Y=False,
+            assume_spd=False,
+        )
+
+
+def test_p1_auto_disables_spd_assumptions():
+    torch.manual_seed(1234)
+    A = torch.randn(5, 5) + 0.2 * torch.eye(5)
+    M = torch.randn(5, 2)
+    abc_t = [(1.3, -0.3, 0.0)]
+
+    Z_auto, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        M,
+        abc_t=abc_t,
+        p_val=1,
+        symmetrize_Y=True,   # should be ignored for p=1
+        assume_spd=True,     # should be ignored for p=1
+    )
+    Z_ref, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        M,
+        abc_t=abc_t,
+        p_val=1,
+        symmetrize_Y=False,
+        assume_spd=False,
+    )
+    assert torch.allclose(Z_auto, Z_ref, atol=1e-6, rtol=1e-6)
+
+
+def test_nonspd_adaptive_p1_stable_case_matches_baseline():
+    torch.manual_seed(5678)
+    n = 10
+    A = torch.eye(n) + 0.08 * torch.randn(n, n)
+    B = torch.randn(n, 3)
+    abc_t = [(1.5, -0.5, 0.0), (1.25, -0.25, 0.0)]
+
+    Z_base, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        B,
+        abc_t=abc_t,
+        p_val=1,
+        symmetrize_Y=False,
+        assume_spd=False,
+        nonspd_adaptive=False,
+    )
+    Z_adapt, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        B,
+        abc_t=abc_t,
+        p_val=1,
+        symmetrize_Y=False,
+        assume_spd=False,
+        nonspd_adaptive=True,
+    )
+    base_res = torch.linalg.matrix_norm(A @ Z_base - B) / torch.linalg.matrix_norm(B)
+    adapt_res = torch.linalg.matrix_norm(A @ Z_adapt - B) / torch.linalg.matrix_norm(B)
+    assert torch.isfinite(base_res)
+    assert torch.isfinite(adapt_res)
+    assert float(adapt_res) <= 1.5 * float(base_res)
+
+
+def test_nonspd_adaptive_validation():
+    A = torch.eye(4)
+    B = torch.randn(4, 2)
+    abc_t = [(1.5, -0.5, 0.0)]
+
+    with pytest.raises(ValueError, match="nonspd_adaptive_resid_tol"):
+        inverse_solve_pe_quadratic_coupled(
+            A,
+            B,
+            abc_t=abc_t,
+            p_val=1,
+            assume_spd=False,
+            symmetrize_Y=False,
+            nonspd_adaptive=True,
+            nonspd_adaptive_resid_tol=0.0,
+        )
+
+    with pytest.raises(ValueError, match="nonspd_adaptive_growth_tol"):
+        inverse_solve_pe_quadratic_coupled(
+            A,
+            B,
+            abc_t=abc_t,
+            p_val=1,
+            assume_spd=False,
+            symmetrize_Y=False,
+            nonspd_adaptive=True,
+            nonspd_adaptive_growth_tol=0.99,
+        )
+
+    with pytest.raises(ValueError, match="nonspd_adaptive_check_every"):
+        inverse_solve_pe_quadratic_coupled(
+            A,
+            B,
+            abc_t=abc_t,
+            p_val=1,
+            assume_spd=False,
+            symmetrize_Y=False,
+            nonspd_adaptive=True,
+            nonspd_adaptive_check_every=0,
+        )
+
+    with pytest.raises(ValueError, match="nonspd_safe_fallback_tol"):
+        inverse_solve_pe_quadratic_coupled(
+            A,
+            B,
+            abc_t=abc_t,
+            p_val=1,
+            assume_spd=False,
+            symmetrize_Y=False,
+            nonspd_adaptive=True,
+            nonspd_safe_fallback_tol=0.0,
+        )
+
+
+def test_non_spd_metrics_and_exact_inverse_for_p1():
+    torch.manual_seed(77)
+    A = torch.randn(6, 6)
+    A = A + 0.5 * torch.eye(6)  # Keep reasonably well-conditioned/invertible
+    X = exact_inverse_proot(A, p_val=1, assume_spd=False)
+    X_ref = torch.linalg.inv(A)
+
+    assert torch.allclose(X, X_ref, atol=1e-6, rtol=1e-5)
+
+    rel = iroot_relative_error(X, A, p_val=1, assume_spd=False)
+    assert float(rel.max()) < 1e-6
+
+    q = compute_quality_stats(
+        X,
+        A,
+        power_iters=2,
+        mv_samples=2,
+        hard_probe_iters=2,
+        p_val=1,
+        assume_spd=False,
+    )
+    assert q.residual_fro < 1e-5
+    assert math.isnan(q.hard_dir_err)
+
+
+def test_apply_inverse_sqrt_spd_wrapper_matches_general_api():
+    torch.manual_seed(88)
+    n = 9
+    A = torch.randn(n, n)
+    A = (A @ A.mT) / n + torch.eye(n) * 0.1
+    M = torch.randn(n, 3)
+    abc_t = [(1.4, -0.4, 0.0), (1.2, -0.2, 0.0)]
+
+    Z_wrapped, _ = apply_inverse_sqrt_spd(A, M, abc_t=abc_t)
+    Z_generic, _ = apply_inverse_root(
+        A, M, abc_t=abc_t, p_val=2, assume_spd=True, symmetrize_Y=True
+    )
+    assert torch.allclose(Z_wrapped, Z_generic, atol=1e-6, rtol=1e-6)
+
+
+def test_apply_inverse_sqrt_non_spd_wrapper_matches_general_api():
+    torch.manual_seed(89)
+    n = 8
+    A = torch.randn(n, n)
+    A = A + 0.3 * torch.eye(n)
+    M = torch.randn(n, 4)
+    abc_t = [(1.4, -0.4, 0.0), (1.2, -0.2, 0.0)]
+
+    Z_wrapped, _ = apply_inverse_sqrt_non_spd(A, M, abc_t=abc_t)
+    Z_generic, _ = apply_inverse_root(
+        A, M, abc_t=abc_t, p_val=2, assume_spd=False, symmetrize_Y=False
+    )
+    assert torch.allclose(Z_wrapped, Z_generic, atol=1e-6, rtol=1e-6)
+
+
+def test_apply_inverse_sqrt_gram_spd_wrapper_matches_manual_path():
+    torch.manual_seed(90)
+    m, n, k = 14, 7, 3
+    G = torch.randn(m, n)
+    M = torch.randn(n, k)
+    abc_t = [(1.4, -0.4, 0.0)]
+
+    Z_wrap, _, stats_wrap = apply_inverse_sqrt_gram_spd(
+        G,
+        M,
+        abc_t=abc_t,
+        gram_mode="col-norm",
+        precond_mode="none",
+        l_target=0.05,
+    )
+
+    A_norm, stats_ref = precond_gram_spd(
+        G,
+        gram_mode="col-norm",
+        mode="none",
+        l_target=0.05,
+    )
+    Z_ref, _ = apply_inverse_sqrt_spd(A_norm, M, abc_t=abc_t)
+
+    assert torch.allclose(Z_wrap, Z_ref, atol=1e-6, rtol=1e-6)
+    assert stats_wrap.rho_proxy == pytest.approx(stats_ref.rho_proxy, rel=1e-6)
+    assert stats_wrap.gersh_lo == pytest.approx(stats_ref.gersh_lo, rel=1e-6)
+    assert stats_wrap.kappa_proxy == pytest.approx(stats_ref.kappa_proxy, rel=1e-6)

@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
@@ -182,9 +183,16 @@ def inverse_sqrt_pe_quadratic(
     symmetrize_Y: bool = True,
     symmetrize_every: int = 1,
     terminal_last_step: bool = True,
+    assume_spd: bool = True,
 ) -> Tuple[torch.Tensor, IsqrtWorkspaceCoupled]:
     """Coupled quadratic PE iteration for p=2 (inverse square root)."""
     _check_square(A_norm)
+    assume_spd = bool(assume_spd)
+    if not assume_spd:
+        raise ValueError(
+            "inverse_sqrt_pe_quadratic is SPD-only; use inverse_proot_pe_quadratic_coupled "
+            "with p_val=2 and assume_spd=False for general matrices"
+        )
     sym_every = int(symmetrize_every)
     if sym_every < 1:
         raise ValueError(f"symmetrize_every must be >= 1, got {symmetrize_every}")
@@ -228,10 +236,25 @@ def inverse_proot_pe_quadratic_coupled(
     terminal_last_step: bool = True,
     online_stop_tol: Optional[float] = None,
     online_min_steps: int = 2,
+    assume_spd: bool = True,
 ) -> Tuple[torch.Tensor, IrootWorkspaceCoupled]:
-    """Coupled quadratic PE iteration for general p (inverse p-th root)."""
+    """Coupled quadratic PE iteration for general p (inverse p-th root).
+
+    assume_spd=True keeps SPD-optimized symmetric updates for p>=2.
+    assume_spd=False uses the general update Y <- B^p Y (no symmetry assumptions).
+    For p=1, SPD assumptions are automatically disabled.
+    """
     _validate_p_val(p_val)
     _check_square(A_norm)
+    assume_spd = bool(assume_spd)
+    if p_val == 1:
+        # p=1 handles general inverses; do not force symmetry assumptions.
+        assume_spd = False
+        symmetrize_Y = False
+    if not assume_spd and bool(symmetrize_Y):
+        raise ValueError(
+            "symmetrize_Y=True requires assume_spd=True for inverse_proot_pe_quadratic_coupled"
+        )
     sym_every = int(symmetrize_every)
     if sym_every < 1:
         raise ValueError(f"symmetrize_every must be >= 1, got {symmetrize_every}")
@@ -243,8 +266,8 @@ def inverse_proot_pe_quadratic_coupled(
     if online_min < 1:
         raise ValueError(f"online_min_steps must be >= 1, got {online_min_steps}")
 
-    # p=2 has an optimized coupled implementation (avoids an extra B->B2 copy).
-    if p_val == 2:
+    # SPD-only p=2 fast path (symmetric sandwich update).
+    if p_val == 2 and assume_spd:
         X, ws2 = inverse_sqrt_pe_quadratic(
             A_norm,
             abc_t=abc_t,
@@ -252,6 +275,7 @@ def inverse_proot_pe_quadratic_coupled(
             symmetrize_Y=symmetrize_Y,
             symmetrize_every=sym_every,
             terminal_last_step=terminal_last_step,
+            assume_spd=assume_spd,
         )
         return X, ws2
 
@@ -281,6 +305,9 @@ def inverse_proot_pe_quadratic_coupled(
             _update_y_affine_p1(ws.Y, a=a, b=b, out=ws.Ybuf)
         elif p_val == 1:
             _matmul_into(ws.B, ws.Y, ws.Ybuf)
+        elif not assume_spd:
+            _bpow(ws.B, p_val, out=ws.B2, tmp1=ws.Xbuf, tmp2=ws.Ybuf)
+            _matmul_into(ws.B2, ws.Y, ws.Ybuf)
         elif p_val == 3:
             # Specialized odd-p fast path avoids _bpow(..., p_half=1) copy overhead.
             # This realizes Y <- B^2 Y B (commuting-model equivalent to B^3 Y);
@@ -336,15 +363,32 @@ def inverse_solve_pe_quadratic_coupled(
     terminal_last_step: bool = True,
     online_stop_tol: Optional[float] = None,
     online_min_steps: int = 2,
+    assume_spd: bool = True,
+    nonspd_adaptive: bool = False,
+    nonspd_adaptive_resid_tol: float = 1.0,
+    nonspd_adaptive_growth_tol: float = 1.02,
+    nonspd_adaptive_check_every: int = 1,
+    nonspd_safe_fallback_tol: Optional[float] = None,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """Coupled quadratic PE iteration for computing an inverse-like solve on M.
 
     This function continuously applies the generated coupled polynomial preconditioners
     as Z_{k+1} = B_k Z_k. Note that because B_k are dynamically generated left-to-right
     and applied iteratively, the final output corresponds to Z_T = B_{T-1}...B_1 B_0 M_norm.
+    Set assume_spd=False to disable SPD-only symmetric Y updates.
+    For p=1, SPD assumptions are automatically disabled.
     """
     _validate_p_val(p_val)
     _check_square(A_norm)
+    assume_spd = bool(assume_spd)
+    if p_val == 1:
+        # p=1 handles general inverses; do not force symmetry assumptions.
+        assume_spd = False
+        symmetrize_Y = False
+    if not assume_spd and bool(symmetrize_Y):
+        raise ValueError(
+            "symmetrize_Y=True requires assume_spd=True for inverse_solve_pe_quadratic_coupled"
+        )
     sym_every = int(symmetrize_every)
     if sym_every < 1:
         raise ValueError(f"symmetrize_every must be >= 1, got {symmetrize_every}")
@@ -355,6 +399,29 @@ def inverse_solve_pe_quadratic_coupled(
     online_min = int(online_min_steps)
     if online_min < 1:
         raise ValueError(f"online_min_steps must be >= 1, got {online_min_steps}")
+    if float(nonspd_adaptive_resid_tol) <= 0.0:
+        raise ValueError(
+            "nonspd_adaptive_resid_tol must be > 0, "
+            f"got {nonspd_adaptive_resid_tol}"
+        )
+    if float(nonspd_adaptive_growth_tol) < 1.0:
+        raise ValueError(
+            "nonspd_adaptive_growth_tol must be >= 1.0, "
+            f"got {nonspd_adaptive_growth_tol}"
+        )
+    if int(nonspd_adaptive_check_every) < 1:
+        raise ValueError(
+            "nonspd_adaptive_check_every must be >= 1, "
+            f"got {nonspd_adaptive_check_every}"
+        )
+    if (
+        nonspd_safe_fallback_tol is not None
+        and float(nonspd_safe_fallback_tol) <= 0.0
+    ):
+        raise ValueError(
+            "nonspd_safe_fallback_tol must be > 0 when provided, "
+            f"got {nonspd_safe_fallback_tol}"
+        )
     if M_norm.shape[-2] != A_norm.shape[-1]:
         raise ValueError(
             f"M_norm must have shape[..., {A_norm.shape[-1]}, :], got {M_norm.shape}"
@@ -370,11 +437,121 @@ def inverse_solve_pe_quadratic_coupled(
     ws.Z.copy_(M_norm)
     ws.Y.copy_(A_norm)
     coeffs = _quad_coeffs(abc_t)
+    adaptive_active = bool(nonspd_adaptive) and (p_val == 1) and (not assume_spd)
+    if adaptive_active:
+        n = A_norm.shape[-1]
+        eye = torch.eye(n, device=A_norm.device, dtype=A_norm.dtype)
+        prev_proxy: Optional[float] = None
+        check_every = int(nonspd_adaptive_check_every)
+        resid_tol = float(nonspd_adaptive_resid_tol)
+        growth_tol = float(nonspd_adaptive_growth_tol)
+    else:
+        eye = None
+        prev_proxy = None
+        check_every = 1
+        resid_tol = 0.0
+        growth_tol = 1.0
+
+    def _p1_y_proxy() -> float:
+        assert eye is not None
+        return float(
+            (
+                torch.linalg.matrix_norm(ws.Y - eye, ord="fro")
+                / math.sqrt(float(ws.Y.shape[-1]))
+            )
+            .mean()
+            .item()
+        )
+
+    def _p1_z_proxy() -> float:
+        num = torch.linalg.matrix_norm(A_norm @ ws.Z - M_norm, ord="fro")
+        den = torch.linalg.matrix_norm(M_norm, ord="fro").clamp_min(1e-12)
+        return float((num / den).mean().item())
+
+    def _apply_p1_step(a_step: float, b_step: float, c_step: float, *, terminal: bool) -> None:
+        affine_step = abs(float(c_step)) <= _AFFINE_C_EPS
+        if affine_step:
+            _apply_affine_left(ws.Y, ws.Z, a=a_step, b=b_step, out=ws.Zbuf)
+        else:
+            _build_step_polynomial(ws.Y, a=a_step, b=b_step, c=c_step, out=ws.B)
+            _matmul_into(ws.B, ws.Z, ws.Zbuf)
+        ws.Z, ws.Zbuf = ws.Zbuf, ws.Z
+        if terminal:
+            return
+        if affine_step:
+            _update_y_affine_p1(ws.Y, a=a_step, b=b_step, out=ws.Ybuf)
+        else:
+            _matmul_into(ws.B, ws.Y, ws.Ybuf)
+        ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
 
     T = len(coeffs)
-    for t, (a, b, c) in enumerate(coeffs):
+    for t, (a_base, b_base, c_base) in enumerate(coeffs):
+        a = float(a_base)
+        b = float(b_base)
+        c = float(c_base)
+
+        if p_val == 1:
+            is_terminal = bool(terminal_last_step and (t == T - 1))
+            should_check = adaptive_active and (t % check_every == 0) and (not is_terminal)
+
+            if should_check:
+                y_proxy_cur = _p1_y_proxy()
+                unstable = False
+                if prev_proxy is not None:
+                    unstable = y_proxy_cur > prev_proxy * growth_tol
+                    if (not unstable) and (y_proxy_cur > resid_tol) and (
+                        y_proxy_cur > prev_proxy
+                    ):
+                        unstable = True
+
+                if not unstable:
+                    _apply_p1_step(a, b, c, terminal=False)
+                    prev_proxy = _p1_y_proxy()
+                else:
+                    old_y = ws.Y.clone()
+                    old_z = ws.Z.clone()
+
+                    _apply_p1_step(a, b, c, terminal=False)
+                    z_proxy_base = _p1_z_proxy()
+                    y_proxy_base = _p1_y_proxy()
+                    z_base = ws.Z.clone()
+                    y_base = ws.Y.clone()
+
+                    ws.Y.copy_(old_y)
+                    ws.Z.copy_(old_z)
+                    _apply_p1_step(2.0, -1.0, 0.0, terminal=False)
+                    z_proxy_newton = _p1_z_proxy()
+                    y_proxy_newton = _p1_y_proxy()
+
+                    choose_newton = z_proxy_newton < z_proxy_base
+                    if not choose_newton:
+                        ws.Z.copy_(z_base)
+                        ws.Y.copy_(y_base)
+                        prev_proxy = y_proxy_base
+                    else:
+                        prev_proxy = y_proxy_newton
+            else:
+                _apply_p1_step(a, b, c, terminal=is_terminal)
+                if adaptive_active and (t % check_every == 0) and (not is_terminal):
+                    prev_proxy = _p1_y_proxy()
+
+            if is_terminal:
+                break
+
+            # Low-overhead online early-stop based on Y diagonal closeness to identity.
+            if (
+                online_stop_tol is not None
+                and (t + 1) >= online_min
+                and (t + 1) < T
+            ):
+                diag = ws.Y.diagonal(dim1=-2, dim2=-1)
+                diag_err = torch.max(torch.abs(diag - 1.0))
+                if float(diag_err) <= float(online_stop_tol):
+                    break
+            continue
+
         affine_step = abs(float(c)) <= _AFFINE_C_EPS
-        if affine_step and (p_val == 1 or p_val == 2):
+        if affine_step and (p_val == 1 or (p_val == 2 and assume_spd)):
             _apply_affine_left(ws.Y, ws.Z, a=a, b=b, out=ws.Zbuf)
         else:
             _build_step_polynomial(ws.Y, a=a, b=b, c=c, out=ws.B)
@@ -386,14 +563,17 @@ def inverse_solve_pe_quadratic_coupled(
 
         if affine_step and p_val == 1:
             _update_y_affine_p1(ws.Y, a=a, b=b, out=ws.Ybuf)
-        elif affine_step and p_val == 2:
+        elif affine_step and p_val == 2 and assume_spd:
             _update_y_affine_p2(ws.Y, a=a, b=b, tmp_y2=ws.tmp, out=ws.Ybuf)
         elif p_val == 1:
             _matmul_into(ws.B, ws.Y, ws.Ybuf)
-        elif p_val == 2:
+        elif p_val == 2 and assume_spd:
             # Avoid _bpow(p_half=1) which would copy B into B2; use the symmetric update directly.
             _matmul_into(ws.Y, ws.B, ws.B2)
             _matmul_into(ws.B, ws.B2, ws.Ybuf)
+        elif not assume_spd:
+            _bpow(ws.B, p_val, out=ws.B2, tmp1=ws.tmp, tmp2=ws.Ybuf)
+            _matmul_into(ws.B2, ws.Y, ws.Ybuf)
         elif p_val == 3:
             # Specialized odd-p fast path avoids _bpow(..., p_half=1) copy overhead.
             # This realizes Y <- B^2 Y B (commuting-model equivalent to B^3 Y);
@@ -433,5 +613,14 @@ def inverse_solve_pe_quadratic_coupled(
             diag_err = torch.max(torch.abs(diag - 1.0))
             if float(diag_err) <= float(online_stop_tol):
                 break
+
+    if (p_val == 1) and (not assume_spd) and (nonspd_safe_fallback_tol is not None):
+        num = torch.linalg.matrix_norm(A_norm @ ws.Z - M_norm, ord="fro")
+        den = torch.linalg.matrix_norm(M_norm, ord="fro").clamp_min(1e-12)
+        rel = float((num / den).max().item())
+        if rel > float(nonspd_safe_fallback_tol):
+            ws.Z.copy_(
+                torch.linalg.solve(A_norm.double(), M_norm.double()).to(dtype=M_norm.dtype)
+            )
 
     return ws.Z, ws

@@ -70,11 +70,22 @@ def _agg_nan_if_empty(v: torch.Tensor) -> float:
 
 @torch.no_grad()
 def exact_inverse_proot(
-    A: torch.Tensor, p_val: int = 2, eps: float = 1e-20
+    A: torch.Tensor, p_val: int = 2, eps: float = 1e-20, assume_spd: bool = True
 ) -> torch.Tensor:
-    """Exact inverse p-th root. Eigenvalues are clamped to eps to prevent blow-ups."""
+    """Exact inverse p-th root.
+
+    For assume_spd=True (default), uses eigendecomposition with eigenvalue clamping.
+    For assume_spd=False, only p_val=1 is supported (direct inverse).
+    """
     _validate_p_val(p_val)
     _check_square(A)
+    assume_spd = bool(assume_spd)
+    if not assume_spd:
+        if p_val != 1:
+            raise ValueError(
+                "exact_inverse_proot with assume_spd=False currently supports only p_val=1"
+            )
+        return torch.linalg.inv(A.double()).to(dtype=A.dtype)
     # Supports batching: A shape (..., n, n)
     eigvals, V = torch.linalg.eigh(A.double())
     eigvals = eigvals.clamp_min(eps)
@@ -85,12 +96,12 @@ def exact_inverse_proot(
 
 @torch.no_grad()
 def exact_inverse_sqrt(A: torch.Tensor, eps: float = 1e-20) -> torch.Tensor:
-    return exact_inverse_proot(A, p_val=2, eps=eps)
+    return exact_inverse_proot(A, p_val=2, eps=eps, assume_spd=True)
 
 
 @torch.no_grad()
 def iroot_relative_error(
-    Xhat: torch.Tensor, A: torch.Tensor, p_val: int = 2
+    Xhat: torch.Tensor, A: torch.Tensor, p_val: int = 2, assume_spd: bool = True
 ) -> torch.Tensor:
     _validate_p_val(p_val)
     _check_square(Xhat)
@@ -100,7 +111,7 @@ def iroot_relative_error(
             f"Xhat and A must have compatible shapes, got {Xhat.shape} and {A.shape}"
         )
     # Returns per-batch relative Fro error (shape: batch)
-    Xref = exact_inverse_proot(A, p_val=p_val)
+    Xref = exact_inverse_proot(A, p_val=p_val, assume_spd=assume_spd)
     denom = torch.linalg.matrix_norm(Xref, ord="fro").clamp_min(1e-12)
     num = torch.linalg.matrix_norm(Xhat - Xref, ord="fro")
     return num / denom
@@ -108,7 +119,7 @@ def iroot_relative_error(
 
 @torch.no_grad()
 def isqrt_relative_error(Xhat: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
-    return iroot_relative_error(Xhat, A, p_val=2)
+    return iroot_relative_error(Xhat, A, p_val=2, assume_spd=True)
 
 
 @torch.no_grad()
@@ -120,21 +131,23 @@ def compute_quality_stats(
     hard_probe_iters: int = 0,
     eye_mat: Optional[torch.Tensor] = None,
     p_val: int = 2,
+    assume_spd: bool = True,
 ) -> QualityStats:
     """
     Computes conservative (worst-case over batch) quality stats.
 
     Assumptions:
-      - A is SPD-ish (at least for "exact" reference and solve-based probes).
-      - X is an approximate A^{-1/2} for p_val=2, or A^{-1/p} for general p_val.
+      - assume_spd=True: A is SPD-ish and X is an SPD inverse-root iterate.
+      - assume_spd=False: no symmetry assumptions; diagnostics use general residuals.
 
-    Note: For p_val=2, the residual is computed as R = I - X A X, which is the
-    standard SPD inverse-root diagnostic. For general p_val, it is R = I - X^p A.
+    Note: For assume_spd=True and p_val=2, residual is R = I - X A X.
+    Otherwise residual is the general form R = I - X^p A.
     """
     if A.is_complex() or X.is_complex():
         raise ValueError("compute_quality_stats does not support complex tensors.")
 
     _validate_p_val(p_val)
+    assume_spd = bool(assume_spd)
     _check_square(X)
     _check_square(A)
     if X.shape != A.shape:
@@ -147,9 +160,9 @@ def compute_quality_stats(
     eye = _ensure_eye(Af, eye_mat)
 
     # Core residual.
-    # For p=2 this uses the SPD/isqrt diagnostic R = I - X A X.
-    # For p!=2 this uses the general p-root diagnostic R = I - X^p A.
-    if p_val == 2:
+    # For SPD p=2 this uses the standard isqrt diagnostic R = I - X A X.
+    # Otherwise use the general p-root diagnostic R = I - X^p A.
+    if assume_spd and p_val == 2:
         W = Xf @ Af @ Xf
     elif p_val == 3:
         W = Xf @ Xf @ Xf @ Af
@@ -213,9 +226,8 @@ def compute_quality_stats(
     else:
         residual_spec = float("nan")
 
-    # "Hard direction" probe: iterate u <- A^{-1} u (push toward smallest-eig direction),
-    # then measure ||R u|| / ||u||. Use per-batch norms, then max over batch.
-    if hard_probe_iters > 0:
+    # "Hard direction" probe is meaningful under SPD assumptions.
+    if hard_probe_iters > 0 and assume_spd:
         it = int(hard_probe_iters)
         Ad = A.double()
         Rd = R.double()
