@@ -1,5 +1,8 @@
 import math
 import warnings
+from functools import lru_cache
+from typing import Dict, List, Sequence, Tuple
+
 import numpy as np
 import torch
 
@@ -167,6 +170,465 @@ def inverse_newton_coeffs(p_val):
     return (float(p_val + 1) / p_val, -1.0 / p_val, 0.0)
 
 
+def _bpow_gemm_cost(exp: int) -> int:
+    """Estimated GEMM count for _bpow(..., p=exp) in coupled kernels."""
+    e = int(exp)
+    if e <= 0:
+        raise ValueError(f"exp must be >= 1, got {exp}")
+    if e == 1:
+        return 0
+    if e == 2:
+        return 1
+    if e == 4:
+        return 2
+    # Generic binary exponentiation:
+    # squarings = bit_length - 1, multiplies-into-result = popcount - 1.
+    return (e.bit_length() - 1) + (int(e).bit_count() - 1)
+
+
+def coupled_apply_step_gemm_cost(
+    p_val: int,
+    *,
+    affine_step: bool,
+    include_y_update: bool = True,
+) -> int:
+    """Estimate GEMM count of one coupled apply step.
+
+    The estimate matches the current specialized kernels:
+      - build B: 0 GEMM when affine (c=0 fast path), else 1 GEMM.
+      - apply to RHS: 1 GEMM.
+      - Y update:
+          p=1 -> 1 GEMM
+          p=2 -> 2 GEMMs
+          p=3 -> 3 GEMMs
+          even p>2 -> bpow(p/2) + 2 GEMMs
+          odd p>3 -> bpow((p-1)/2) + 3 GEMMs
+    """
+    p_i = int(p_val)
+    if p_i <= 0:
+        raise ValueError(f"p_val must be >= 1, got {p_val}")
+
+    gemms = 0 if affine_step else 1  # build B
+    gemms += 1  # apply: Z <- B Z
+
+    if not include_y_update:
+        return gemms
+
+    if p_i == 1:
+        gemms += 1
+    elif p_i == 2:
+        gemms += 2
+    elif p_i == 3:
+        gemms += 3
+    elif p_i % 2 == 0:
+        gemms += _bpow_gemm_cost(p_i // 2) + 2
+    else:
+        gemms += _bpow_gemm_cost((p_i - 1) // 2) + 3
+
+    return gemms
+
+
+def interval_error_to_identity(lo: float, hi: float) -> float:
+    """Scalar interval error proxy used for schedule planning."""
+    lo_f = float(lo)
+    hi_f = float(hi)
+    return max(abs(1.0 - lo_f), abs(hi_f - 1.0))
+
+
+def interval_log_width(lo: float, hi: float) -> float:
+    lo_f = max(float(lo), 1e-15)
+    hi_f = max(float(hi), lo_f * 1.0001)
+    return float(math.log(hi_f) - math.log(lo_f))
+
+
+def local_quadratic_coeffs_from_alpha(alpha: float, p_val: int) -> Tuple[float, float, float]:
+    """Local-basis family q(y)=1-(1/p)(y-1)+alpha*(y-1)^2 in standard basis."""
+    p_i = int(p_val)
+    if p_i <= 0:
+        raise ValueError(f"p_val must be >= 1, got {p_val}")
+    inv_p = 1.0 / float(p_i)
+    a = 1.0 + inv_p + float(alpha)
+    b = -inv_p - 2.0 * float(alpha)
+    c = float(alpha)
+    return (a, b, c)
+
+
+def local_quadratic_qmin(alpha: float, p_val: int, lo: float, hi: float) -> float:
+    """Exact min of q_alpha(y) over [lo, hi], for q_alpha in local basis."""
+    a, b, c = local_quadratic_coeffs_from_alpha(alpha, p_val)
+    lo_f = float(lo)
+    hi_f = float(hi)
+    q_lo = a + b * lo_f + c * lo_f * lo_f
+    q_hi = a + b * hi_f + c * hi_f * hi_f
+    q_min = min(q_lo, q_hi)
+    if c > 0.0:
+        y_star = -b / (2.0 * c)
+        if lo_f <= y_star <= hi_f:
+            q_min = min(q_min, a + b * y_star + c * y_star * y_star)
+    return float(q_min)
+
+
+def _minimax_alpha_bounds(p_val: int) -> Tuple[float, float]:
+    p_i = int(p_val)
+    center = float(p_i + 1) / (2.0 * float(p_i) * float(p_i))
+    lo = min(-0.75, center - 1.5)
+    hi = max(2.5, center + 1.5)
+    return (float(lo), float(hi))
+
+
+def solve_local_alpha_minimax(
+    *,
+    p_val: int,
+    lo: float,
+    hi: float,
+    q_floor: float = 1e-6,
+    coarse_points: int = 65,
+    refine_iters: int = 18,
+    cache_quant: float = 1e-4,
+) -> Tuple[float, Dict[str, float]]:
+    """Approximate 1D minimax solve over local-basis alpha.
+
+    Objective: minimize max_{y in [lo,hi]} |1 - y q_alpha(y)^p|.
+    Uses a robust coarse scan plus local golden-section refinement.
+    """
+    p_i = int(p_val)
+    if p_i <= 0:
+        raise ValueError(f"p_val must be >= 1, got {p_val}")
+    if coarse_points < 5:
+        raise ValueError(f"coarse_points must be >= 5, got {coarse_points}")
+    q = float(cache_quant)
+    if q <= 0.0:
+        raise ValueError(f"cache_quant must be > 0, got {cache_quant}")
+
+    lo_f = max(float(lo), 1e-12)
+    hi_f = max(float(hi), lo_f * 1.0001)
+    lo_q = round(lo_f / q) * q
+    hi_q = round(hi_f / q) * q
+    hi_q = max(hi_q, lo_q * 1.0001)
+
+    alpha, objective, eval_count, fallback_ns = _solve_local_alpha_minimax_cached(
+        p_i,
+        float(lo_q),
+        float(hi_q),
+        float(q_floor),
+        int(coarse_points),
+        int(refine_iters),
+    )
+    return float(alpha), {
+        "objective": float(objective),
+        "eval_count": float(eval_count),
+        "fallback_ns": float(fallback_ns),
+    }
+
+
+def _solve_local_alpha_minimax_impl(
+    p_i: int,
+    lo_f: float,
+    hi_f: float,
+    q_floor_f: float,
+    coarse_points: int,
+    refine_iters: int,
+) -> Tuple[float, float, float, float]:
+    alpha_lo, alpha_hi = _minimax_alpha_bounds(p_i)
+
+    eval_count = 0
+
+    def _objective(alpha: float) -> float:
+        nonlocal eval_count
+        eval_count += 1
+        if local_quadratic_qmin(alpha, p_i, lo_f, hi_f) <= q_floor_f:
+            return float("inf")
+        abc = local_quadratic_coeffs_from_alpha(alpha, p_i)
+        lo2, hi2 = interval_update_quadratic_exact(abc, lo_f, hi_f, p_val=p_i)
+        return float(interval_error_to_identity(lo2, hi2))
+
+    grid = np.linspace(alpha_lo, alpha_hi, int(coarse_points), dtype=np.float64)
+    vals = np.array([_objective(float(a)) for a in grid], dtype=np.float64)
+    feasible = np.isfinite(vals)
+    if not np.any(feasible):
+        return 0.0, float("inf"), float(eval_count), 1.0
+
+    idx = int(np.nanargmin(vals))
+    best_alpha = float(grid[idx])
+    best_val = float(vals[idx])
+
+    left_idx = max(0, idx - 1)
+    right_idx = min(len(grid) - 1, idx + 1)
+    left = float(grid[left_idx])
+    right = float(grid[right_idx])
+    if right <= left:
+        left = max(alpha_lo, best_alpha - 0.05)
+        right = min(alpha_hi, best_alpha + 0.05)
+
+    inv_phi = (math.sqrt(5.0) - 1.0) / 2.0
+    x1 = right - inv_phi * (right - left)
+    x2 = left + inv_phi * (right - left)
+    f1 = _objective(x1)
+    f2 = _objective(x2)
+    for _ in range(int(refine_iters)):
+        if f1 <= f2:
+            right = x2
+            x2 = x1
+            f2 = f1
+            x1 = right - inv_phi * (right - left)
+            f1 = _objective(x1)
+        else:
+            left = x1
+            x1 = x2
+            f1 = f2
+            x2 = left + inv_phi * (right - left)
+            f2 = _objective(x2)
+
+    for a, v in ((x1, f1), (x2, f2)):
+        if math.isfinite(v) and v < best_val:
+            best_alpha = float(a)
+            best_val = float(v)
+
+    return best_alpha, float(best_val), float(eval_count), 0.0
+
+
+@lru_cache(maxsize=4096)
+def _solve_local_alpha_minimax_cached(
+    p_i: int,
+    lo_f: float,
+    hi_f: float,
+    q_floor_f: float,
+    coarse_points: int,
+    refine_iters: int,
+) -> Tuple[float, float, float, float]:
+    return _solve_local_alpha_minimax_impl(
+        int(p_i),
+        float(lo_f),
+        float(hi_f),
+        float(q_floor_f),
+        int(coarse_points),
+        int(refine_iters),
+    )
+
+
+def plan_coupled_local_minimax_schedule(
+    base_coeffs: Sequence[Tuple[float, float, float]],
+    *,
+    p_val: int,
+    lo_init: float,
+    hi_init: float = 1.0,
+    min_rel_improve: float = 0.0,
+    min_ns_logwidth_rel_improve: float = 0.0,
+    terminal_last_step: bool = True,
+    q_floor: float = 1e-6,
+) -> Tuple[List[Tuple[float, float, float]], Dict[str, float]]:
+    """Greedy cost-aware planner with a local-basis minimax candidate.
+
+    Per step candidates:
+      - baseline quadratic coefficient triple
+      - inverse-Newton affine step (alpha=0)
+      - local-basis minimax-alpha step
+
+    The minimax candidate is accepted only if it improves mapped interval log-width
+    over Newton by at least `min_ns_logwidth_rel_improve`.
+    """
+    if len(base_coeffs) == 0:
+        raise ValueError("base_coeffs must contain at least one coefficient triple")
+    if float(min_rel_improve) < 0.0:
+        raise ValueError(f"min_rel_improve must be >= 0, got {min_rel_improve}")
+    if float(min_ns_logwidth_rel_improve) < 0.0:
+        raise ValueError(
+            "min_ns_logwidth_rel_improve must be >= 0, "
+            f"got {min_ns_logwidth_rel_improve}"
+        )
+
+    p_i = int(p_val)
+    if p_i <= 0:
+        raise ValueError(f"p_val must be >= 1, got {p_val}")
+
+    lo = max(float(lo_init), 1e-12)
+    hi = max(float(hi_init), lo * 1.0001)
+    coeffs = [(float(a), float(b), float(c)) for (a, b, c) in base_coeffs]
+    ns_abc = inverse_newton_coeffs(p_i)
+
+    planned: List[Tuple[float, float, float]] = []
+    counts: Dict[str, int] = {"base": 0, "newton": 0, "minimax": 0}
+
+    eps = 1e-15
+    improve_thr = float(min_rel_improve)
+    ns_gate = float(min_ns_logwidth_rel_improve)
+    minimax_eval_sum = 0.0
+
+    for t, base_abc in enumerate(coeffs):
+        include_y_update = not (bool(terminal_last_step) and (t == len(coeffs) - 1))
+        err_cur = max(interval_error_to_identity(lo, hi), eps)
+
+        def _evaluate(abc: Tuple[float, float, float]) -> Tuple[float, float, float, float]:
+            a, b, c = abc
+            if p_i % 2 == 1:
+                pos_ok = certify_positivity_quadratic(
+                    a, b, c, lo, hi, q_min=float(q_floor)
+                )
+                if not pos_ok:
+                    return float("inf"), lo, hi, float("inf")
+            lo2, hi2 = interval_update_quadratic_exact(abc, lo, hi, p_val=p_i)
+            err2 = max(interval_error_to_identity(lo2, hi2), eps)
+            affine = abs(float(c)) <= 1e-15
+            gemm = coupled_apply_step_gemm_cost(
+                p_i, affine_step=affine, include_y_update=include_y_update
+            )
+            score = (err2 / err_cur) ** (1.0 / float(max(gemm, 1)))
+            w2 = interval_log_width(lo2, hi2)
+            return float(score), float(lo2), float(hi2), float(w2)
+
+        score_base, lo_base, hi_base, w_base = _evaluate(base_abc)
+        score_ns, lo_ns, hi_ns, w_ns = _evaluate(ns_abc)
+
+        alpha_star, alpha_meta = solve_local_alpha_minimax(
+            p_val=p_i, lo=lo, hi=hi, q_floor=float(q_floor)
+        )
+        minimax_eval_sum += float(alpha_meta["eval_count"])
+        mm_abc = local_quadratic_coeffs_from_alpha(alpha_star, p_i)
+        score_mm, lo_mm, hi_mm, w_mm = _evaluate(mm_abc)
+
+        # Gate minimax vs Newton log-width unless Newton itself is infeasible.
+        mm_allowed = math.isfinite(score_mm)
+        if mm_allowed and math.isfinite(w_ns):
+            base_den = max(abs(w_ns), eps)
+            rel = (w_ns - w_mm) / base_den
+            mm_allowed = rel > ns_gate
+        if not mm_allowed:
+            score_mm = float("inf")
+
+        cand = [
+            ("base", score_base, lo_base, hi_base, base_abc),
+            ("newton", score_ns, lo_ns, hi_ns, ns_abc),
+            ("minimax", score_mm, lo_mm, hi_mm, mm_abc),
+        ]
+        finite = [x for x in cand if math.isfinite(x[1])]
+        if len(finite) == 0:
+            choice = ("newton", score_ns, lo_ns, hi_ns, ns_abc)
+        else:
+            finite.sort(key=lambda x: x[1])
+            choice = finite[0]
+            # improvement gate: if best doesn't beat base enough, keep base.
+            if math.isfinite(score_base):
+                rel_imp = (score_base - choice[1]) / max(score_base, eps)
+                if rel_imp <= improve_thr:
+                    choice = ("base", score_base, lo_base, hi_base, base_abc)
+
+        tag, _, lo_next, hi_next, abc = choice
+        planned.append(abc)
+        counts[tag] += 1
+        lo = max(float(lo_next), 1e-15)
+        hi = max(float(hi_next), lo * 1.0001)
+
+    meta: Dict[str, float] = {
+        "base_steps": float(counts["base"]),
+        "newton_steps": float(counts["newton"]),
+        "minimax_steps": float(counts["minimax"]),
+        "pred_lo_final": float(lo),
+        "pred_hi_final": float(hi),
+        "pred_err_final": float(interval_error_to_identity(lo, hi)),
+        "alpha_eval_avg_per_step": float(minimax_eval_sum / float(len(coeffs))),
+    }
+    return planned, meta
+
+
+def plan_coupled_quadratic_newton_schedule(
+    base_coeffs: Sequence[Tuple[float, float, float]],
+    *,
+    p_val: int,
+    lo_init: float,
+    hi_init: float = 1.0,
+    min_rel_improve: float = 0.0,
+    terminal_last_step: bool = True,
+    odd_p_q_floor: float = 1e-6,
+) -> Tuple[List[Tuple[float, float, float]], Dict[str, float]]:
+    """Greedy cost-aware schedule planner for coupled PE apply.
+
+    At each step, picks between:
+      - the provided quadratic coefficient triple, and
+      - inverse-Newton affine coefficients (c=0),
+    by minimizing predicted interval-error-per-GEMM on the current scalar interval.
+
+    The interval model uses `interval_update_quadratic_exact(...)` (exact for p=2,
+    conservative grid fallback for other p values).
+    """
+    if len(base_coeffs) == 0:
+        raise ValueError("base_coeffs must contain at least one coefficient triple")
+    if float(min_rel_improve) < 0.0:
+        raise ValueError(
+            f"min_rel_improve must be >= 0, got {min_rel_improve}"
+        )
+    p_i = int(p_val)
+    if p_i <= 0:
+        raise ValueError(f"p_val must be >= 1, got {p_val}")
+
+    lo = max(float(lo_init), 1e-12)
+    hi = max(float(hi_init), lo * 1.0001)
+    coeffs = [
+        (float(a), float(b), float(c)) for (a, b, c) in list(base_coeffs)
+    ]
+    ns_abc = inverse_newton_coeffs(p_i)
+
+    planned: List[Tuple[float, float, float]] = []
+    newton_steps = 0
+    base_steps = 0
+
+    eps = 1e-15
+    improve_thr = float(min_rel_improve)
+
+    for t, base_abc in enumerate(coeffs):
+        include_y_update = not (bool(terminal_last_step) and (t == len(coeffs) - 1))
+        err_cur = max(interval_error_to_identity(lo, hi), eps)
+
+        def _evaluate(abc: Tuple[float, float, float]) -> Tuple[float, float, float]:
+            a, b, c = abc
+            if p_i % 2 == 1:
+                pos_ok = certify_positivity_quadratic(
+                    a, b, c, lo, hi, q_min=float(odd_p_q_floor)
+                )
+                if not pos_ok:
+                    return float("inf"), lo, hi
+            lo2, hi2 = interval_update_quadratic_exact(abc, lo, hi, p_val=p_i)
+            err2 = max(interval_error_to_identity(lo2, hi2), eps)
+            affine = abs(float(c)) <= 1e-15
+            gemm = coupled_apply_step_gemm_cost(
+                p_i, affine_step=affine, include_y_update=include_y_update
+            )
+            # Smaller is better: predicted contraction normalized by GEMM count.
+            score = (err2 / err_cur) ** (1.0 / float(max(gemm, 1)))
+            return float(score), float(lo2), float(hi2)
+
+        score_base, lo_base, hi_base = _evaluate(base_abc)
+        score_ns, lo_ns, hi_ns = _evaluate(ns_abc)
+
+        use_newton = False
+        if math.isfinite(score_ns):
+            if not math.isfinite(score_base):
+                use_newton = True
+            else:
+                rel_improve = (score_base - score_ns) / max(score_base, eps)
+                use_newton = rel_improve > improve_thr
+
+        if use_newton:
+            planned.append(ns_abc)
+            lo, hi = lo_ns, hi_ns
+            newton_steps += 1
+        else:
+            planned.append(base_abc)
+            lo, hi = lo_base, hi_base
+            base_steps += 1
+
+        lo = max(float(lo), 1e-15)
+        hi = max(float(hi), lo * 1.0001)
+
+    meta: Dict[str, float] = {
+        "base_steps": float(base_steps),
+        "newton_steps": float(newton_steps),
+        "pred_lo_final": float(lo),
+        "pred_hi_final": float(hi),
+        "pred_err_final": float(interval_error_to_identity(lo, hi)),
+    }
+    return planned, meta
+
+
 def _phi_and_dphi_coeffs_p2(a, b, c):
     """Return polynomial coefficients for φ(y) = y·q(y)^2 and φ'(y) when p=2.
 
@@ -198,32 +660,42 @@ def _phi_and_dphi_coeffs_p2(a, b, c):
 def interval_update_quadratic_exact(abc, lo, hi, p_val=2):
     """Certified interval update via critical-point extrema.
 
-    For p=2, finds exact roots of φ'(y) and evaluates φ at endpoints + critical
-    points.  For other p, falls back to dense grid sampling with conservative
-    padding.
+    Finds roots of φ'(y) for φ(y)=y*(a+b*y+c*y^2)^p and evaluates φ at endpoints
+    + critical points. Falls back to dense grid sampling when numerical root
+    solving is ill-conditioned.
 
     Returns (lo_new, hi_new).
     """
     a, b, c = abc
     lo, hi = float(lo), float(hi)
+    p_i = int(p_val)
+    if p_i <= 0:
+        raise ValueError(f"p_val must be >= 1, got {p_val}")
 
-    if p_val == 2:
-        phi, dphi = _phi_and_dphi_coeffs_p2(a, b, c)
-        # np.roots expects *descending* power order
-        roots = np.roots(dphi[::-1])
-        # filter real roots inside [lo, hi]
+    try:
+        # q(y)=a+b*y+c*y^2 in ascending-power basis.
+        q = np.array([float(a), float(b), float(c)], dtype=np.float64)
+        q_pow = np.polynomial.polynomial.polypow(q, p_i)  # ascending powers
+        phi = np.concatenate([np.array([0.0], dtype=np.float64), q_pow])  # y*q(y)^p
+        dphi = np.array([phi[k] * k for k in range(1, len(phi))], dtype=np.float64)
+        roots = np.roots(dphi[::-1]) if dphi.size > 1 else np.array([], dtype=np.float64)
+
         candidates = [lo, hi]
         for r in roots:
-            if np.isreal(r):
+            if np.isfinite(r.real) and abs(float(np.imag(r))) <= 1e-10:
                 yr = float(np.real(r))
                 if lo <= yr <= hi:
                     candidates.append(yr)
-        # evaluate phi at candidates
-        vals = [np.polyval(phi[::-1], y) for y in candidates]
-        return float(min(vals)), float(max(vals))
-    else:
+
+        vals = [float(np.polyval(phi[::-1], y)) for y in candidates]
+        lo_new = float(min(vals))
+        hi_new = float(max(vals))
+        if not (math.isfinite(lo_new) and math.isfinite(hi_new)):
+            raise FloatingPointError("non-finite interval extrema")
+        return lo_new, hi_new
+    except Exception:
         # fallback: dense grid + conservative padding
-        return _interval_update_grid(abc, lo, hi, p_val=p_val)
+        return _interval_update_grid(abc, lo, hi, p_val=p_i)
 
 
 def _interval_update_grid(abc, lo, hi, n=32768, p_val=2):

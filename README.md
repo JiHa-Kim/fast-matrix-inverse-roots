@@ -72,6 +72,10 @@ uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 
 - `--compile`: enable `torch.compile`.
 - `--timing-reps`: average repeated runs per trial.
 - `--symmetrize-every`: symmetrize cadence for coupled `Y`.
+- `--online-coeff-mode {auto,off,greedy-newton,greedy-minimax}`: optional cost-aware per-step PE schedule adaptation for coupled apply (`auto`: `p=1 -> off`, `p>=2 -> greedy-minimax`).
+- `--online-coeff-min-rel-improve`: switch threshold for `--online-coeff-mode=greedy-newton`.
+- `--online-coeff-min-ns-logwidth-rel-improve`: minimax-vs-NS dominance margin for `--online-coeff-mode=greedy-minimax`.
+- `--online-stop-tol`, `--online-min-steps`: low-overhead coupled early-stop controls.
 - `--metrics-mode {full,coupled}` (inverse-root harness).
 
 ## Latest Benchmark Artifacts

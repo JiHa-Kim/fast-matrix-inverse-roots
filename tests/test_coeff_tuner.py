@@ -2,10 +2,17 @@ import math
 
 from fast_iroot.coeff_tuner import (
     certify_positivity_quadratic,
+    coupled_apply_step_gemm_cost,
     fit_quadratic_local,
+    interval_log_width,
     interval_update_quadratic_exact,
+    interval_error_to_identity,
     inverse_newton_coeffs,
+    local_quadratic_coeffs_from_alpha,
     make_schedule,
+    plan_coupled_local_minimax_schedule,
+    plan_coupled_quadratic_newton_schedule,
+    solve_local_alpha_minimax,
 )
 
 
@@ -102,3 +109,83 @@ def test_make_schedule_certified_vs_legacy():
         a, b, c, lo, hi = step
         assert lo >= lo0, f"Step {t}: lo={lo} went down from {lo0}"
         lo0 = lo
+
+
+def test_coupled_apply_step_gemm_cost_affine_saves_one_gemm():
+    # Affine fast path should save exactly one GEMM from B formation.
+    for p in [1, 2, 3, 4, 7]:
+        full = coupled_apply_step_gemm_cost(p, affine_step=False, include_y_update=True)
+        aff = coupled_apply_step_gemm_cost(p, affine_step=True, include_y_update=True)
+        assert full - aff == 1
+
+
+def test_plan_coupled_quadratic_newton_schedule_picks_newton_on_bad_base():
+    base = [(1.0, 0.0, 0.0)] * 4  # identity map (no contraction)
+    sched, meta = plan_coupled_quadratic_newton_schedule(
+        base, p_val=2, lo_init=0.2, hi_init=1.0
+    )
+
+    assert len(sched) == len(base)
+    ns = inverse_newton_coeffs(2)
+    assert any(
+        math.isclose(a, ns[0]) and math.isclose(b, ns[1]) and math.isclose(c, ns[2])
+        for (a, b, c) in sched
+    )
+    assert meta["newton_steps"] >= 1.0
+    assert meta["pred_err_final"] <= interval_error_to_identity(0.2, 1.0)
+
+
+def test_plan_coupled_quadratic_newton_schedule_respects_min_improve_gate():
+    base = [(1.4, -0.4, 0.0)] * 3
+    sched, meta = plan_coupled_quadratic_newton_schedule(
+        base,
+        p_val=2,
+        lo_init=0.3,
+        hi_init=1.0,
+        min_rel_improve=1.0,  # impossible threshold; should never switch
+    )
+    assert sched == base
+    assert math.isclose(meta["newton_steps"], 0.0)
+
+
+def test_local_quadratic_coeffs_from_alpha_contains_newton():
+    for p in [1, 2, 4]:
+        a, b, c = local_quadratic_coeffs_from_alpha(0.0, p)
+        an, bn, cn = inverse_newton_coeffs(p)
+        assert math.isclose(a, an)
+        assert math.isclose(b, bn)
+        assert math.isclose(c, cn)
+
+
+def test_solve_local_alpha_minimax_no_worse_than_newton_objective():
+    lo, hi = 0.2, 1.0
+    alpha, meta = solve_local_alpha_minimax(p_val=2, lo=lo, hi=hi)
+    assert math.isfinite(alpha)
+    assert meta["fallback_ns"] in (0.0, 1.0)
+
+    a_mm, b_mm, c_mm = local_quadratic_coeffs_from_alpha(alpha, 2)
+    a_ns, b_ns, c_ns = inverse_newton_coeffs(2)
+    lo_mm, hi_mm = interval_update_quadratic_exact([a_mm, b_mm, c_mm], lo, hi, p_val=2)
+    lo_ns, hi_ns = interval_update_quadratic_exact([a_ns, b_ns, c_ns], lo, hi, p_val=2)
+    err_mm = interval_error_to_identity(lo_mm, hi_mm)
+    err_ns = interval_error_to_identity(lo_ns, hi_ns)
+    assert err_mm <= err_ns + 1e-8
+
+
+def test_plan_coupled_local_minimax_schedule_reports_step_counts():
+    base = [(1.0, 0.0, 0.0)] * 3
+    sched, meta = plan_coupled_local_minimax_schedule(
+        base,
+        p_val=2,
+        lo_init=0.2,
+        hi_init=1.0,
+        min_rel_improve=0.0,
+        min_ns_logwidth_rel_improve=0.0,
+    )
+    assert len(sched) == 3
+    total_steps = (
+        meta["base_steps"] + meta["newton_steps"] + meta["minimax_steps"]
+    )
+    assert math.isclose(total_steps, 3.0)
+    assert math.isfinite(meta["pred_err_final"])
+    assert math.isfinite(interval_log_width(meta["pred_lo_final"], meta["pred_hi_final"]))

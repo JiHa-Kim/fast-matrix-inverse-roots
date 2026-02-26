@@ -13,6 +13,8 @@ from .utils import (
 )
 from .coeffs import _quad_coeffs
 
+_AFFINE_C_EPS = 1e-15
+
 
 @dataclass
 class IrootWorkspaceCoupled:
@@ -36,6 +38,25 @@ class InverseSolveWorkspaceCoupled:
 
 
 IsqrtWorkspaceCoupled = IrootWorkspaceCoupled
+
+
+@torch.no_grad()
+def _build_step_polynomial(
+    Y: torch.Tensor, *, a: float, b: float, c: float, out: torch.Tensor
+) -> torch.Tensor:
+    """Build B = a I + b Y + c Y^2; skip GEMM when c == 0 (affine step)."""
+    if abs(float(c)) <= _AFFINE_C_EPS:
+        if float(b) == 0.0:
+            out.zero_()
+        elif float(b) == 1.0:
+            out.copy_(Y)
+        else:
+            out.copy_(Y)
+            out.mul_(float(b))
+    else:
+        _addmm_into(Y, Y, Y, beta=float(b), alpha=float(c), out=out)
+    out.diagonal(dim1=-2, dim2=-1).add_(float(a))
+    return out
 
 
 def _alloc_ws_coupled(A: torch.Tensor) -> IrootWorkspaceCoupled:
@@ -131,8 +152,7 @@ def inverse_sqrt_pe_quadratic(
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
-        ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
+        _build_step_polynomial(ws.Y, a=a, b=b, c=c, out=ws.B)
 
         _matmul_into(ws.X, ws.B, ws.Xbuf)
         ws.X, ws.Xbuf = ws.Xbuf, ws.X
@@ -199,8 +219,7 @@ def inverse_proot_pe_quadratic_coupled(
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
-        ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
+        _build_step_polynomial(ws.Y, a=a, b=b, c=c, out=ws.B)
 
         _matmul_into(ws.X, ws.B, ws.Xbuf)
         ws.X, ws.Xbuf = ws.Xbuf, ws.X
@@ -302,8 +321,7 @@ def inverse_solve_pe_quadratic_coupled(
 
     T = len(coeffs)
     for t, (a, b, c) in enumerate(coeffs):
-        _addmm_into(ws.Y, ws.Y, ws.Y, beta=b, alpha=c, out=ws.B)
-        ws.B.diagonal(dim1=-2, dim2=-1).add_(a)
+        _build_step_polynomial(ws.Y, a=a, b=b, c=c, out=ws.B)
 
         _matmul_into(ws.B, ws.Z, ws.Zbuf)
         ws.Z, ws.Zbuf = ws.Zbuf, ws.Z
