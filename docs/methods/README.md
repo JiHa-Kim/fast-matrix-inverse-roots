@@ -12,6 +12,8 @@ This section documents active methods used by the solver/apply workflow.
   - Uncoupled formulation for general p-th roots
 - `docs/methods/chebyshev.md`
   - Direct Clenshaw evaluation for $X = A^{-1/p} B$ without dense inversions
+- `docs/implementation_status.md`
+  - Snapshot of implemented vs missing ideas to try
 
 ## Archived (Deprecated)
 
