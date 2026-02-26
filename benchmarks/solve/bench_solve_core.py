@@ -25,6 +25,7 @@ BASE_MATRIX_SOLVE_METHODS: List[str] = [
     "PE-Quad-Coupled-Apply",
     "Inverse-Newton-Coupled-Apply",
 ]
+P_GT1_SPD_EXTRA_METHODS: List[str] = ["Chebyshev-Apply"]
 P1_SPD_SOLVE_BASELINES: List[str] = ["Torch-Solve", "Torch-Cholesky-Solve"]
 P1_SPD_SOLVE_EXTRA_CASES: List[str] = ["Torch-Cholesky-Solve-ReuseFactor"]
 
@@ -34,6 +35,8 @@ def matrix_solve_methods(p_val: int) -> List[str]:
     if int(p_val) == 1:
         methods.extend(P1_SPD_SOLVE_BASELINES)
         methods.extend(P1_SPD_SOLVE_EXTRA_CASES)
+    else:
+        methods.extend(P_GT1_SPD_EXTRA_METHODS)
     return methods
 
 
