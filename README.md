@@ -10,6 +10,7 @@ Practical inverse p-th-root kernels for SPD matrices, optimized for fixed-iterat
 - Direct apply to RHS blocks (`Z = A^{-1/p} B`) without materializing dense `A^{-1/p}`:
   - `apply_inverse_proot_chebyshev`
   - `inverse_solve_pe_quadratic_coupled`
+  - `apply_inverse_root_auto` (single-shot vs reuse-aware strategy)
 - Preconditioning + diagnostics:
   - `precond_spd`
   - `compute_quality_stats`, `iroot_relative_error`

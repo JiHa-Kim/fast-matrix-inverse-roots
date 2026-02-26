@@ -12,7 +12,12 @@ from .uncoupled import (
     IrootWorkspaceUncoupled,
     inverse_proot_pe_quadratic_uncoupled,
 )
-from .apply import apply_inverse, apply_inverse_root
+from .apply import (
+    InverseApplyAutoWorkspace,
+    apply_inverse,
+    apply_inverse_root,
+    apply_inverse_root_auto,
+)
 from .metrics import (
     QualityStats,
     compute_quality_stats,
@@ -48,6 +53,8 @@ __all__ = [
     "isqrt_relative_error",
     "apply_inverse",
     "apply_inverse_root",
+    "apply_inverse_root_auto",
+    "InverseApplyAutoWorkspace",
     "apply_inverse_chebyshev",
     "apply_inverse_proot_chebyshev",
     "ChebyshevApplyWorkspace",

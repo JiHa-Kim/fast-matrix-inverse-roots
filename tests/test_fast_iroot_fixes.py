@@ -10,7 +10,12 @@ from fast_iroot.coupled import (
     inverse_solve_pe_quadratic_coupled,
     inverse_proot_pe_quadratic_coupled,
 )
-from fast_iroot import build_pe_schedules, precond_spd, apply_inverse_root
+from fast_iroot import (
+    apply_inverse_root,
+    apply_inverse_root_auto,
+    build_pe_schedules,
+    precond_spd,
+)
 from fast_iroot.metrics import isqrt_relative_error, exact_inverse_proot
 
 
@@ -252,3 +257,51 @@ def test_inverse_solve_affine_step_matches_manual_apply():
     Z_ref = B @ M
 
     assert torch.allclose(Z, Z_ref, atol=1e-6, rtol=1e-6)
+
+
+def test_apply_inverse_root_auto_direct_matches_apply_inverse_root():
+    n = 10
+    torch.manual_seed(999)
+    A = torch.randn(n, n)
+    A = (A @ A.mT) / n + torch.eye(n) * 0.1
+    M = torch.randn(n, 4)
+    abc_t = [(1.5, -0.5, 0.0), (1.25, -0.25, 0.0)]
+
+    Z_ref, _ = apply_inverse_root(A, M, abc_t=abc_t, p_val=2)
+    Z_auto, _ = apply_inverse_root_auto(A, M, abc_t=abc_t, p_val=2, strategy="auto")
+
+    assert torch.allclose(Z_auto, Z_ref, atol=1e-5, rtol=1e-5)
+
+
+def test_apply_inverse_root_auto_materialize_matches_manual():
+    n = 9
+    torch.manual_seed(111)
+    A = torch.randn(n, n)
+    A = (A @ A.mT) / n + torch.eye(n) * 0.1
+    M = torch.randn(n, n)
+    abc_t = [(1.5, -0.5, 0.0), (1.25, -0.25, 0.0)]
+
+    X_ref, _ = inverse_proot_pe_quadratic_coupled(A, abc_t=abc_t, p_val=2)
+    Z_ref = X_ref @ M
+
+    Z_auto, _ = apply_inverse_root_auto(
+        A,
+        M,
+        abc_t=abc_t,
+        p_val=2,
+        strategy="materialize-root",
+        expected_reuse=4,
+    )
+    assert torch.allclose(Z_auto, Z_ref, atol=1e-5, rtol=1e-5)
+
+
+def test_apply_inverse_root_auto_strategy_validation():
+    A = torch.eye(4)
+    M = torch.eye(4)
+    abc_t = [(1.5, -0.5, 0.0)]
+
+    with pytest.raises(ValueError, match="Unknown strategy"):
+        apply_inverse_root_auto(A, M, abc_t=abc_t, p_val=2, strategy="bad")
+
+    with pytest.raises(ValueError, match="expected_reuse"):
+        apply_inverse_root_auto(A, M, abc_t=abc_t, p_val=2, expected_reuse=0)
