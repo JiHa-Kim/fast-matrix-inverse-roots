@@ -7,7 +7,13 @@ from .coupled import (
     inverse_proot_pe_quadratic_coupled,
     inverse_solve_pe_quadratic_coupled,
 )
-from .precond import PrecondStats, precond_spd
+from .precond import (
+    GRAM_PRECOND_MODES,
+    SPD_PRECOND_MODES,
+    PrecondStats,
+    precond_gram_spd,
+    precond_spd,
+)
 from .uncoupled import (
     IrootWorkspaceUncoupled,
     inverse_proot_pe_quadratic_uncoupled,
@@ -42,7 +48,10 @@ __all__ = [
     "inverse_proot_pe_quadratic_coupled",
     "inverse_solve_pe_quadratic_coupled",
     "PrecondStats",
+    "SPD_PRECOND_MODES",
+    "GRAM_PRECOND_MODES",
     "precond_spd",
+    "precond_gram_spd",
     "IrootWorkspaceUncoupled",
     "inverse_proot_pe_quadratic_uncoupled",
     "QualityStats",

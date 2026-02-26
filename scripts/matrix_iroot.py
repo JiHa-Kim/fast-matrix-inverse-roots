@@ -22,6 +22,7 @@ except ModuleNotFoundError:
 ensure_repo_root_on_path()
 
 from fast_iroot import (
+    SPD_PRECOND_MODES,
     _quad_coeffs,
     build_pe_schedules,
     inverse_proot_pe_quadratic_uncoupled,
@@ -55,8 +56,9 @@ def main():
         help="Compile for maximum performance",
     )
     p.add_argument(
-        "--precond", type=str, default="aol", choices=["none", "frob", "aol"]
+        "--precond", type=str, default="frob", choices=list(SPD_PRECOND_MODES)
     )
+    p.add_argument("--precond-ruiz-iters", type=int, default=2)
     p.add_argument("--ridge-rel", type=float, default=1e-4)
     p.add_argument("--l-target", type=float, default=0.05)
     p.add_argument("--target-resid", type=float, default=0.01)
@@ -92,6 +94,10 @@ def main():
     args = p.parse_args()
     if int(args.symmetrize_every) < 1:
         raise ValueError(f"--symmetrize-every must be >= 1, got {args.symmetrize_every}")
+    if int(args.precond_ruiz_iters) < 1:
+        raise ValueError(
+            f"--precond-ruiz-iters must be >= 1, got {args.precond_ruiz_iters}"
+        )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
@@ -131,7 +137,8 @@ def main():
         for n in sizes:
             print(
                 f"== SPD size {n}x{n} | dtype={dtype_compute} | compile={args.compile} | "
-                f"precond={args.precond} | l_target={args.l_target} | lmax=row_sum | terminal=True | "
+                f"precond={args.precond} | ruiz_iters={args.precond_ruiz_iters} | "
+                f"l_target={args.l_target} | lmax=row_sum | terminal=True | "
                 f"timing_reps={max(1, args.timing_reps)} | symY={not args.no_symmetrize_y} | "
                 f"symEvery={args.symmetrize_every} | "
                 f"metrics={args.metrics_mode} | power_it={args.power_iters} | "
@@ -147,6 +154,7 @@ def main():
                 A_norm, _ = precond_spd(
                     A,
                     mode=args.precond,
+                    ruiz_iters=args.precond_ruiz_iters,
                     ridge_rel=args.ridge_rel,
                     l_target=args.l_target,
                 )
@@ -166,6 +174,7 @@ def main():
                     mats=mats,
                     device=device,
                     precond=args.precond,
+                    precond_ruiz_iters=args.precond_ruiz_iters,
                     ridge_rel=args.ridge_rel,
                     l_target=args.l_target,
                 )

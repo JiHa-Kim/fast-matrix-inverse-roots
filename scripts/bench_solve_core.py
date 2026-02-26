@@ -50,6 +50,7 @@ def prepare_solve_inputs(
     device: torch.device,
     k: int,
     precond: str,
+    precond_ruiz_iters: int,
     ridge_rel: float,
     l_target: float,
     dtype: torch.dtype,
@@ -63,6 +64,7 @@ def prepare_solve_inputs(
             lambda: precond_spd(
                 A,
                 mode=precond,
+                ruiz_iters=precond_ruiz_iters,
                 ridge_rel=ridge_rel,
                 l_target=l_target,
             ),

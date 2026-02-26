@@ -44,6 +44,7 @@ def prepare_preconditioned_inputs(
     mats: List[torch.Tensor],
     device: torch.device,
     precond: str,
+    precond_ruiz_iters: int,
     ridge_rel: float,
     l_target: float,
 ) -> Tuple[List[PreparedInput], float]:
@@ -54,6 +55,7 @@ def prepare_preconditioned_inputs(
             lambda: precond_spd(
                 A,
                 mode=precond,
+                ruiz_iters=precond_ruiz_iters,
                 ridge_rel=ridge_rel,
                 l_target=l_target,
             ),

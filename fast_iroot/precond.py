@@ -6,6 +6,9 @@ import torch
 
 from .utils import _check_square
 
+SPD_PRECOND_MODES: tuple[str, ...] = ("none", "frob", "aol", "jacobi", "ruiz")
+GRAM_PRECOND_MODES: tuple[str, ...] = ("none", "col-norm")
+
 
 @dataclass
 class PrecondStats:
@@ -18,11 +21,49 @@ class PrecondStats:
     kappa_proxy: float
 
 
+def _scale_spd(
+    A: torch.Tensor,
+    mode: str,
+    eps: float,
+    ruiz_iters: int,
+) -> torch.Tensor:
+    if mode == "none":
+        return A
+    if mode == "frob":
+        n = A.shape[-1]
+        s = torch.linalg.matrix_norm(A, ord="fro")
+        s = torch.clamp(s / math.sqrt(n), min=eps)
+        return A / s.unsqueeze(-1).unsqueeze(-1)
+    if mode == "aol":
+        d = torch.rsqrt(A.abs().sum(dim=-1).clamp_min(eps))
+        return (d.unsqueeze(-1) * A) * d.unsqueeze(-2)
+    if mode == "jacobi":
+        d = torch.rsqrt(A.diagonal(dim1=-2, dim2=-1).clamp_min(eps))
+        return (d.unsqueeze(-1) * A) * d.unsqueeze(-2)
+    if mode == "ruiz":
+        if int(ruiz_iters) < 1:
+            raise ValueError(f"ruiz_iters must be >= 1, got {ruiz_iters}")
+        A_scaled = A
+        for _ in range(int(ruiz_iters)):
+            # Symmetric equilibration rounds keep SPD structure while shrinking
+            # anisotropy with only reductions + elementwise scaling.
+            row_l2 = torch.linalg.vector_norm(A_scaled.float(), dim=-1).clamp_min(
+                float(eps)
+            )
+            d = torch.rsqrt(row_l2).to(dtype=A_scaled.dtype)
+            A_scaled = (d.unsqueeze(-1) * A_scaled) * d.unsqueeze(-2)
+        return A_scaled
+    raise ValueError(
+        f"unknown preconditioner: {mode}. Supported modes are {SPD_PRECOND_MODES}."
+    )
+
+
 @torch.no_grad()
 def precond_spd(
     A: torch.Tensor,
     mode: str,
     eps: float = 1e-12,
+    ruiz_iters: int = 2,
     ridge_rel: float = 0.0,
     l_target: float = 0.05,
     lambda_max_est: str = "row_sum",
@@ -49,20 +90,7 @@ def precond_spd(
         )
 
     # -------- precondition (scale) --------
-    if mode == "none":
-        A_pre = A
-    elif mode == "frob":
-        n = A.shape[-1]
-        s = torch.linalg.matrix_norm(A, ord="fro")
-        s = torch.clamp(s / math.sqrt(n), min=eps)
-        A_pre = A / s.unsqueeze(-1).unsqueeze(-1)
-    elif mode == "aol":
-        d = torch.rsqrt(A.abs().sum(dim=-1).clamp_min(eps))
-        A_pre = (d.unsqueeze(-1) * A) * d.unsqueeze(-2)
-    else:
-        raise ValueError(
-            f"unknown preconditioner: {mode}. Supported modes are 'none', 'frob', 'aol'."
-        )
+    A_pre = _scale_spd(A=A, mode=mode, eps=float(eps), ruiz_iters=int(ruiz_iters))
 
     # -------- ridge if requested --------
     if ridge_rel > 0.0:
@@ -142,4 +170,63 @@ def precond_spd(
         rho_proxy=rho_proxy,
         gersh_lo=g_lo_scalar,
         kappa_proxy=float(kappa_proxy),
+    )
+
+
+@torch.no_grad()
+def precond_gram_spd(
+    G: torch.Tensor,
+    gram_mode: str = "col-norm",
+    mode: str = "none",
+    eps: float = 1e-12,
+    ruiz_iters: int = 2,
+    ridge_rel: float = 0.0,
+    l_target: float = 0.05,
+    lambda_max_est: str = "row_sum",
+    lambda_max_power_iters: int = 8,
+    lambda_max_safety: float = 1.02,
+) -> Tuple[torch.Tensor, PrecondStats]:
+    """
+    Preconditions an SPD Gram matrix formed from feature matrix `G`, where
+    `A = G^T G`.
+
+    `gram_mode="col-norm"` applies the same transform as scaling columns of `G`
+    by inverse column-norms, but computes it through `A = G^T G` followed by
+    Jacobi scaling on `A`. This avoids expensive explicit scaling of large `G`
+    tensors on GPU while preserving identical algebra.
+    """
+    if G.is_complex():
+        raise ValueError("precond_gram_spd does not support complex tensors")
+    if G.dim() < 2:
+        raise ValueError(
+            f"precond_gram_spd expects tensor with dim >= 2, got shape {tuple(G.shape)}"
+        )
+
+    A = G.mT @ G
+
+    if gram_mode == "none":
+        A_gram = A
+    elif gram_mode == "col-norm":
+        diag = A.diagonal(dim1=-2, dim2=-1)
+        if (diag <= float(eps)).any():
+            raise ValueError(
+                "precond_gram_spd requires non-zero column norms for gram_mode='col-norm'"
+            )
+        d = torch.rsqrt(diag.clamp_min(float(eps)))
+        A_gram = (d.unsqueeze(-1) * A) * d.unsqueeze(-2)
+    else:
+        raise ValueError(
+            f"unknown gram preconditioner: {gram_mode}. Supported modes are {GRAM_PRECOND_MODES}."
+        )
+
+    return precond_spd(
+        A_gram,
+        mode=mode,
+        eps=eps,
+        ruiz_iters=ruiz_iters,
+        ridge_rel=ridge_rel,
+        l_target=l_target,
+        lambda_max_est=lambda_max_est,
+        lambda_max_power_iters=lambda_max_power_iters,
+        lambda_max_safety=lambda_max_safety,
     )

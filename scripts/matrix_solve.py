@@ -21,6 +21,7 @@ except ModuleNotFoundError:
 ensure_repo_root_on_path()
 
 from fast_iroot import (
+    SPD_PRECOND_MODES,
     _quad_coeffs,
     apply_inverse_proot_chebyshev,
     build_pe_schedules,
@@ -56,8 +57,9 @@ def main():
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--dtype", type=str, default="bf16", choices=["fp32", "bf16"])
     p.add_argument(
-        "--precond", type=str, default="frob", choices=["none", "frob", "aol"]
+        "--precond", type=str, default="jacobi", choices=list(SPD_PRECOND_MODES)
     )
+    p.add_argument("--precond-ruiz-iters", type=int, default=2)
     p.add_argument("--l-target", type=float, default=0.05)
     p.add_argument("--timing-reps", type=int, default=5)
     p.add_argument(
@@ -152,6 +154,10 @@ def main():
     args = p.parse_args()
     if int(args.symmetrize_every) < 1:
         raise ValueError(f"--symmetrize-every must be >= 1, got {args.symmetrize_every}")
+    if int(args.precond_ruiz_iters) < 1:
+        raise ValueError(
+            f"--precond-ruiz-iters must be >= 1, got {args.precond_ruiz_iters}"
+        )
     if int(args.cheb_degree) < 0:
         raise ValueError(f"--cheb-degree must be >= 0, got {args.cheb_degree}")
     if int(args.cheb_error_grid) < 257:
@@ -221,6 +227,7 @@ def main():
             print(f"\n== SPD Size {n}x{n} | RHS {n}x{k} | dtype={dtype_compute} ==")
             print(
                 f"precond={args.precond} | l_target={args.l_target} | p={p_val} | "
+                f"ruiz_iters={args.precond_ruiz_iters} | "
                 f"cheb_deg={args.cheb_degree} | cheb_mode={args.cheb_mode} | "
                 f"symEvery={args.symmetrize_every} | "
                 f"online_coeff_mode={online_coeff_mode} | "
@@ -236,6 +243,7 @@ def main():
                     device=device,
                     k=k,
                     precond=args.precond,
+                    precond_ruiz_iters=args.precond_ruiz_iters,
                     ridge_rel=1e-4,
                     l_target=args.l_target,
                     dtype=dtype_compute,
