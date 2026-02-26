@@ -41,5 +41,5 @@ $$
 - At `n=1024`, performance is mixed and can be case-dependent.
 - Chebyshev consistently uses less memory than PE-Quad apply variants.
 
-See `reports/2025_02_25_comprehensive_p1_p4_benchmark.md` and raw logs in
+See `reports/2025_02_25_benchmark_p1thru5.md` and raw logs in
 `artifacts/benchmarks/`.

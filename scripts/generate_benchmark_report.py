@@ -50,7 +50,7 @@ def parse_output_to_table(out_str, p_val):
             continue
 
         if line.startswith("== SPD size"):
-            # e.g., == SPD size 256x256 | dtype=torch.bfloat16 | compile=True | precond=aol ...
+            # e.g., == SPD size 256x256 | dtype=torch.bfloat16 | compile=True | precond=frob ...
             m = re.search(r"size (\d+x\d+)", line)
             if m:
                 current_size = m.group(1)

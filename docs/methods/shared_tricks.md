@@ -46,10 +46,14 @@ When `terminal_last_step=True`, the final `Y` update is skipped in coupled paths
 
 ## 5) Preconditioning Pipeline (`precond_spd`)
 
-1. Optional scaling mode: `none`, `frob`, `aol`.
+1. Optional scaling mode: `none`, `frob`, `aol`, `jacobi`, `ruiz`.
 2. Optional ridge (`ridge_rel * mean(diag)`).
 3. Upper normalization via row-sum bound.
 4. Optional floor enforcement with Gershgorin-style lower proxy + diagonal shift.
+
+For Gram inputs (`A = G^T G`), `precond_gram_spd` supports `gram_mode=col-norm`
+as a low-overhead path that is algebraically equivalent to Jacobi scaling on the
+Gram matrix, without requiring callers to materialize and precondition `A` manually.
 
 Returned stats: `rho_proxy`, `gersh_lo`, `kappa_proxy`.
 

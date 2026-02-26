@@ -1,0 +1,14 @@
+[coeff] using precomputed(l_target=0.05), safety=1.0, no_final_safety=False (PE steps = 4)
+
+== SPD Size 1024x1024 | RHS 1024x16 | dtype=torch.bfloat16 ==
+precond=aol | l_target=0.05 | p=2 | ruiz_iters=2 | cheb_deg=32 | cheb_mode=fixed | symEvery=1 | online_coeff_mode=greedy-newton | online_stop_tol=0.0
+
+-- case gaussian_spd --
+PE-Quad-Inverse-Multiply        5.457 ms (pre 1.691 + iter 3.766) | mem   97MB | relerr vs true: 2.663e-03
+PE-Quad-Coupled-Apply           3.667 ms (pre 1.691 + iter 1.976) | mem   99MB | relerr vs true: 4.974e-03 | newton_steps 1 | minimax_steps 0
+Chebyshev-Apply                 5.141 ms (pre 1.691 + iter 3.450) | mem   90MB | relerr vs true: 3.128e-03 | cheb_deg 32
+
+-- case illcond_1e6 --
+PE-Quad-Inverse-Multiply        5.506 ms (pre 1.728 + iter 3.778) | mem   97MB | relerr vs true: 3.197e-03
+PE-Quad-Coupled-Apply           3.815 ms (pre 1.728 + iter 2.087) | mem   99MB | relerr vs true: 5.127e-03 | newton_steps 1 | minimax_steps 0
+Chebyshev-Apply                 5.311 ms (pre 1.728 + iter 3.583) | mem   90MB | relerr vs true: 3.082e-03 | cheb_deg 32

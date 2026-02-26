@@ -13,6 +13,7 @@ Practical inverse p-th-root kernels for SPD matrices, optimized for fixed-iterat
   - `apply_inverse_root_auto` (single-shot vs reuse-aware strategy)
 - Preconditioning + diagnostics:
   - `precond_spd`
+  - `precond_gram_spd` (`A = G^T G` path)
   - `compute_quality_stats`, `iroot_relative_error`
 
 ## Repository Layout
@@ -59,8 +60,8 @@ uv run python scripts/generate_benchmark_report.py --out results/benchmark_repor
 Reproduce latest solve/apply benchmark logs:
 
 ```bash
-uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 16 --trials 3 --timing-reps 5 --dtype bf16 --precond frob --l-target 0.05 > artifacts/benchmarks/solve_p2_k16_2026-02-25.txt
-uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 --timing-reps 5 --dtype bf16 --precond frob --l-target 0.05 > artifacts/benchmarks/solve_p2_k64_2026-02-25.txt
+uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 16 --trials 3 --timing-reps 5 --dtype bf16 --precond jacobi --l-target 0.05 > artifacts/benchmarks/solve_p2_k16_2026-02-25.txt
+uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 --timing-reps 5 --dtype bf16 --precond jacobi --l-target 0.05 > artifacts/benchmarks/solve_p2_k64_2026-02-25.txt
 ```
 
 ## Key CLI Flags
@@ -68,7 +69,8 @@ uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 
 - `--p`: root exponent.
 - `--sizes`: comma-separated matrix sizes.
 - `--dtype {fp32,bf16}`.
-- `--precond {none,frob,aol}`.
+- `--precond {none,frob,aol,jacobi,ruiz}`.
+- `--precond-ruiz-iters`: equilibration rounds for `ruiz`.
 - `--coeff-mode {auto,precomputed,tuned}` (inverse-root harness).
 - `--compile`: enable `torch.compile`.
 - `--timing-reps`: average repeated runs per trial.
@@ -84,10 +86,14 @@ uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 
 - Inverse-root report: `reports/2025_02_25_benchmark_p1thru5.md`.
 - Solve online-coefficient ablation (`20` trials): `reports/2026_02_25_solve_online_coeff_ablation_t20.md`.
 - Square-RHS direct-vs-materialize validation (`ideas/3`): `reports/2026_02_25_idea3_square_rhs_apply_vs_materialize.md`.
+- Preconditioner ablation + Gram path checks (`ideas/4`): `reports/2026_02_26_precond_and_gram_path_ablation.md`.
 - Raw logs:
   - `benchmark_results/2026_02_25/solve_ablation_t20/`
   - `benchmark_results/2026_02_25/solve_exploratory/`
   - `benchmark_results/2026_02_25/iroot_p1_p5/`
+  - `benchmark_results/2026_02_26/idea4_precond_t20/`
+  - `benchmark_results/2026_02_26/idea4_precond_iroot_t20/`
+  - `benchmark_results/2026_02_26/idea4_gram_precond_t20/`
 
 ## References
 
