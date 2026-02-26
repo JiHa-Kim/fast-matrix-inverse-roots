@@ -59,7 +59,9 @@ def main():
     )
     p.add_argument("--p", type=int, default=2, help="Root exponent")
     p.add_argument("--sizes", type=str, default="1024")
-    p.add_argument("--k", type=int, default=16, help="Number of RHS columns (K << N)")
+    p.add_argument(
+        "--k", type=str, default="1,16,64,1024", help="RHS column counts (CSV)"
+    )
     p.add_argument("--trials", type=int, default=10)
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument(
@@ -233,6 +235,7 @@ def main():
             f"got {args.online_coeff_min_ns_logwidth_rel_improve}"
         )
     cheb_candidate_degrees = _parse_int_csv(args.cheb_candidate_degrees)
+    ks = parse_shapes(args.k)
     online_stop_tol = (
         float(args.online_stop_tol) if float(args.online_stop_tol) > 0.0 else None
     )
@@ -274,102 +277,108 @@ def main():
 
     with torch.inference_mode():
         for n in sizes:
-            k = args.k
-            print(f"\n== SPD Size {n}x{n} | RHS {n}x{k} | dtype={dtype_compute} ==")
-            print(
-                f"precond={args.precond} | l_target={args.l_target} | p={p_val} | "
-                f"ruiz_iters={args.precond_ruiz_iters} | "
-                f"cheb_deg={args.cheb_degree} | cheb_mode={args.cheb_mode} | "
-                f"symEvery={args.symmetrize_every} | "
-                f"online_coeff_mode={online_coeff_mode} | "
-                f"online_stop_tol={args.online_stop_tol} | "
-                f"cuda_graph={bool(args.cuda_graph)}"
-            )
-
-            for case in cases:
-                mats = make_spd_cases(case, n, args.trials, device, torch.float32, g)
-                mats = [m.to(dtype_compute) for m in mats]
-
-                prepared_inputs, ms_precond_med = prepare_solve_inputs(
-                    mats=mats,
-                    device=device,
-                    k=k,
-                    precond=args.precond,
-                    precond_ruiz_iters=args.precond_ruiz_iters,
-                    ridge_rel=1e-4,
-                    l_target=args.l_target,
-                    dtype=dtype_compute,
-                    generator=g,
+            for k in ks:
+                print(f"\n== SPD Size {n}x{n} | RHS {n}x{k} | dtype={dtype_compute} ==")
+                print(
+                    f"precond={args.precond} | l_target={args.l_target} | p={p_val} | "
+                    f"ruiz_iters={args.precond_ruiz_iters} | "
+                    f"cheb_deg={args.cheb_degree} | cheb_mode={args.cheb_mode} | "
+                    f"symEvery={args.symmetrize_every} | "
+                    f"online_coeff_mode={online_coeff_mode} | "
+                    f"online_stop_tol={args.online_stop_tol} | "
+                    f"cuda_graph={bool(args.cuda_graph)}"
                 )
 
-                Z_true = compute_ground_truth(prepared_inputs, p_val)
-                rows = []
+                for case in cases:
+                    mats = make_spd_cases(
+                        case, n, args.trials, device, torch.float32, g
+                    )
+                    mats = [m.to(dtype_compute) for m in mats]
 
-                for name in matrix_solve_methods(p_val):
-                    rr = eval_solve_method(
-                        prepared_inputs=prepared_inputs,
-                        ms_precond_median=ms_precond_med,
-                        ground_truth_Z=Z_true,
+                    prepared_inputs, ms_precond_med = prepare_solve_inputs(
+                        mats=mats,
                         device=device,
-                        method=name,
-                        pe_quad_coeffs=pe_quad_coeffs,
-                        cheb_degree=args.cheb_degree,
-                        cheb_mode=args.cheb_mode,
-                        cheb_candidate_degrees=cheb_candidate_degrees,
-                        cheb_error_grid_n=args.cheb_error_grid,
-                        cheb_max_relerr_mult=args.cheb_max_relerr_mult,
-                        timing_reps=args.timing_reps,
-                        timing_warmup_reps=args.timing_warmup_reps,
-                        p_val=p_val,
-                        l_min=args.l_target,
-                        symmetrize_every=args.symmetrize_every,
-                        online_stop_tol=online_stop_tol,
-                        online_min_steps=args.online_min_steps,
-                        online_coeff_mode=online_coeff_mode,
-                        online_coeff_min_rel_improve=args.online_coeff_min_rel_improve,
-                        online_coeff_min_ns_logwidth_rel_improve=(
-                            args.online_coeff_min_ns_logwidth_rel_improve
-                        ),
-                        use_cuda_graph=bool(args.cuda_graph),
-                        cuda_graph_warmup=int(args.cuda_graph_warmup),
-                        uncoupled_fn=uncoupled_fn,
-                        coupled_solve_fn=coupled_solve_fn,
-                        cheb_apply_fn=cheb_apply_fn,
+                        k=k,
+                        precond=args.precond,
+                        precond_ruiz_iters=args.precond_ruiz_iters,
+                        ridge_rel=1e-4,
+                        l_target=args.l_target,
+                        dtype=dtype_compute,
+                        generator=g,
                     )
-                    rows.append((name, rr))
 
-                print(f"\n-- case {case} --")
-                for name, rr in rows:
-                    mem_str = (
-                        f" | mem {rr.mem_alloc_mb:4.0f}MB"
-                        if not math.isnan(rr.mem_alloc_mb)
-                        else ""
-                    )
-                    cheb_deg_str = (
-                        f" | cheb_deg {rr.cheb_degree_used:.0f}"
-                        if not math.isnan(rr.cheb_degree_used)
-                        else ""
-                    )
-                    pe_newton_str = (
-                        f" | newton_steps {rr.pe_newton_steps_used:.0f}"
-                        if not math.isnan(rr.pe_newton_steps_used)
-                        else ""
-                    )
-                    pe_minimax_str = (
-                        f" | minimax_steps {rr.pe_minimax_steps_used:.0f}"
-                        if not math.isnan(rr.pe_minimax_steps_used)
-                        else ""
-                    )
-                    pe_affine_str = (
-                        f" | affineopt_steps {rr.pe_affine_opt_steps_used:.0f}"
-                        if not math.isnan(rr.pe_affine_opt_steps_used)
-                        else ""
-                    )
-                    print(
-                        f"{name:<28s} {rr.ms:8.3f} ms (pre {rr.ms_precond:.3f} + iter {rr.ms_iter:.3f}){mem_str} | "
-                        f"relerr vs true: {rr.rel_err:.3e}"
-                        f"{cheb_deg_str}{pe_newton_str}{pe_minimax_str}{pe_affine_str}"
-                    )
+                    Z_true = compute_ground_truth(prepared_inputs, p_val)
+                    rows = []
+
+                    for name in matrix_solve_methods(p_val):
+                        try:
+                            rr = eval_solve_method(
+                                prepared_inputs=prepared_inputs,
+                                ms_precond_median=ms_precond_med,
+                                ground_truth_Z=Z_true,
+                                device=device,
+                                method=name,
+                                pe_quad_coeffs=pe_quad_coeffs,
+                                cheb_degree=args.cheb_degree,
+                                cheb_mode=args.cheb_mode,
+                                cheb_candidate_degrees=cheb_candidate_degrees,
+                                cheb_error_grid_n=args.cheb_error_grid,
+                                cheb_max_relerr_mult=args.cheb_max_relerr_mult,
+                                timing_reps=args.timing_reps,
+                                timing_warmup_reps=args.timing_warmup_reps,
+                                p_val=p_val,
+                                l_min=args.l_target,
+                                symmetrize_every=args.symmetrize_every,
+                                online_stop_tol=online_stop_tol,
+                                online_min_steps=args.online_min_steps,
+                                online_coeff_mode=online_coeff_mode,
+                                online_coeff_min_rel_improve=args.online_coeff_min_rel_improve,
+                                online_coeff_min_ns_logwidth_rel_improve=(
+                                    args.online_coeff_min_ns_logwidth_rel_improve
+                                ),
+                                use_cuda_graph=bool(args.cuda_graph),
+                                cuda_graph_warmup=int(args.cuda_graph_warmup),
+                                uncoupled_fn=uncoupled_fn,
+                                coupled_solve_fn=coupled_solve_fn,
+                                cheb_apply_fn=cheb_apply_fn,
+                            )
+                        except (NotImplementedError, RuntimeError) as e:
+                            print(f"  SKIP {name}: {e}")
+                            continue
+                        rows.append((name, rr))
+
+                    print(f"\n-- case {case} --")
+                    for name, rr in rows:
+                        mem_str = (
+                            f" | mem {rr.mem_alloc_mb:4.0f}MB"
+                            if not math.isnan(rr.mem_alloc_mb)
+                            else ""
+                        )
+                        cheb_deg_str = (
+                            f" | cheb_deg {rr.cheb_degree_used:.0f}"
+                            if not math.isnan(rr.cheb_degree_used)
+                            else ""
+                        )
+                        pe_newton_str = (
+                            f" | newton_steps {rr.pe_newton_steps_used:.0f}"
+                            if not math.isnan(rr.pe_newton_steps_used)
+                            else ""
+                        )
+                        pe_minimax_str = (
+                            f" | minimax_steps {rr.pe_minimax_steps_used:.0f}"
+                            if not math.isnan(rr.pe_minimax_steps_used)
+                            else ""
+                        )
+                        pe_affine_str = (
+                            f" | affineopt_steps {rr.pe_affine_opt_steps_used:.0f}"
+                            if not math.isnan(rr.pe_affine_opt_steps_used)
+                            else ""
+                        )
+                        print(
+                            f"{name:<28s} {rr.ms:8.3f} ms (pre {rr.ms_precond:.3f} + iter {rr.ms_iter:.3f}){mem_str} | "
+                            f"relerr vs true: {rr.rel_err:.3e}"
+                            f"{cheb_deg_str}{pe_newton_str}{pe_minimax_str}{pe_affine_str}"
+                        )
 
 
 if __name__ == "__main__":

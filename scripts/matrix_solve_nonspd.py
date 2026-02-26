@@ -28,10 +28,6 @@ from fast_iroot import (
     inverse_proot_pe_quadratic_uncoupled,
     inverse_solve_pe_quadratic_coupled,
 )
-from fast_iroot.nsrc import nsrc_solve, hybrid_pe_nsrc_solve
-from fast_iroot.block_cg import block_cg_solve
-from fast_iroot.chebyshev_iterative import chebyshev_iterative_solve
-from fast_iroot.lu_ir import lu_ir_solve, lu_solve_direct
 from scripts.bench_common import (
     make_nonspd_cases,
     median,
@@ -47,13 +43,6 @@ METHODS: List[str] = [
     "PE-Quad-Coupled-Apply-Safe",
     "PE-Quad-Coupled-Apply-Adaptive",
     "Torch-Solve",
-    "NSRC-Scalar-10",
-    "Hybrid-PE2-NSRC3",
-    "Hybrid-PE2-NSRC5",
-    "Block-CG-10",
-    "Cheb-Iter-20",
-    "LU-Direct",
-    "LU-IR-1",
 ]
 NONSPD_PRECOND_MODES: Tuple[str, ...] = ("row-norm", "frob", "ruiz")
 
@@ -273,71 +262,6 @@ def _build_runner(
 
         return run
 
-    if method == "NSRC-Scalar-10":
-
-        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-            alpha = 2.0 / (1.0 + 0.05)  # use l_target=0.05 as estimate
-            Z, _ = nsrc_solve(A_norm, B, alpha=alpha, max_iter=10)
-            return Z
-
-        return run
-
-    if method == "Hybrid-PE2-NSRC3":
-
-        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-            Z, _ = hybrid_pe_nsrc_solve(
-                A_norm, B, abc_t=pe_coeffs, pe_steps=2, ref_steps=3
-            )
-            return Z
-
-        return run
-
-    if method == "Hybrid-PE2-NSRC5":
-
-        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-            Z, _ = hybrid_pe_nsrc_solve(
-                A_norm, B, abc_t=pe_coeffs, pe_steps=2, ref_steps=5
-            )
-            return Z
-
-        return run
-
-    if method == "Block-CG-10":
-
-        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-            diag_inv = 1.0 / A_norm.diagonal(dim1=-2, dim2=-1).clamp_min(1e-12)
-            Z, _, _ = block_cg_solve(
-                A_norm, B, max_iter=10, tol=1e-3, diag_precond=diag_inv
-            )
-            return Z
-
-        return run
-
-    if method == "Cheb-Iter-20":
-
-        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-            Z, _, _ = chebyshev_iterative_solve(
-                A_norm, B, l_min=0.05, l_max=1.0, max_iter=20
-            )
-            return Z
-
-        return run
-
-    if method == "LU-Direct":
-
-        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-            return lu_solve_direct(A_norm, B)
-
-        return run
-
-    if method == "LU-IR-1":
-
-        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-            Z, _ = lu_ir_solve(A_norm, B, max_refine=1)
-            return Z
-
-        return run
-
     raise ValueError(f"unknown method: {method}")
 
 
@@ -431,8 +355,10 @@ def main():
         description="Dedicated non-SPD benchmark suite for solve p=1 only"
     )
     p.add_argument("--p", type=int, default=1, help="Must be 1 for this suite")
-    p.add_argument("--sizes", type=str, default="256,512")
-    p.add_argument("--k", type=int, default=16, help="RHS column count")
+    p.add_argument("--sizes", type=str, default="1024")
+    p.add_argument(
+        "--k", type=str, default="1,16,64,1024", help="RHS column counts (CSV)"
+    )
     p.add_argument("--trials", type=int, default=10)
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument(
@@ -509,8 +435,7 @@ def main():
         raise ValueError(
             f"matrix_solve_nonspd.py is a p=1-only suite, got --p={args.p}"
         )
-    if int(args.k) < 1:
-        raise ValueError(f"--k must be >= 1, got {args.k}")
+    ks = parse_shapes(args.k)
     if int(args.trials) < 1:
         raise ValueError(f"--trials must be >= 1, got {args.trials}")
     if int(args.timing_reps) < 1:
@@ -593,84 +518,93 @@ def main():
 
     with torch.inference_mode():
         for n in sizes:
-            print(
-                f"\n== Non-SPD Size {n}x{n} | RHS {n}x{args.k} | dtype={dtype_compute} =="
-            )
-            print(
-                f"p=1 | precond={args.precond} | precond_ruiz_iters={args.precond_ruiz_iters} | "
-                f"compile={args.compile} | timing_reps={args.timing_reps} | "
-                f"timing_warmup_reps={args.timing_warmup_reps} | "
-                f"adapt(resid_tol={args.nonspd_adaptive_resid_tol}, "
-                f"growth_tol={args.nonspd_adaptive_growth_tol}, "
-                f"check_every={args.nonspd_adaptive_check_every}, "
-                f"safe_fallback_tol={args.nonspd_safe_fallback_tol}, "
-                f"safe_early_y_tol={args.nonspd_safe_early_y_tol})"
-            )
-
-            for case in cases:
-                mats = make_nonspd_cases(case, n, args.trials, device, torch.float32, g)
-                mats = [m.to(dtype_compute) for m in mats]
-                prepared_inputs, ms_precond_med = prepare_nonspd_solve_inputs(
-                    mats=mats,
-                    device=device,
-                    k=args.k,
-                    dtype=dtype_compute,
-                    generator=g,
-                    precond=str(args.precond),
-                    precond_ruiz_iters=int(args.precond_ruiz_iters),
+            for k in ks:
+                print(
+                    f"\n== Non-SPD Size {n}x{n} | RHS {n}x{k} | dtype={dtype_compute} =="
                 )
-                Z_true = compute_ground_truth(prepared_inputs)
+                print(
+                    f"p=1 | precond={args.precond} | precond_ruiz_iters={args.precond_ruiz_iters} | "
+                    f"compile={args.compile} | timing_reps={args.timing_reps} | "
+                    f"timing_warmup_reps={args.timing_warmup_reps} | "
+                    f"adapt(resid_tol={args.nonspd_adaptive_resid_tol}, "
+                    f"growth_tol={args.nonspd_adaptive_growth_tol}, "
+                    f"check_every={args.nonspd_adaptive_check_every}, "
+                    f"safe_fallback_tol={args.nonspd_safe_fallback_tol}, "
+                    f"safe_early_y_tol={args.nonspd_safe_early_y_tol})"
+                )
 
-                rows: List[Tuple[str, NonSpdBenchResult]] = []
-                for method in METHODS:
-                    rr = eval_method(
-                        prepared_inputs=prepared_inputs,
-                        ground_truth_Z=Z_true,
+                for case in cases:
+                    mats = make_nonspd_cases(
+                        case, n, args.trials, device, torch.float32, g
+                    )
+                    mats = [m.to(dtype_compute) for m in mats]
+                    prepared_inputs, ms_precond_med = prepare_nonspd_solve_inputs(
+                        mats=mats,
                         device=device,
-                        method=method,
-                        pe_coeffs=pe_quad_coeffs,
-                        timing_reps=args.timing_reps,
-                        timing_warmup_reps=args.timing_warmup_reps,
-                        ms_precond_median=ms_precond_med,
-                        nonspd_adaptive_resid_tol=float(args.nonspd_adaptive_resid_tol),
-                        nonspd_adaptive_growth_tol=float(
-                            args.nonspd_adaptive_growth_tol
-                        ),
-                        nonspd_adaptive_check_every=int(
-                            args.nonspd_adaptive_check_every
-                        ),
-                        nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
-                        nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
-                        uncoupled_fn=uncoupled_fn,
-                        coupled_solve_fn=coupled_solve_fn,
+                        k=k,
+                        dtype=dtype_compute,
+                        generator=g,
+                        precond=str(args.precond),
+                        precond_ruiz_iters=int(args.precond_ruiz_iters),
                     )
-                    rows.append((method, rr))
+                    Z_true = compute_ground_truth(prepared_inputs)
 
-                print(f"\n-- case {case} --")
-                for name, rr in rows:
-                    mem_str = (
-                        f" | mem {rr.mem_alloc_mb:4.0f}MB"
-                        if not math.isnan(rr.mem_alloc_mb)
-                        else ""
-                    )
-                    print(
-                        f"{name:<28s} {rr.ms:8.3f} ms "
-                        f"(pre {rr.ms_precond:.3f} + iter {rr.ms_iter:.3f}){mem_str} | "
-                        f"relerr vs solve: {rr.rel_err:.3e} | bad {rr.bad}"
-                    )
+                    rows: List[Tuple[str, NonSpdBenchResult]] = []
+                    for method in METHODS:
+                        try:
+                            rr = eval_method(
+                                prepared_inputs=prepared_inputs,
+                                ground_truth_Z=Z_true,
+                                device=device,
+                                method=method,
+                                pe_coeffs=pe_quad_coeffs,
+                                timing_reps=args.timing_reps,
+                                timing_warmup_reps=args.timing_warmup_reps,
+                                ms_precond_median=ms_precond_med,
+                                nonspd_adaptive_resid_tol=float(
+                                    args.nonspd_adaptive_resid_tol
+                                ),
+                                nonspd_adaptive_growth_tol=float(
+                                    args.nonspd_adaptive_growth_tol
+                                ),
+                                nonspd_adaptive_check_every=int(
+                                    args.nonspd_adaptive_check_every
+                                ),
+                                nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
+                                nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+                                uncoupled_fn=uncoupled_fn,
+                                coupled_solve_fn=coupled_solve_fn,
+                            )
+                        except (NotImplementedError, RuntimeError) as e:
+                            print(f"  SKIP {method}: {e}")
+                            continue
+                        rows.append((method, rr))
 
-                finite = [
-                    (nm, rr)
-                    for nm, rr in rows
-                    if rr.bad == 0 and math.isfinite(rr.rel_err)
-                ]
-                if finite:
-                    best_name, best_rr = min(finite, key=lambda t: t[1].ms)
-                    print(
-                        f"BEST finite: {best_name} @ {best_rr.ms:.3f} ms, relerr={best_rr.rel_err:.3e}"
-                    )
-                else:
-                    print("BEST finite: none")
+                    print(f"\n-- case {case} --")
+                    for name, rr in rows:
+                        mem_str = (
+                            f" | mem {rr.mem_alloc_mb:4.0f}MB"
+                            if not math.isnan(rr.mem_alloc_mb)
+                            else ""
+                        )
+                        print(
+                            f"{name:<28s} {rr.ms:8.3f} ms "
+                            f"(pre {rr.ms_precond:.3f} + iter {rr.ms_iter:.3f}){mem_str} | "
+                            f"relerr vs solve: {rr.rel_err:.3e} | bad {rr.bad}"
+                        )
+
+                    finite = [
+                        (nm, rr)
+                        for nm, rr in rows
+                        if rr.bad == 0 and math.isfinite(rr.rel_err)
+                    ]
+                    if finite:
+                        best_name, best_rr = min(finite, key=lambda t: t[1].ms)
+                        print(
+                            f"BEST finite: {best_name} @ {best_rr.ms:.3f} ms, relerr={best_rr.rel_err:.3e}"
+                        )
+                    else:
+                        print("BEST finite: none")
 
 
 if __name__ == "__main__":
