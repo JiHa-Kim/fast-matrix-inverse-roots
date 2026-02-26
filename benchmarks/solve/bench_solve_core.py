@@ -23,10 +23,8 @@ BASE_MATRIX_SOLVE_METHODS: List[str] = [
     "Inverse-Newton-Inverse-Multiply",
     "PE-Quad-Coupled-Apply",
     "Inverse-Newton-Coupled-Apply",
-    "Chebyshev-Apply",
-    "Torch-EVD-Solve",
 ]
-P1_SPD_SOLVE_BASELINES: List[str] = ["Torch-Solve", "Torch-Cholesky-Solve"]
+P1_SPD_SOLVE_BASELINES: List[str] = ["Torch-Cholesky-Solve"]
 
 
 def matrix_solve_methods(p_val: int) -> List[str]:

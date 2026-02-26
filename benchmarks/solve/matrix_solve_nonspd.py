@@ -44,10 +44,7 @@ METHODS: List[str] = [
     "Inverse-Newton-Inverse-Multiply",
     "PE-Quad-Coupled-Apply",
     "Inverse-Newton-Coupled-Apply",
-    "PE-Quad-Coupled-Apply-Safe",
-    "PE-Quad-Coupled-Apply-Adaptive",
     "Torch-Solve",
-    "Auto-Switch-Production",
 ]
 
 

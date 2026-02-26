@@ -2,25 +2,31 @@
 """
 benchmarks/run_benchmarks.py
 
-Orchestrates running the solver performance benchmarks for SPD and non-SPD cases.
+Runs the maintained solver benchmark matrix and writes fresh .txt logs.
 """
 
-import subprocess
+from __future__ import annotations
+
 import os
+import subprocess
 import sys
 from datetime import datetime
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS_DIR = os.path.join(REPO_ROOT, "benchmark_results")
-os.makedirs(RESULTS_DIR, exist_ok=True)
+SPD_DIR = os.path.join(RESULTS_DIR, "latest_spd_solve_logs")
+NONSPD_DIR = os.path.join(RESULTS_DIR, "latest_nonspd_solve_logs")
 
 
-def run_command(cmd, log_filename):
-    log_path = os.path.join(RESULTS_DIR, log_filename)
+def _ensure_dirs() -> None:
+    os.makedirs(SPD_DIR, exist_ok=True)
+    os.makedirs(NONSPD_DIR, exist_ok=True)
+
+
+def run_command(cmd: list[str], out_path: str) -> None:
     print(f"Running: {' '.join(cmd)}")
-    print(f"Logging to: {log_path}")
-
-    with open(log_path, "w") as log_file:
+    print(f"Logging to: {out_path}")
+    with open(out_path, "w", encoding="utf-8") as log_file:
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -29,6 +35,7 @@ def run_command(cmd, log_filename):
             bufsize=1,
             cwd=REPO_ROOT,
         )
+        assert process.stdout is not None
         for line in process.stdout:
             print(line, end="")
             log_file.write(line)
@@ -39,11 +46,11 @@ def run_command(cmd, log_filename):
             sys.exit(process.returncode)
 
 
-def main():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+def _run_spd(trials: int, dtype: str, timing_reps: int, warmup_reps: int) -> None:
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # 1. SPD Benchmarks: n=1024, k=1,16,64,1024, p=1,2,4
-    for p in [1, 2, 4]:
+    # Suite A: k < n, with n in {1024, 2048}, k in {1,16,64}
+    for p_val in (1, 2, 4):
         cmd = [
             "uv",
             "run",
@@ -51,60 +58,129 @@ def main():
             "-m",
             "benchmarks.solve.matrix_solve",
             "--p",
-            str(p),
+            str(p_val),
             "--sizes",
-            "1024",
+            "1024,2048",
             "--k",
-            "1,16,64,1024",
+            "1,16,64",
             "--trials",
-            "5",  # Reduced trials for speed if needed, but keeping it decent
+            str(trials),
+            "--timing-reps",
+            str(timing_reps),
+            "--timing-warmup-reps",
+            str(warmup_reps),
             "--dtype",
-            "bf16",
+            dtype,
         ]
-        log_name = f"spd_p{p}_n1024_k1-1024_{timestamp}.log"
-        run_command(cmd, log_name)
+        out = os.path.join(
+            SPD_DIR,
+            f"spd_p{p_val}_klt_n_sizes1024_2048_k1_16_64_{ts}.txt",
+        )
+        run_command(cmd, out)
 
-    # 2. Non-SPD Benchmarks: p=1, n=1024,2048, k=1,16,64,n
-    # Note: matrix_solve_nonspd.py might need separate calls if k isn't easy to specify as 'n'
-    # Actually, matrix_solve_nonspd.py takes --k as CSV of integers.
+    # Suite B: k = n, with n in {256,512,1024,2048}
+    for p_val in (1, 2, 4):
+        for n_val in (256, 512, 1024, 2048):
+            cmd = [
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "benchmarks.solve.matrix_solve",
+                "--p",
+                str(p_val),
+                "--sizes",
+                str(n_val),
+                "--k",
+                str(n_val),
+                "--trials",
+                str(trials),
+                "--timing-reps",
+                str(timing_reps),
+                "--timing-warmup-reps",
+                str(warmup_reps),
+                "--dtype",
+                dtype,
+            ]
+            out = os.path.join(
+                SPD_DIR,
+                f"spd_p{p_val}_keq_n_n{n_val}_k{n_val}_{ts}.txt",
+            )
+            run_command(cmd, out)
 
-    # n=1024
-    cmd_1024 = [
+
+def _run_nonspd(trials: int, dtype: str, timing_reps: int, warmup_reps: int) -> None:
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Suite A: k < n, with n in {1024, 2048}, k in {1,16,64}
+    cmd = [
         "uv",
         "run",
         "python",
         "-m",
         "benchmarks.solve.matrix_solve_nonspd",
+        "--p",
+        "1",
         "--sizes",
-        "1024",
+        "1024,2048",
         "--k",
-        "1,16,64,1024",
+        "1,16,64",
         "--trials",
-        "5",
+        str(trials),
+        "--timing-reps",
+        str(timing_reps),
+        "--timing-warmup-reps",
+        str(warmup_reps),
         "--dtype",
-        "bf16",
+        dtype,
     ]
-    run_command(cmd_1024, f"nonspd_n1024_k1-1024_{timestamp}.log")
+    out = os.path.join(
+        NONSPD_DIR,
+        f"nonspd_p1_klt_n_sizes1024_2048_k1_16_64_{ts}.txt",
+    )
+    run_command(cmd, out)
 
-    # n=2048
-    cmd_2048 = [
-        "uv",
-        "run",
-        "python",
-        "-m",
-        "benchmarks.solve.matrix_solve_nonspd",
-        "--sizes",
-        "2048",
-        "--k",
-        "1,16,64,2048",
-        "--trials",
-        "5",
-        "--dtype",
-        "bf16",
-    ]
-    run_command(cmd_2048, f"nonspd_n2048_k1-2048_{timestamp}.log")
+    # Suite B: k = n, with n in {256,512,1024,2048}
+    for n_val in (256, 512, 1024, 2048):
+        cmd = [
+            "uv",
+            "run",
+            "python",
+            "-m",
+            "benchmarks.solve.matrix_solve_nonspd",
+            "--p",
+            "1",
+            "--sizes",
+            str(n_val),
+            "--k",
+            str(n_val),
+            "--trials",
+            str(trials),
+            "--timing-reps",
+            str(timing_reps),
+            "--timing-warmup-reps",
+            str(warmup_reps),
+            "--dtype",
+            dtype,
+        ]
+        out = os.path.join(
+            NONSPD_DIR,
+            f"nonspd_p1_keq_n_n{n_val}_k{n_val}_{ts}.txt",
+        )
+        run_command(cmd, out)
+
+
+def main() -> None:
+    # Keep defaults aligned with current lightweight reproducibility settings.
+    trials = 5
+    dtype = "bf16"
+    timing_reps = 5
+    warmup_reps = 2
+
+    _ensure_dirs()
+    _run_spd(trials=trials, dtype=dtype, timing_reps=timing_reps, warmup_reps=warmup_reps)
+    _run_nonspd(trials=trials, dtype=dtype, timing_reps=timing_reps, warmup_reps=warmup_reps)
 
 
 if __name__ == "__main__":
     main()
-
