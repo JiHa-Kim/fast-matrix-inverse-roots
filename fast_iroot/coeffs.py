@@ -4,12 +4,9 @@ from typing import List, Sequence, Tuple
 import torch
 
 try:
-    from ..coeff_tuner import make_schedule
+    from scripts.coeff_tuner import make_schedule
 except ImportError:
-    try:
-        from coeff_tuner import make_schedule
-    except ImportError:
-        make_schedule = None
+    make_schedule = None
 
 
 def _quad_coeffs(

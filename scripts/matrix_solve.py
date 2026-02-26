@@ -44,7 +44,7 @@ try:
         median,
     )
 except ImportError:
-    from matrix_iroot import (
+    from scripts.matrix_iroot import (
         time_ms_any,
         time_ms_repeat,
         parse_shapes,
