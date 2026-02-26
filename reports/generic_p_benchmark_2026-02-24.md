@@ -4,7 +4,7 @@
 This report evaluates the newly implemented generic $p$ support (odd and even branches) by benchmarking $p=3$ and $p=5$ across various SPD matrix conditions.
 
 ## Methodology
-- **Commands**: `uv run python matrix_iroot.py --p <val> --sizes 256,512 --trials 5`
+- **Commands**: `uv run python -m scripts.matrix_iroot --p <val> --sizes 256,512 --trials 5`
 - **Baselines**: `Inverse-Newton` (baseline), `PE-Quad` (Uncoupled quadratic), and `PE-Quad-Coupled`.
 - **Metrics Evaluated**: Time (ms), Frobenious Residual (`|I - A X^p|_F`), and Memory.
 

@@ -20,14 +20,12 @@ This project prioritizes:
   - `metrics.py` — Quality metrics (`compute_quality_stats`, `exact_inverse_proot`)
   - `utils.py` — Low-level helpers (`_matmul_into`, `_addmm_into`, `_bpow_times_y`)
   - `auto_policy.py` — Legacy auto-policy utilities (currently unused)
-- `matrix_iroot.py`
-  - Main benchmark harness CLI for explicit inverse p-th roots
-- `matrix_solve.py`
-  - Benchmark harness CLI tailored for Direct Chebyshev Solves ($Z \approx A^{-1/p} B$) 
-- `coeff_tuner.py`
-  - Offline schedule tuning utility
-- `scripts/verify_iroot.py`
-  - Correctness test across p∈{1,2,3,4,8}
+- `scripts/`
+  - `matrix_iroot.py` — Main benchmark harness CLI for explicit inverse p-th roots
+  - `matrix_solve.py` — Benchmark harness CLI for direct solves ($Z \approx A^{-1/p} B$)
+  - `coeff_tuner.py` — Offline schedule tuning utility
+  - `verify_iroot.py` — Correctness test across p∈{1,2,3,4,8}
+  - `generate_benchmark_report.py` — Benchmark report generator
 - `reports/`
   - Benchmark results and comprehensive report (`chebyshev_solve_benchmark.md`)
 - `archive/`
@@ -94,13 +92,13 @@ uv sync
 Run a quick benchmark (inverse 4th root):
 
 ```bash
-uv run python matrix_iroot.py --p 4 --sizes 256,512 --dtype bf16 --trials 8
+uv run python -m scripts.matrix_iroot --p 4 --sizes 256,512 --dtype bf16 --trials 8
 ```
 
 Run for matrix inverse (p=1):
 
 ```bash
-uv run python matrix_iroot.py --p 1 --sizes 256,512,1024 --dtype bf16 --trials 8 --coeff-mode tuned
+uv run python -m scripts.matrix_iroot --p 1 --sizes 256,512,1024 --dtype bf16 --trials 8 --coeff-mode tuned
 ```
 
 Verify correctness across multiple p values:
@@ -162,7 +160,7 @@ See `results/benchmark_report.md` for the latest comprehensive benchmark data.
 
 ## Tuning Coefficients
 
-Use `coeff_tuner.py` for offline schedule generation:
+Use `scripts/coeff_tuner.py` for offline schedule generation:
 - Precomputed schedules available for p=2, l_target=0.05
 - Tuned schedules for arbitrary p and targets via `--coeff-mode tuned`
 - Optional safety scaling

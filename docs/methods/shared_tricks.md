@@ -81,14 +81,14 @@ Returned:
 ## 6) Schedule / Coefficient Tricks
 
 - Precomputed schedules for default target (`l_target=0.05`) are embedded.
-- Optional tuned schedules come from `coeff_tuner.py` (`coeff-mode=tuned`).
+- Optional tuned schedules come from `scripts/coeff_tuner.py` (`coeff-mode=tuned`).
 - Coefficient safety scaling supported:
   - global safety factor
   - optional no-safety on final step
 
 ## 7) Quality Metrics Used by Benchmark Harness
 
-`matrix_iroot.py` reports:
+`scripts/matrix_iroot.py` reports:
 
 - wall-clock split: precond + iteration
 - residual median / p95 / max

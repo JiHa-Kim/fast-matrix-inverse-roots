@@ -11,7 +11,8 @@ def run_benchmark(p_val, sizes="256,512", trials=5):
         "uv",
         "run",
         "python",
-        "matrix_iroot.py",
+        "-m",
+        "scripts.matrix_iroot",
         "--p",
         str(p_val),
         "--sizes",
@@ -27,7 +28,7 @@ def run_benchmark(p_val, sizes="256,512", trials=5):
 
     print(f"Running: {' '.join(cmd)}")
 
-    # Needs to be explicitly run in CUDA if available, but matrix_iroot.py automatically picks CUDA.
+    # matrix_iroot runner automatically picks CUDA if available.
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.stdout
 
