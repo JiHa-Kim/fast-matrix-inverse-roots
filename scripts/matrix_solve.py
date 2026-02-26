@@ -63,6 +63,15 @@ def main():
     p.add_argument("--l-target", type=float, default=0.05)
     p.add_argument("--timing-reps", type=int, default=5)
     p.add_argument(
+        "--timing-warmup-reps",
+        type=int,
+        default=2,
+        help=(
+            "Extra untimed warmup calls before timing each method/input cell "
+            "(helps reduce first-run order bias)."
+        ),
+    )
+    p.add_argument(
         "--symmetrize-every",
         type=int,
         default=1,
@@ -104,6 +113,20 @@ def main():
         ),
     )
     p.add_argument("--compile", action="store_true")
+    p.add_argument(
+        "--cuda-graph",
+        action="store_true",
+        help=(
+            "Enable CUDA graph replay for fixed-shape PE-Quad-Coupled-Apply timing "
+            "path (CUDA only, falls back to eager on capture failure)."
+        ),
+    )
+    p.add_argument(
+        "--cuda-graph-warmup",
+        type=int,
+        default=3,
+        help="Warmup calls before CUDA graph capture when --cuda-graph is enabled.",
+    )
     p.add_argument(
         "--online-coeff-mode",
         type=str,
@@ -172,6 +195,14 @@ def main():
         raise ValueError(f"--online-stop-tol must be >= 0, got {args.online_stop_tol}")
     if int(args.online_min_steps) < 1:
         raise ValueError(f"--online-min-steps must be >= 1, got {args.online_min_steps}")
+    if int(args.timing_warmup_reps) < 0:
+        raise ValueError(
+            f"--timing-warmup-reps must be >= 0, got {args.timing_warmup_reps}"
+        )
+    if int(args.cuda_graph_warmup) < 1:
+        raise ValueError(
+            f"--cuda-graph-warmup must be >= 1, got {args.cuda_graph_warmup}"
+        )
     if float(args.online_coeff_min_rel_improve) < 0.0:
         raise ValueError(
             "--online-coeff-min-rel-improve must be >= 0, "
@@ -233,7 +264,8 @@ def main():
                 f"cheb_deg={args.cheb_degree} | cheb_mode={args.cheb_mode} | "
                 f"symEvery={args.symmetrize_every} | "
                 f"online_coeff_mode={online_coeff_mode} | "
-                f"online_stop_tol={args.online_stop_tol}"
+                f"online_stop_tol={args.online_stop_tol} | "
+                f"cuda_graph={bool(args.cuda_graph)}"
             )
 
             for case in cases:
@@ -269,6 +301,7 @@ def main():
                         cheb_error_grid_n=args.cheb_error_grid,
                         cheb_max_relerr_mult=args.cheb_max_relerr_mult,
                         timing_reps=args.timing_reps,
+                        timing_warmup_reps=args.timing_warmup_reps,
                         p_val=p_val,
                         l_min=args.l_target,
                         symmetrize_every=args.symmetrize_every,
@@ -279,6 +312,8 @@ def main():
                         online_coeff_min_ns_logwidth_rel_improve=(
                             args.online_coeff_min_ns_logwidth_rel_improve
                         ),
+                        use_cuda_graph=bool(args.cuda_graph),
+                        cuda_graph_warmup=int(args.cuda_graph_warmup),
                         uncoupled_fn=uncoupled_fn,
                         coupled_solve_fn=coupled_solve_fn,
                         cheb_apply_fn=cheb_apply_fn,

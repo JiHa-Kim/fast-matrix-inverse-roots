@@ -73,6 +73,9 @@ uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 
 - `--precond-ruiz-iters`: equilibration rounds for `ruiz`.
 - `--coeff-mode {auto,precomputed,tuned}` (inverse-root harness).
 - `--compile`: enable `torch.compile`.
+- `--cuda-graph`: enable CUDA graph replay for fixed-shape coupled-apply timing path (CUDA only).
+- `--cuda-graph-warmup`: warmup count before capture when `--cuda-graph` is enabled.
+- `--timing-warmup-reps`: untimed warmup calls before timing each method/input.
 - `--timing-reps`: average repeated runs per trial.
 - `--symmetrize-every`: symmetrize cadence for coupled `Y`.
 - `--online-coeff-mode {off,greedy-newton,greedy-minimax,greedy-affine-opt}`: optional cost-aware per-step PE schedule adaptation for coupled apply (`greedy-affine-opt` is default).
@@ -87,6 +90,7 @@ uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 
 - Solve online-coefficient ablation (`20` trials): `reports/2026_02_25_solve_online_coeff_ablation_t20.md`.
 - Affine online-schedule ablation (`20` trials): `reports/2026_02_26_affine_online_coeff_ablation_t20.md`.
 - Coupled affine fast-path perf check: `reports/2026_02_26_coupled_affine_fastpath_perf.md`.
+- CUDA-graph coupled-apply ablation (`20` trials): `reports/2026_02_26_cuda_graph_ablation_t20.md`.
 - Square-RHS direct-vs-materialize validation (`ideas/3`): `reports/2026_02_25_idea3_square_rhs_apply_vs_materialize.md`.
 - Preconditioner ablation + Gram path checks (`ideas/4`): `reports/2026_02_26_precond_and_gram_path_ablation.md`.
 - Raw logs:
@@ -98,6 +102,7 @@ uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 
   - `benchmark_results/2026_02_26/idea4_gram_precond_t20/`
   - `benchmark_results/2026_02_26/idea_affine_online_t20/`
   - `benchmark_results/2026_02_26/perf_coupled_affine_fastpath_t20/`
+  - `benchmark_results/2026_02_26/idea_cuda_graph_t20_warmup2/`
 
 ## References
 

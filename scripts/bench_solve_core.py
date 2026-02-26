@@ -25,6 +25,28 @@ MATRIX_SOLVE_METHODS: List[str] = [
 ]
 
 
+def _build_cuda_graph_replay(
+    runner: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    A_norm: torch.Tensor,
+    B: torch.Tensor,
+    *,
+    warmup: int,
+) -> Callable[[], torch.Tensor]:
+    warmup_i = max(1, int(warmup))
+    for _ in range(warmup_i):
+        _ = runner(A_norm, B)
+    torch.cuda.synchronize(device=A_norm.device)
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        out = runner(A_norm, B)
+
+    def replay() -> torch.Tensor:
+        graph.replay()
+        return out
+
+    return replay
+
+
 @dataclass
 class SolvePreparedInput:
     A_norm: torch.Tensor
@@ -188,6 +210,7 @@ def eval_solve_method(
     cheb_error_grid_n: int,
     cheb_max_relerr_mult: float,
     timing_reps: int,
+    timing_warmup_reps: int,
     p_val: int,
     l_min: float,
     symmetrize_every: int,
@@ -196,6 +219,8 @@ def eval_solve_method(
     online_coeff_mode: str,
     online_coeff_min_rel_improve: float,
     online_coeff_min_ns_logwidth_rel_improve: float,
+    use_cuda_graph: bool,
+    cuda_graph_warmup: int,
     uncoupled_fn: Callable[..., Tuple[torch.Tensor, object]],
     coupled_solve_fn: Callable[..., Tuple[torch.Tensor, object]],
     cheb_apply_fn: Callable[..., Tuple[torch.Tensor, object]],
@@ -339,10 +364,32 @@ def eval_solve_method(
                 torch.cuda.max_memory_reserved(device=device) / (1024**2)
             )
 
+        graph_active = False
+        timed_call: Callable[[], torch.Tensor] = lambda: runner(A_norm, B)
+        if (
+            bool(use_cuda_graph)
+            and device.type == "cuda"
+            and method == "PE-Quad-Coupled-Apply"
+            and online_stop_tol is None
+        ):
+            try:
+                timed_call = _build_cuda_graph_replay(
+                    runner, A_norm, B, warmup=int(cuda_graph_warmup)
+                )
+                graph_active = True
+            except Exception:
+                timed_call = lambda: runner(A_norm, B)
+
         def run_once() -> torch.Tensor:
-            if device.type == "cuda":
+            if device.type == "cuda" and (not graph_active):
                 torch.compiler.cudagraph_mark_step_begin()
-            return runner(A_norm, B)
+            return timed_call()
+
+        warmup_reps_i = max(0, int(timing_warmup_reps))
+        for _ in range(warmup_reps_i):
+            _ = run_once()
+        if device.type == "cuda" and warmup_reps_i > 0:
+            torch.cuda.synchronize(device=device)
 
         ms_iter, Zn = time_ms_repeat(run_once, device, reps=timing_reps)
         ms_iter_list.append(ms_iter)

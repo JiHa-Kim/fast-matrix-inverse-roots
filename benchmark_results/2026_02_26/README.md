@@ -24,3 +24,11 @@
   - Parsed suite summary: `summary_coupled_apply_fastpath_sameenv.md`.
   - Kernel-focused microbench summary: `microbench_compare.md`.
   - Operator profiler captures: `profile/baseline_top_ops.txt`, `profile/optimized_top_ops.txt`.
+
+- `idea_cuda_graph_t20_warmup2/`
+  - Coupled-apply CUDA graph ablation (`--cuda-graph` off vs on).
+  - Corrected timing method uses `--timing-warmup-reps 2` to reduce first-run bias.
+  - Raw solve logs: `off/`, `on/`.
+  - Aggregated summary: `summary_coupled_apply.md`.
+  - Balanced paired validation: `paired_balanced_primed.md`.
+  - Profile evidence: `profile/off_vs_on_profile.txt`, `profile/summary.md`.
