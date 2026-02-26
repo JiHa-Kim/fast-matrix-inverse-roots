@@ -25,7 +25,13 @@ def _symmetrize_inplace(M: torch.Tensor, tmp: Optional[torch.Tensor] = None) -> 
 
 @torch.no_grad()
 def _matmul_into(A: torch.Tensor, B: torch.Tensor, out: torch.Tensor) -> torch.Tensor:
-    torch.matmul(A, B, out=out)
+    # Fast paths avoid extra dispatch overhead for the common 2D/3D cases.
+    if A.dim() == 2 and B.dim() == 2 and out.dim() == 2:
+        torch.mm(A, B, out=out)
+    elif A.dim() == 3 and B.dim() == 3 and out.dim() == 3:
+        torch.bmm(A, B, out=out)
+    else:
+        torch.matmul(A, B, out=out)
     return out
 
 
@@ -55,9 +61,13 @@ def _addmm_into(
         n, m = mat1.shape[-2], mat2.shape[-1]
         k = math.prod(batch_shape) if len(batch_shape) else 1
 
-        bias = bias.contiguous()
-        mat1 = mat1.contiguous()
-        mat2 = mat2.contiguous()
+        # Only force materialization when needed; avoids redundant copies.
+        if not bias.is_contiguous():
+            bias = bias.contiguous()
+        if not mat1.is_contiguous():
+            mat1 = mat1.contiguous()
+        if not mat2.is_contiguous():
+            mat2 = mat2.contiguous()
 
         outv = out.reshape(k, n, m)
         biasv = bias.reshape(k, n, m)
