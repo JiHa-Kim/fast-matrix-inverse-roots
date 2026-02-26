@@ -51,6 +51,11 @@ def _addmm_into(
         batch_shape = mat1.shape[:-2]
         n, m = mat1.shape[-2], mat2.shape[-1]
         k = math.prod(batch_shape) if len(batch_shape) else 1
+
+        bias = bias.contiguous()
+        mat1 = mat1.contiguous()
+        mat2 = mat2.contiguous()
+
         outv = out.reshape(k, n, m)
         biasv = bias.reshape(k, n, m)
         m1v = mat1.reshape(k, n, mat1.shape[-1])
@@ -99,18 +104,24 @@ def _bpow_times_y(
 
     for i, bit in enumerate(bits):
         if bit:
+            next_res = None
             for buf in (out, tmp1, tmp2):
                 if buf is not cur_base and buf is not cur_res:
                     next_res = buf
                     break
+            if next_res is None:
+                raise RuntimeError("no free buffer available")
             torch.matmul(cur_base, cur_res, out=next_res)
             cur_res = next_res
 
         if i < len(bits) - 1:
+            next_base = None
             for buf in (out, tmp1, tmp2):
                 if buf is not cur_base and buf is not cur_res:
                     next_base = buf
                     break
+            if next_base is None:
+                raise RuntimeError("no free buffer available")
             torch.matmul(cur_base, cur_base, out=next_base)
             cur_base = next_base
 
@@ -159,18 +170,24 @@ def _bpow(
                 else:
                     cur_res = cur_base
             else:
+                next_res = None
                 for buf in (out, tmp1, tmp2):
                     if buf is not cur_base and buf is not cur_res:
                         next_res = buf
                         break
+                if next_res is None:
+                    raise RuntimeError("no free buffer available")
                 torch.matmul(cur_base, cur_res, out=next_res)
                 cur_res = next_res
 
         if i < len(bits) - 1:
+            next_base = None
             for buf in (out, tmp1, tmp2):
                 if buf is not cur_base and buf is not cur_res:
                     next_base = buf
                     break
+            if next_base is None:
+                raise RuntimeError("no free buffer available")
             torch.matmul(cur_base, cur_base, out=next_base)
             cur_base = next_base
 
