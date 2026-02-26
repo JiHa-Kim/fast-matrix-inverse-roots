@@ -18,11 +18,19 @@ from fast_iroot.chebyshev import (
 
 from .bench_common import median, time_ms_any, time_ms_repeat
 
-MATRIX_SOLVE_METHODS: List[str] = [
+BASE_MATRIX_SOLVE_METHODS: List[str] = [
     "PE-Quad-Inverse-Multiply",
     "PE-Quad-Coupled-Apply",
     "Chebyshev-Apply",
 ]
+P1_SPD_SOLVE_BASELINES: List[str] = ["Torch-Solve", "Torch-Cholesky-Solve"]
+
+
+def matrix_solve_methods(p_val: int) -> List[str]:
+    methods = list(BASE_MATRIX_SOLVE_METHODS)
+    if int(p_val) == 1:
+        methods.extend(P1_SPD_SOLVE_BASELINES)
+    return methods
 
 
 def _build_cuda_graph_replay(
@@ -190,6 +198,23 @@ def _build_solve_runner(
                 ws=ws_cheb,
             )
             return Zn
+
+        return run
+
+    if method == "Torch-Solve":
+
+        def run(A_norm: torch.Tensor, B: torch.Tensor):
+            return torch.linalg.solve(A_norm, B)
+
+        return run
+
+    if method == "Torch-Cholesky-Solve":
+        if int(p_val) != 1:
+            raise ValueError("Torch-Cholesky-Solve baseline is only valid for p=1")
+
+        def run(A_norm: torch.Tensor, B: torch.Tensor):
+            L = torch.linalg.cholesky(A_norm)
+            return torch.cholesky_solve(B, L)
 
         return run
 
@@ -365,7 +390,9 @@ def eval_solve_method(
             )
 
         graph_active = False
-        timed_call: Callable[[], torch.Tensor] = lambda: runner(A_norm, B)
+        def timed_call() -> torch.Tensor:
+            return runner(A_norm, B)
+
         if (
             bool(use_cuda_graph)
             and device.type == "cuda"
@@ -378,7 +405,8 @@ def eval_solve_method(
                 )
                 graph_active = True
             except Exception:
-                timed_call = lambda: runner(A_norm, B)
+                def timed_call() -> torch.Tensor:
+                    return runner(A_norm, B)
 
         def run_once() -> torch.Tensor:
             if device.type == "cuda" and (not graph_active):

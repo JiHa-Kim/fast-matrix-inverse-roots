@@ -30,7 +30,7 @@ from fast_iroot import (
 )
 from scripts.bench_common import parse_shapes, make_spd_cases, maybe_compile
 from scripts.bench_solve_core import (
-    MATRIX_SOLVE_METHODS,
+    matrix_solve_methods,
     prepare_solve_inputs,
     eval_solve_method,
     compute_ground_truth,
@@ -46,6 +46,13 @@ def _parse_int_csv(csv: str) -> tuple[int, ...]:
     return tuple(sorted(set(vals)))
 
 
+def _parse_case_csv(csv: str) -> list[str]:
+    vals = [tok.strip() for tok in str(csv).split(",") if tok.strip()]
+    if len(vals) == 0:
+        raise ValueError("Expected at least one case in --cases")
+    return vals
+
+
 def main():
     p = argparse.ArgumentParser(
         description="Benchmark inverse-p-th-root Solve (Z = A^{-1/p} B)"
@@ -55,6 +62,12 @@ def main():
     p.add_argument("--k", type=int, default=16, help="Number of RHS columns (K << N)")
     p.add_argument("--trials", type=int, default=10)
     p.add_argument("--seed", type=int, default=1234)
+    p.add_argument(
+        "--cases",
+        type=str,
+        default="gaussian_spd,illcond_1e6",
+        help="Comma-separated SPD case names",
+    )
     p.add_argument("--dtype", type=str, default="bf16", choices=["fp32", "bf16"])
     p.add_argument(
         "--precond", type=str, default="jacobi", choices=list(SPD_PRECOND_MODES)
@@ -238,6 +251,7 @@ def main():
     sizes = parse_shapes(args.sizes)
     p_val = args.p
     online_coeff_mode = str(args.online_coeff_mode)
+    cases = _parse_case_csv(args.cases)
 
     pe_quad_t, coeff_desc = build_pe_schedules(
         l_target=args.l_target,
@@ -257,8 +271,6 @@ def main():
 
     g = torch.Generator(device=device)
     g.manual_seed(args.seed)
-
-    cases = ["gaussian_spd", "illcond_1e6"]
 
     with torch.inference_mode():
         for n in sizes:
@@ -293,7 +305,7 @@ def main():
                 Z_true = compute_ground_truth(prepared_inputs, p_val)
                 rows = []
 
-                for name in MATRIX_SOLVE_METHODS:
+                for name in matrix_solve_methods(p_val):
                     rr = eval_solve_method(
                         prepared_inputs=prepared_inputs,
                         ms_precond_median=ms_precond_med,

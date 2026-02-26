@@ -369,6 +369,7 @@ def inverse_solve_pe_quadratic_coupled(
     nonspd_adaptive_growth_tol: float = 1.02,
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
+    nonspd_safe_early_y_tol: Optional[float] = None,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """Coupled quadratic PE iteration for computing an inverse-like solve on M.
 
@@ -422,6 +423,14 @@ def inverse_solve_pe_quadratic_coupled(
             "nonspd_safe_fallback_tol must be > 0 when provided, "
             f"got {nonspd_safe_fallback_tol}"
         )
+    if (
+        nonspd_safe_early_y_tol is not None
+        and float(nonspd_safe_early_y_tol) <= 0.0
+    ):
+        raise ValueError(
+            "nonspd_safe_early_y_tol must be > 0 when provided, "
+            f"got {nonspd_safe_early_y_tol}"
+        )
     if M_norm.shape[-2] != A_norm.shape[-1]:
         raise ValueError(
             f"M_norm must have shape[..., {A_norm.shape[-1]}, :], got {M_norm.shape}"
@@ -438,6 +447,12 @@ def inverse_solve_pe_quadratic_coupled(
     ws.Y.copy_(A_norm)
     coeffs = _quad_coeffs(abc_t)
     adaptive_active = bool(nonspd_adaptive) and (p_val == 1) and (not assume_spd)
+    safe_early_active = (
+        (p_val == 1)
+        and (not assume_spd)
+        and (nonspd_safe_fallback_tol is not None)
+        and (nonspd_safe_early_y_tol is not None)
+    )
     if adaptive_active:
         n = A_norm.shape[-1]
         eye = torch.eye(n, device=A_norm.device, dtype=A_norm.dtype)
@@ -452,6 +467,17 @@ def inverse_solve_pe_quadratic_coupled(
         resid_tol = 0.0
         growth_tol = 1.0
 
+    def _fallback_solve_inplace() -> None:
+        # Keep fallback close to torch.linalg.solve performance on CUDA.
+        # Use fp32 solve for low-precision tensors; otherwise solve in input dtype.
+        if A_norm.dtype in (torch.float16, torch.bfloat16):
+            z_fb = torch.linalg.solve(A_norm.float(), M_norm.float()).to(
+                dtype=M_norm.dtype
+            )
+        else:
+            z_fb = torch.linalg.solve(A_norm, M_norm)
+        ws.Z.copy_(z_fb)
+
     def _p1_y_proxy() -> float:
         assert eye is not None
         return float(
@@ -462,6 +488,10 @@ def inverse_solve_pe_quadratic_coupled(
             .mean()
             .item()
         )
+
+    def _p1_diag_proxy() -> float:
+        diag = ws.Y.diagonal(dim1=-2, dim2=-1)
+        return float(torch.max(torch.abs(diag - 1.0)).item())
 
     def _p1_z_proxy() -> float:
         num = torch.linalg.matrix_norm(A_norm @ ws.Z - M_norm, ord="fro")
@@ -537,6 +567,14 @@ def inverse_solve_pe_quadratic_coupled(
 
             if is_terminal:
                 break
+
+            if safe_early_active and t == 0:
+                # Cheap early divergence proxy for non-SPD p=1:
+                # hard failures show large diagonal deviation after the first step.
+                y_proxy = _p1_diag_proxy()
+                if y_proxy > float(nonspd_safe_early_y_tol):
+                    _fallback_solve_inplace()
+                    return ws.Z, ws
 
             # Low-overhead online early-stop based on Y diagonal closeness to identity.
             if (
@@ -619,8 +657,6 @@ def inverse_solve_pe_quadratic_coupled(
         den = torch.linalg.matrix_norm(M_norm, ord="fro").clamp_min(1e-12)
         rel = float((num / den).max().item())
         if rel > float(nonspd_safe_fallback_tol):
-            ws.Z.copy_(
-                torch.linalg.solve(A_norm.double(), M_norm.double()).to(dtype=M_norm.dtype)
-            )
+            _fallback_solve_inplace()
 
     return ws.Z, ws

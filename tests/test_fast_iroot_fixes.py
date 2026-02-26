@@ -495,6 +495,86 @@ def test_nonspd_adaptive_validation():
             nonspd_safe_fallback_tol=0.0,
         )
 
+    with pytest.raises(ValueError, match="nonspd_safe_early_y_tol"):
+        inverse_solve_pe_quadratic_coupled(
+            A,
+            B,
+            abc_t=abc_t,
+            p_val=1,
+            assume_spd=False,
+            symmetrize_Y=False,
+            nonspd_safe_early_y_tol=0.0,
+        )
+
+
+def test_nonspd_safe_fallback_matches_solve_when_triggered():
+    torch.manual_seed(2027)
+    n = 9
+    A = torch.eye(n) + 0.2 * torch.randn(n, n)
+    B = torch.randn(n, 3)
+    abc_t = [(1.25, -0.25, 0.0)]  # intentionally short schedule
+
+    Z_fast, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        B,
+        abc_t=abc_t,
+        p_val=1,
+        assume_spd=False,
+        symmetrize_Y=False,
+        nonspd_safe_fallback_tol=None,
+    )
+    Z_safe, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        B,
+        abc_t=abc_t,
+        p_val=1,
+        assume_spd=False,
+        symmetrize_Y=False,
+        nonspd_safe_fallback_tol=1e-12,
+    )
+    Z_ref = torch.linalg.solve(A, B)
+
+    err_fast = torch.linalg.matrix_norm(Z_fast - Z_ref) / torch.linalg.matrix_norm(Z_ref)
+    err_safe = torch.linalg.matrix_norm(Z_safe - Z_ref) / torch.linalg.matrix_norm(Z_ref)
+    assert float(err_safe) < 1e-6
+    assert float(err_safe) <= float(err_fast)
+
+
+def test_nonspd_safe_early_guard_triggers_fallback():
+    torch.manual_seed(2028)
+    n = 8
+    A = torch.eye(n) + 0.15 * torch.randn(n, n)
+    B = torch.randn(n, 2)
+    abc_t = [(1.25, -0.25, 0.0), (1.10, -0.10, 0.0)]
+
+    Z_fast, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        B,
+        abc_t=abc_t,
+        p_val=1,
+        assume_spd=False,
+        symmetrize_Y=False,
+        nonspd_safe_fallback_tol=None,
+    )
+    Z_early, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        B,
+        abc_t=abc_t,
+        p_val=1,
+        assume_spd=False,
+        symmetrize_Y=False,
+        nonspd_safe_fallback_tol=1e6,
+        nonspd_safe_early_y_tol=1e-8,
+    )
+    Z_ref = torch.linalg.solve(A, B)
+
+    err_fast = torch.linalg.matrix_norm(Z_fast - Z_ref) / torch.linalg.matrix_norm(Z_ref)
+    err_early = torch.linalg.matrix_norm(Z_early - Z_ref) / torch.linalg.matrix_norm(
+        Z_ref
+    )
+    assert float(err_early) < 1e-6
+    assert float(err_early) <= float(err_fast)
+
 
 def test_non_spd_metrics_and_exact_inverse_for_p1():
     torch.manual_seed(77)

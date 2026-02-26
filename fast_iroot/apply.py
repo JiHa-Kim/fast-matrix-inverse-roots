@@ -34,6 +34,7 @@ def apply_inverse(
     nonspd_adaptive_growth_tol: float = 1.02,
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
+    nonspd_safe_early_y_tol: Optional[float] = None,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """
     Apply an iterative inverse to M_norm using a coupled quadratic PE scheme.
@@ -63,6 +64,7 @@ def apply_inverse(
         nonspd_adaptive_growth_tol=nonspd_adaptive_growth_tol,
         nonspd_adaptive_check_every=nonspd_adaptive_check_every,
         nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
+        nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
     )
 
 
@@ -84,6 +86,7 @@ def apply_inverse_root(
     nonspd_adaptive_growth_tol: float = 1.02,
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
+    nonspd_safe_early_y_tol: Optional[float] = None,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """
     Apply an iterative inverse p-th root to M_norm using a coupled quadratic PE scheme.
@@ -109,6 +112,7 @@ def apply_inverse_root(
         nonspd_adaptive_growth_tol=nonspd_adaptive_growth_tol,
         nonspd_adaptive_check_every=nonspd_adaptive_check_every,
         nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
+        nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
     )
 
 
@@ -132,6 +136,7 @@ def apply_inverse_root_auto(
     nonspd_adaptive_growth_tol: float = 1.02,
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
+    nonspd_safe_early_y_tol: Optional[float] = None,
 ) -> Tuple[torch.Tensor, InverseApplyAutoWorkspace]:
     """Apply inverse p-th root with strategy selection for single-shot vs reuse.
 
@@ -189,6 +194,7 @@ def apply_inverse_root_auto(
         nonspd_adaptive_growth_tol=nonspd_adaptive_growth_tol,
         nonspd_adaptive_check_every=nonspd_adaptive_check_every,
         nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
+        nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
     )
     return Zn, ws
 

@@ -40,6 +40,7 @@ from scripts.bench_common import (
 METHODS: List[str] = [
     "PE-Quad-Inverse-Multiply",
     "PE-Quad-Coupled-Apply",
+    "PE-Quad-Coupled-Apply-Safe",
     "PE-Quad-Coupled-Apply-Adaptive",
     "Torch-Solve",
 ]
@@ -121,6 +122,7 @@ def _build_runner(
     nonspd_adaptive_growth_tol: float,
     nonspd_adaptive_check_every: int,
     nonspd_safe_fallback_tol: Optional[float],
+    nonspd_safe_early_y_tol: Optional[float],
     uncoupled_fn: Callable[..., Tuple[torch.Tensor, object]],
     coupled_solve_fn: Callable[..., Tuple[torch.Tensor, object]],
 ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
@@ -163,6 +165,31 @@ def _build_runner(
 
         return run
 
+    if method == "PE-Quad-Coupled-Apply-Safe":
+        ws_cpl_safe: Optional[object] = None
+
+        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+            nonlocal ws_cpl_safe
+            Zn, ws_cpl_safe = coupled_solve_fn(
+                A_norm,
+                B,
+                abc_t=pe_coeffs,
+                p_val=1,
+                ws=ws_cpl_safe,
+                symmetrize_Y=False,
+                symmetrize_every=1,
+                terminal_last_step=True,
+                online_stop_tol=None,
+                online_min_steps=1,
+                assume_spd=False,
+                nonspd_adaptive=False,
+                nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
+                nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+            )
+            return Zn
+
+        return run
+
     if method == "PE-Quad-Coupled-Apply-Adaptive":
         ws_cpl_adapt: Optional[object] = None
 
@@ -185,6 +212,7 @@ def _build_runner(
                 nonspd_adaptive_growth_tol=nonspd_adaptive_growth_tol,
                 nonspd_adaptive_check_every=nonspd_adaptive_check_every,
                 nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
+                nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
             )
             return Zn
 
@@ -214,6 +242,7 @@ def eval_method(
     nonspd_adaptive_growth_tol: float,
     nonspd_adaptive_check_every: int,
     nonspd_safe_fallback_tol: Optional[float],
+    nonspd_safe_early_y_tol: Optional[float],
     uncoupled_fn: Callable[..., Tuple[torch.Tensor, object]],
     coupled_solve_fn: Callable[..., Tuple[torch.Tensor, object]],
 ) -> NonSpdBenchResult:
@@ -234,6 +263,7 @@ def eval_method(
             nonspd_adaptive_growth_tol,
             nonspd_adaptive_check_every,
             nonspd_safe_fallback_tol,
+            nonspd_safe_early_y_tol,
             uncoupled_fn,
             coupled_solve_fn,
         )
@@ -329,6 +359,15 @@ def main():
         ),
     )
     p.add_argument(
+        "--nonspd-safe-early-y-tol",
+        type=float,
+        default=0.8,
+        help=(
+            "If > 0, trigger early exact-solve fallback after step 1 when "
+            "max|diag(Y)-1| exceeds this threshold"
+        ),
+    )
+    p.add_argument(
         "--coeff-mode",
         type=str,
         default="auto",
@@ -374,9 +413,19 @@ def main():
             "--nonspd-safe-fallback-tol must be >= 0, "
             f"got {args.nonspd_safe_fallback_tol}"
         )
+    if float(args.nonspd_safe_early_y_tol) < 0.0:
+        raise ValueError(
+            "--nonspd-safe-early-y-tol must be >= 0, "
+            f"got {args.nonspd_safe_early_y_tol}"
+        )
     nonspd_safe_fallback_tol = (
         float(args.nonspd_safe_fallback_tol)
         if float(args.nonspd_safe_fallback_tol) > 0.0
+        else None
+    )
+    nonspd_safe_early_y_tol = (
+        float(args.nonspd_safe_early_y_tol)
+        if float(args.nonspd_safe_early_y_tol) > 0.0
         else None
     )
 
@@ -423,7 +472,8 @@ def main():
                 f"adapt(resid_tol={args.nonspd_adaptive_resid_tol}, "
                 f"growth_tol={args.nonspd_adaptive_growth_tol}, "
                 f"check_every={args.nonspd_adaptive_check_every}, "
-                f"safe_fallback_tol={args.nonspd_safe_fallback_tol})"
+                f"safe_fallback_tol={args.nonspd_safe_fallback_tol}, "
+                f"safe_early_y_tol={args.nonspd_safe_early_y_tol})"
             )
 
             for case in cases:
@@ -457,6 +507,7 @@ def main():
                             args.nonspd_adaptive_check_every
                         ),
                         nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
+                        nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
                         uncoupled_fn=uncoupled_fn,
                         coupled_solve_fn=coupled_solve_fn,
                     )
