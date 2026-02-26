@@ -22,6 +22,7 @@ BASE_MATRIX_SOLVE_METHODS: List[str] = [
     "PE-Quad-Inverse-Multiply",
     "PE-Quad-Coupled-Apply",
     "Chebyshev-Apply",
+    "Torch-EVD-Solve",
 ]
 P1_SPD_SOLVE_BASELINES: List[str] = ["Torch-Solve", "Torch-Cholesky-Solve"]
 
@@ -204,7 +205,11 @@ def _build_solve_runner(
     if method == "Torch-Solve":
 
         def run(A_norm: torch.Tensor, B: torch.Tensor):
-            return torch.linalg.solve(A_norm, B)
+            # Casting to fp32 as many torch linalg paths don't support bf16 on CUDA
+            A_f32 = A_norm.to(torch.float32)
+            B_f32 = B.to(torch.float32)
+            Z = torch.linalg.solve(A_f32, B_f32)
+            return Z.to(A_norm.dtype)
 
         return run
 
@@ -213,8 +218,24 @@ def _build_solve_runner(
             raise ValueError("Torch-Cholesky-Solve baseline is only valid for p=1")
 
         def run(A_norm: torch.Tensor, B: torch.Tensor):
-            L = torch.linalg.cholesky(A_norm)
-            return torch.cholesky_solve(B, L)
+            A_f32 = A_norm.to(torch.float32)
+            B_f32 = B.to(torch.float32)
+            L = torch.linalg.cholesky(A_f32)
+            Z = torch.cholesky_solve(B_f32, L)
+            return Z.to(A_norm.dtype)
+
+        return run
+
+    if method == "Torch-EVD-Solve":
+
+        def run(A_norm: torch.Tensor, B: torch.Tensor):
+            # Compute A^{-1/p} B via EVD, casting to fp32 for CUDA compatibility
+            A_f32 = A_norm.to(torch.float32)
+            B_f32 = B.to(torch.float32)
+            L, Q = torch.linalg.eigh(A_f32)
+            L_inv = torch.pow(L.clamp_min(1e-12), -1.0 / p_val)
+            Z = (Q * L_inv.unsqueeze(0)) @ (Q.mT @ B_f32)
+            return Z.to(A_norm.dtype)
 
         return run
 
@@ -390,6 +411,7 @@ def eval_solve_method(
             )
 
         graph_active = False
+
         def timed_call() -> torch.Tensor:
             return runner(A_norm, B)
 
@@ -405,6 +427,7 @@ def eval_solve_method(
                 )
                 graph_active = True
             except Exception:
+
                 def timed_call() -> torch.Tensor:
                     return runner(A_norm, B)
 

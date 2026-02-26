@@ -260,7 +260,10 @@ def _build_runner(
     if method == "Torch-Solve":
 
         def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-            return torch.linalg.solve(A_norm, B)
+            A_f32 = A_norm.to(torch.float32)
+            B_f32 = B.to(torch.float32)
+            Z = torch.linalg.solve(A_f32, B_f32)
+            return Z.to(A_norm.dtype)
 
         return run
 
