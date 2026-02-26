@@ -4,7 +4,7 @@
 
 ## Setup
 
-- Workload: `scripts/matrix_solve.py` coupled apply (`PE-Quad-Coupled-Apply`)
+- Workload: `benchmarks/solve/matrix_solve.py` coupled apply (`PE-Quad-Coupled-Apply`)
 - Matrix: `n=1024`, `k in {1,16,64}`, cases `{gaussian_spd, illcond_1e6}`
 - Exponents: `p in {1,2,4}`
 - Precision/precond: `bf16`, `precond=jacobi`, `l_target=0.05`
@@ -27,3 +27,4 @@ Parsed summary is `benchmark_results/2026_02_26/idea_affine_online_t20/summary_c
   `greedy-newton` on `p=4` in this suite.
 - `greedy-minimax` is faster than `greedy-affine-opt` for `p=4`, but slower overall.
 - The CLI default for `--online-coeff-mode` was updated to `greedy-affine-opt`.
+

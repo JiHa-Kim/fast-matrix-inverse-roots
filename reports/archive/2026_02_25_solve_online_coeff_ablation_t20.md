@@ -3,7 +3,7 @@
 *Date: 2026-02-25*
 
 ## Setup
-- Workload: `scripts/matrix_solve.py` coupled apply (`PE-Quad-Coupled-Apply`)
+- Workload: `benchmarks/solve/matrix_solve.py` coupled apply (`PE-Quad-Coupled-Apply`)
 - Matrix: `n=1024`, `k in {1,16,64}`, cases `{gaussian_spd, illcond_1e6}`
 - Exponents: `p in {1,2,4}`
 - Precision/precond: `bf16`, `precond=frob`, `l_target=0.05`
@@ -27,4 +27,5 @@ Raw logs are in `benchmark_results/2026_02_25/solve_ablation_t20/`.
 ## Notes
 - `greedy-minimax` improves p=1 relative error strongly, but is slower on average than `greedy-newton` in this suite.
 - The final CLI default was switched to `--online-coeff-mode greedy-newton` for all `p` values.
+
 

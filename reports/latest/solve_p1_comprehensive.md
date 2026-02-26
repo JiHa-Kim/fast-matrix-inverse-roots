@@ -6,13 +6,13 @@
 
 Benchmarked `p=1` solve paths with `10` trials and `n=1024`:
 
-- non-SPD suite (`scripts/matrix_solve_nonspd.py`)
+- non-SPD suite (`benchmarks/solve/matrix_solve_nonspd.py`)
   - `k in {1,16,64}`
   - cases: `gaussian_shifted`, `nonnormal_upper`, `similarity_posspec`, `similarity_posspec_hard`
   - added safe-early divergence guard:
     - `--nonspd-safe-fallback-tol 0.01`
     - `--nonspd-safe-early-y-tol 0.8`
-- SPD suite (`scripts/matrix_solve.py --p 1`)
+- SPD suite (`benchmarks/solve/matrix_solve.py --p 1`)
   - exact baselines now include `Torch-Solve` and `Torch-Cholesky-Solve`
   - `k in {1,16,64}`
   - core cases: `gaussian_spd`, `illcond_1e6`
@@ -59,3 +59,4 @@ Cross-size sanity (`n in {256,512,1024}`) was also run for both suites at `k=16`
   - use `PE-Quad-Coupled-Apply-Safe` with safe fallback + early guard.
 - SPD `p=1` exact solve baseline:
   - compare against `Torch-Cholesky-Solve` first (not just `Torch-Solve`).
+

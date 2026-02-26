@@ -26,7 +26,7 @@ Key result vs `frob` baseline:
 
 Decision:
 
-- `scripts/matrix_solve.py` default changed to `--precond jacobi`.
+- `benchmarks/solve/matrix_solve.py` default changed to `--precond jacobi`.
 
 ## 2) IRoot Harness (`matrix_iroot.py`) — 20 Trials
 
@@ -42,7 +42,7 @@ Observed behavior:
 
 Decision:
 
-- `scripts/matrix_iroot.py` default set to `--precond frob`.
+- `benchmarks/inverse_root/matrix_iroot.py` default set to `--precond frob`.
 - For explicit `p=2` benchmarking, `--precond jacobi` is currently the faster option.
 
 ## 3) Gram Path Check (`precond_gram_spd`)
@@ -61,3 +61,4 @@ Result:
 
 - Solve harness default preconditioner: **`jacobi`**
 - IRoot harness default preconditioner: **`frob`** (aligned with default `p=4`)
+

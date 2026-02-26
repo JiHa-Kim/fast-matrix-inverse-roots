@@ -3,7 +3,7 @@
 *Date: 2026-02-25*
 
 ## Setup
-- Script: `scripts/matrix_solve.py`
+- Script: `benchmarks/solve/matrix_solve.py`
 - RHS shape: square (`k=1024`)
 - Exponents: `p in {1,2,4}`
 - Cases: `gaussian_spd`, `illcond_1e6`
@@ -23,3 +23,4 @@
 - Mean iter delta (coupled vs inverse-multiply): **-27.5%**
 - Mean total delta (coupled vs inverse-multiply): **-18.6%**
 - Observation: even with square RHS, direct coupled apply remains faster by removing the final `X @ B` step.
+

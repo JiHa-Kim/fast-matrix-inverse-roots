@@ -11,7 +11,7 @@ Superseded by safe-early pass:
 
 Dedicated non-SPD inverse-solve benchmark using:
 
-- script: `scripts/matrix_solve_nonspd.py`
+- script: `benchmarks/solve/matrix_solve_nonspd.py`
 - matrix size: `1024 x 1024`
 - RHS widths: `k in {1,16,64}`
 - cases: `gaussian_shifted`, `nonnormal_upper`, `similarity_posspec`, `similarity_posspec_hard`
@@ -42,3 +42,4 @@ For the hard non-normal case (`similarity_posspec_hard`):
   - use `PE-Quad-Coupled-Apply` (`assume_spd=False` path).
 - Robustness-first / unknown non-normality:
   - use adaptive safe mode (`nonspd_adaptive=True`, `nonspd_safe_fallback_tol=0.01`) to cap catastrophic failures.
+

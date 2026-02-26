@@ -20,13 +20,12 @@ Practical inverse p-th-root kernels for SPD matrices, optimized for fixed-iterat
 
 - `fast_iroot/`
   - Core kernels and utilities.
-- `scripts/`
-  - `matrix_iroot.py`: inverse-root benchmark CLI.
-  - `matrix_solve.py`: solve/apply benchmark CLI.
-  - `matrix_solve_nonspd.py`: dedicated non-SPD solve benchmark CLI (`p=1`).
-  - `verify_iroot.py`: correctness/stability sweep.
-  - `generate_benchmark_report.py`: regenerates `results/benchmark_report.md`.
-- `scripts/bench_common.py`, `scripts/bench_iroot_core.py`, `scripts/bench_solve_core.py`
+- `benchmarks/`
+  - `solve/`: primary benchmark CLIs for direct solve/apply (`Z = A^{-1/p}B`).
+    - `matrix_solve.py`, `matrix_solve_nonspd.py`, `ablate_solve_inverse_ideas.py`
+  - `inverse_root/`: inverse-root-only harnesses (`X = A^{-1/p}`), typically secondary in practice.
+    - `matrix_iroot.py`, `verify_iroot.py`, `generate_benchmark_report.py`
+- `benchmarks/common.py`, `benchmarks/inverse_root/bench_iroot_core.py`, `benchmarks/solve/bench_solve_core.py`
   - Shared benchmark engines/helpers.
 - `results/`
   - Latest generated inverse-root benchmark report.
@@ -47,7 +46,7 @@ uv sync
 
 ```bash
 uv run python -m pytest -q
-uv run python scripts/verify_iroot.py
+uv run python benchmarks/inverse_root/verify_iroot.py
 ```
 
 ## Benchmark Commands
@@ -55,22 +54,22 @@ uv run python scripts/verify_iroot.py
 Regenerate inverse-root benchmark report (compiled, p in `{1,2,3,4,8}`):
 
 ```bash
-uv run python scripts/generate_benchmark_report.py --out results/benchmark_report.md --sizes 256,512,1024 --trials 10
+uv run python benchmarks/inverse_root/generate_benchmark_report.py --out results/benchmark_report.md --sizes 256,512,1024 --trials 10
 ```
 
 Reproduce latest solve/apply benchmark logs:
 
 ```bash
-uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 16 --trials 3 --timing-reps 5 --dtype bf16 --precond jacobi --l-target 0.05 > artifacts/benchmarks/solve_p2_k16_2026-02-25.txt
-uv run python scripts/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 --timing-reps 5 --dtype bf16 --precond jacobi --l-target 0.05 > artifacts/benchmarks/solve_p2_k64_2026-02-25.txt
+uv run python benchmarks/solve/matrix_solve.py --p 2 --sizes 1024,2048 --k 16 --trials 3 --timing-reps 5 --dtype bf16 --precond jacobi --l-target 0.05 > artifacts/benchmarks/solve_p2_k16_2026-02-25.txt
+uv run python benchmarks/solve/matrix_solve.py --p 2 --sizes 1024,2048 --k 64 --trials 3 --timing-reps 5 --dtype bf16 --precond jacobi --l-target 0.05 > artifacts/benchmarks/solve_p2_k64_2026-02-25.txt
 ```
 
 Run dedicated non-SPD `p=1` solve sweep (`10` trials):
 
 ```bash
-uv run python scripts/matrix_solve_nonspd.py --p 1 --sizes 1024 --k 1 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32
-uv run python scripts/matrix_solve_nonspd.py --p 1 --sizes 1024 --k 16 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32
-uv run python scripts/matrix_solve_nonspd.py --p 1 --sizes 1024 --k 64 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32
+uv run python benchmarks/solve/matrix_solve_nonspd.py --p 1 --sizes 1024 --k 1 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32
+uv run python benchmarks/solve/matrix_solve_nonspd.py --p 1 --sizes 1024 --k 16 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32
+uv run python benchmarks/solve/matrix_solve_nonspd.py --p 1 --sizes 1024 --k 64 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32
 ```
 
 ## Key CLI Flags
@@ -121,3 +120,5 @@ uv run python scripts/matrix_solve_nonspd.py --p 1 --sizes 1024 --k 64 --trials 
 - Guo & Higham (2006), *A Schur-Newton Method for the Matrix p-th Root and its Inverse*: https://eprints.maths.manchester.ac.uk/850/
 - Amsel et al. (2025), *The Polar Express*: https://arxiv.org/abs/2505.16932
 - Li et al. (CVPR 2018), *iSQRT-COV*: https://openaccess.thecvf.com/content_cvpr_2018/html/Li_Towards_Faster_Training_CVPR_2018_paper.html
+
+

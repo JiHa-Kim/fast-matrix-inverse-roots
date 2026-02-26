@@ -67,7 +67,7 @@ Returned stats: `rho_proxy`, `gersh_lo`, `kappa_proxy`.
 
 ## 7) Optional Online Coefficient Scheduling (Solve Harness)
 
-`scripts/matrix_solve.py` supports online coefficient scheduling for the
+`benchmarks/solve/matrix_solve.py` supports online coefficient scheduling for the
 coupled PE apply method:
 
 - `greedy-newton`: choose between baseline quadratic and inverse-Newton affine.
@@ -82,7 +82,7 @@ coupled PE apply method:
 
 ## 8) Benchmark Metrics
 
-`scripts/matrix_iroot.py` reports:
+`benchmarks/inverse_root/matrix_iroot.py` reports:
 
 - total/precond/iter latency medians,
 - residual median/p95/max,
@@ -90,3 +90,4 @@ coupled PE apply method:
 - optional probes (`power_iters`, `mv_samples`, `hard_probe_iters`),
 - symmetry diagnostics (`symX`, `symW`),
 - `bad` non-finite count.
+

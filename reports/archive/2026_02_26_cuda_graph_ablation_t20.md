@@ -8,18 +8,18 @@ Reduce non-GEMM overhead in `PE-Quad-Coupled-Apply` by replaying fixed-shape ite
 
 ## Implementation
 
-- Added optional CLI flags in `scripts/matrix_solve.py`:
+- Added optional CLI flags in `benchmarks/solve/matrix_solve.py`:
   - `--cuda-graph`
   - `--cuda-graph-warmup`
 - Added timing-stability control:
   - `--timing-warmup-reps` (untimed warmup calls before measurement)
-- Added a graph-capture timing path in `scripts/bench_solve_core.py`:
+- Added a graph-capture timing path in `benchmarks/solve/bench_solve_core.py`:
   - Applies to `PE-Quad-Coupled-Apply` on CUDA when `online_stop_tol is None`.
   - Falls back to eager execution on capture failure.
 
 ## Benchmark Suite
 
-- Harness: `scripts/matrix_solve.py`
+- Harness: `benchmarks/solve/matrix_solve.py`
 - Matrix: `n=1024`
 - Cases: `{gaussian_spd, illcond_1e6}`
 - Exponents: `p in {1,2,4}`
@@ -64,3 +64,4 @@ Profiler artifacts:
 
 - Keep CUDA graph support **enabled for fixed-shape steady-state benchmarking**.
 - Keep it **optional** at runtime for now (capture/warmup still adds complexity), but it is now a net-positive optimization under robust measurement.
+
