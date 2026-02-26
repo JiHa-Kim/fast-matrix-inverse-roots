@@ -1,12 +1,21 @@
-import os
-import subprocess
-import datetime
 import argparse
+import datetime
+import os
 import re
+import subprocess
 import torch
 
 
-def run_benchmark(p_val, sizes="256,512", trials=10):
+def run_benchmark(
+    p_val: int,
+    *,
+    sizes: str,
+    trials: int,
+    dtype: str,
+    precond: str,
+    timing_reps: int,
+    compile_enabled: bool,
+):
     cmd = [
         "uv",
         "run",
@@ -20,9 +29,14 @@ def run_benchmark(p_val, sizes="256,512", trials=10):
         "--trials",
         str(trials),
         "--dtype",
-        "bf16",
-        "--compile",
+        dtype,
+        "--precond",
+        precond,
+        "--timing-reps",
+        str(timing_reps),
     ]
+    if compile_enabled:
+        cmd.append("--compile")
     if p_val == 1:
         cmd.extend(["--coeff-mode", "tuned"])
 
@@ -30,6 +44,12 @@ def run_benchmark(p_val, sizes="256,512", trials=10):
 
     # matrix_iroot runner automatically picks CUDA if available.
     result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            "matrix_iroot benchmark failed for "
+            f"p={p_val} with code {result.returncode}\n"
+            f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
     return result.stdout
 
 
@@ -105,13 +125,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="results/benchmark_report.md")
     parser.add_argument("--sizes", default="256,512,1024")
-    parser.add_argument("--trials", type=int, default=10)  # many trials
+    parser.add_argument("--trials", type=int, default=5)
+    parser.add_argument("--ps", default="1,2,3,4,8")
+    parser.add_argument("--dtype", choices=["fp32", "bf16"], default="bf16")
+    parser.add_argument("--precond", default="frob")
+    parser.add_argument("--timing-reps", type=int, default=1)
+    parser.add_argument("--no-compile", action="store_true")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
-
-    ps = [1, 2, 3, 4, 8]
+    ps = [int(tok.strip()) for tok in str(args.ps).split(",") if tok.strip()]
+    if not ps:
+        raise ValueError("Expected at least one p in --ps")
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    compile_enabled = not bool(args.no_compile)
 
     with open(args.out, "w") as f:
         f.write("# Fast Matrix Inverse p-th Roots Benchmark Report\n")
@@ -122,8 +149,12 @@ def main():
 
         f.write("## Methodology\n")
         f.write(f"- **Sizes**: {args.sizes}\n")
-        f.write("- **Compiled**: Yes (`torch.compile(mode='max-autotune')`)\n")
+        f.write(f"- **Compiled**: {'Yes' if compile_enabled else 'No'}\n")
         f.write(f"- **Trials per case**: {args.trials}\n")
+        f.write(f"- **Timing reps**: {args.timing_reps}\n")
+        f.write(f"- **Dtype**: {args.dtype}\n")
+        f.write(f"- **Preconditioner**: {args.precond}\n")
+        f.write(f"- **p values**: {ps}\n")
         hw = "GPU (bf16)" if torch.cuda.is_available() else "CPU (fp32)"
         f.write(f"- **Hardware**: {hw}\n")
         f.write(
@@ -132,7 +163,15 @@ def main():
 
         for p in ps:
             f.write(f"## Results for $p={p}$\n\n")
-            out = run_benchmark(p, args.sizes, args.trials)
+            out = run_benchmark(
+                p,
+                sizes=args.sizes,
+                trials=int(args.trials),
+                dtype=str(args.dtype),
+                precond=str(args.precond),
+                timing_reps=int(args.timing_reps),
+                compile_enabled=compile_enabled,
+            )
             parsed_table = parse_output_to_table(out, p)
             f.write(parsed_table)
             f.write("\n\n")
