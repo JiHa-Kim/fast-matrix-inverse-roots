@@ -27,6 +27,7 @@ from fast_iroot import (
     build_pe_schedules,
     inverse_proot_pe_quadratic_uncoupled,
     inverse_solve_pe_quadratic_coupled,
+    apply_inverse_root_auto,
 )
 from scripts.bench_common import (
     make_nonspd_cases,
@@ -43,6 +44,7 @@ METHODS: List[str] = [
     "PE-Quad-Coupled-Apply-Safe",
     "PE-Quad-Coupled-Apply-Adaptive",
     "Torch-Solve",
+    "Auto-Switch-Production",
 ]
 NONSPD_PRECOND_MODES: Tuple[str, ...] = ("row-norm", "frob", "ruiz")
 
@@ -259,6 +261,23 @@ def _build_runner(
 
         def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
             return torch.linalg.solve(A_norm, B)
+
+        return run
+
+    if method == "Auto-Switch-Production":
+
+        def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+            # Matches our library's default auto logic
+            Z, _ = apply_inverse_root_auto(
+                A_norm,
+                B,
+                abc_t=pe_coeffs,
+                p_val=1,
+                k_threshold=0.1,
+                nonspd_safe_fallback_tol=0.01,
+                nonspd_safe_early_y_tol=0.8,
+            )
+            return Z
 
         return run
 
