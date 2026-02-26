@@ -1,0 +1,157 @@
+[coeff] using tuned(l_target=0.05, seed=0), safety=1.0, no_final_safety=False (PE steps = 4)
+
+== Non-SPD Size 1024x1024 | RHS 1024x1 | dtype=torch.bfloat16 ==
+p=1 | precond=row-norm | precond_ruiz_iters=2 | compile=False | timing_reps=5 | timing_warmup_reps=2 | adapt(resid_tol=1.0, growth_tol=1.02, check_every=1, safe_fallback_tol=0.01, safe_early_y_tol=0.8)
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case gaussian_shifted --
+PE-Quad-Inverse-Multiply        2.224 ms (pre 0.161 + iter 2.063) | mem   56MB | relerr vs solve: 5.249e-03 | bad 0
+PE-Quad-Coupled-Apply           1.489 ms (pre 0.161 + iter 1.328) | mem   58MB | relerr vs solve: 5.432e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.748 ms (pre 0.161 + iter 1.587) | mem   58MB | relerr vs solve: 5.432e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.634 ms (pre 0.161 + iter 2.473) | mem   62MB | relerr vs solve: 5.432e-03 | bad 0
+Auto-Switch-Production          1.364 ms (pre 0.161 + iter 1.204) | mem   60MB | relerr vs solve: 2.541e-03 | bad 0
+BEST finite: Auto-Switch-Production @ 1.364 ms, relerr=2.541e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case nonnormal_upper --
+PE-Quad-Inverse-Multiply        2.125 ms (pre 0.151 + iter 1.974) | mem   56MB | relerr vs solve: 3.502e-03 | bad 0
+PE-Quad-Coupled-Apply           1.424 ms (pre 0.151 + iter 1.273) | mem   58MB | relerr vs solve: 4.456e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.699 ms (pre 0.151 + iter 1.548) | mem   58MB | relerr vs solve: 4.456e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.625 ms (pre 0.151 + iter 2.474) | mem   62MB | relerr vs solve: 4.456e-03 | bad 0
+Auto-Switch-Production          1.335 ms (pre 0.151 + iter 1.184) | mem   60MB | relerr vs solve: 2.350e-03 | bad 0
+BEST finite: Auto-Switch-Production @ 1.335 ms, relerr=2.350e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case similarity_posspec --
+PE-Quad-Inverse-Multiply        2.223 ms (pre 0.150 + iter 2.073) | mem   56MB | relerr vs solve: 6.805e-03 | bad 0
+PE-Quad-Coupled-Apply           1.474 ms (pre 0.150 + iter 1.324) | mem   58MB | relerr vs solve: 7.614e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.747 ms (pre 0.150 + iter 1.597) | mem   58MB | relerr vs solve: 7.614e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.668 ms (pre 0.150 + iter 2.518) | mem   62MB | relerr vs solve: 7.614e-03 | bad 0
+Auto-Switch-Production          1.370 ms (pre 0.150 + iter 1.220) | mem   60MB | relerr vs solve: 1.541e-02 | bad 0
+BEST finite: Auto-Switch-Production @ 1.370 ms, relerr=1.541e-02
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case similarity_posspec_hard --
+PE-Quad-Inverse-Multiply        2.218 ms (pre 0.147 + iter 2.071) | mem   56MB | relerr vs solve: 1.000e+00 | bad 0
+PE-Quad-Coupled-Apply           1.470 ms (pre 0.147 + iter 1.322) | mem   58MB | relerr vs solve: 1.000e+00 | bad 0
+PE-Quad-Coupled-Apply-Safe      4.964 ms (pre 0.147 + iter 4.817) | mem   66MB | relerr vs solve: 2.113e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    5.413 ms (pre 0.147 + iter 5.265) | mem   68MB | relerr vs solve: 2.113e-03 | bad 0
+Auto-Switch-Production          1.367 ms (pre 0.147 + iter 1.220) | mem   60MB | relerr vs solve: 1.000e+00 | bad 0
+BEST finite: Auto-Switch-Production @ 1.367 ms, relerr=1.000e+00
+
+== Non-SPD Size 1024x1024 | RHS 1024x16 | dtype=torch.bfloat16 ==
+p=1 | precond=row-norm | precond_ruiz_iters=2 | compile=False | timing_reps=5 | timing_warmup_reps=2 | adapt(resid_tol=1.0, growth_tol=1.02, check_every=1, safe_fallback_tol=0.01, safe_early_y_tol=0.8)
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case gaussian_shifted --
+PE-Quad-Inverse-Multiply        2.248 ms (pre 0.174 + iter 2.074) | mem   57MB | relerr vs solve: 5.280e-03 | bad 0
+PE-Quad-Coupled-Apply           1.508 ms (pre 0.174 + iter 1.334) | mem   59MB | relerr vs solve: 5.432e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.771 ms (pre 0.174 + iter 1.597) | mem   59MB | relerr vs solve: 5.432e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.719 ms (pre 0.174 + iter 2.545) | mem   63MB | relerr vs solve: 5.432e-03 | bad 0
+Auto-Switch-Production          1.394 ms (pre 0.174 + iter 1.219) | mem   61MB | relerr vs solve: 2.502e-03 | bad 0
+BEST finite: Auto-Switch-Production @ 1.394 ms, relerr=2.502e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case nonnormal_upper --
+PE-Quad-Inverse-Multiply        2.195 ms (pre 0.219 + iter 1.976) | mem   57MB | relerr vs solve: 4.845e-03 | bad 0
+PE-Quad-Coupled-Apply           1.502 ms (pre 0.219 + iter 1.283) | mem   59MB | relerr vs solve: 3.822e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.765 ms (pre 0.219 + iter 1.547) | mem   59MB | relerr vs solve: 3.822e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.746 ms (pre 0.219 + iter 2.527) | mem   63MB | relerr vs solve: 3.822e-03 | bad 0
+Auto-Switch-Production          1.409 ms (pre 0.219 + iter 1.191) | mem   61MB | relerr vs solve: 2.319e-03 | bad 0
+BEST finite: Auto-Switch-Production @ 1.409 ms, relerr=2.319e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case similarity_posspec --
+PE-Quad-Inverse-Multiply        2.238 ms (pre 0.168 + iter 2.070) | mem   57MB | relerr vs solve: 6.683e-03 | bad 0
+PE-Quad-Coupled-Apply           1.497 ms (pre 0.168 + iter 1.329) | mem   59MB | relerr vs solve: 7.370e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.763 ms (pre 0.168 + iter 1.595) | mem   59MB | relerr vs solve: 7.370e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.605 ms (pre 0.168 + iter 2.436) | mem   63MB | relerr vs solve: 7.370e-03 | bad 0
+Auto-Switch-Production          1.381 ms (pre 0.168 + iter 1.213) | mem   61MB | relerr vs solve: 1.556e-02 | bad 0
+BEST finite: Auto-Switch-Production @ 1.381 ms, relerr=1.556e-02
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case similarity_posspec_hard --
+PE-Quad-Inverse-Multiply        2.227 ms (pre 0.152 + iter 2.074) | mem   57MB | relerr vs solve: 1.000e+00 | bad 0
+PE-Quad-Coupled-Apply           1.484 ms (pre 0.152 + iter 1.332) | mem   59MB | relerr vs solve: 1.000e+00 | bad 0
+PE-Quad-Coupled-Apply-Safe      5.322 ms (pre 0.152 + iter 5.170) | mem   67MB | relerr vs solve: 7.858e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    5.764 ms (pre 0.152 + iter 5.611) | mem   69MB | relerr vs solve: 7.858e-03 | bad 0
+Auto-Switch-Production          1.370 ms (pre 0.152 + iter 1.218) | mem   61MB | relerr vs solve: 1.000e+00 | bad 0
+BEST finite: Auto-Switch-Production @ 1.370 ms, relerr=1.000e+00
+
+== Non-SPD Size 1024x1024 | RHS 1024x64 | dtype=torch.bfloat16 ==
+p=1 | precond=row-norm | precond_ruiz_iters=2 | compile=False | timing_reps=5 | timing_warmup_reps=2 | adapt(resid_tol=1.0, growth_tol=1.02, check_every=1, safe_fallback_tol=0.01, safe_early_y_tol=0.8)
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case gaussian_shifted --
+PE-Quad-Inverse-Multiply        2.228 ms (pre 0.145 + iter 2.084) | mem   59MB | relerr vs solve: 5.264e-03 | bad 0
+PE-Quad-Coupled-Apply           1.486 ms (pre 0.145 + iter 1.341) | mem   61MB | relerr vs solve: 5.386e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.750 ms (pre 0.145 + iter 1.606) | mem   61MB | relerr vs solve: 5.386e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.693 ms (pre 0.145 + iter 2.549) | mem   65MB | relerr vs solve: 5.386e-03 | bad 0
+Auto-Switch-Production          1.365 ms (pre 0.145 + iter 1.221) | mem   63MB | relerr vs solve: 2.510e-03 | bad 0
+BEST finite: Auto-Switch-Production @ 1.365 ms, relerr=2.510e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case nonnormal_upper --
+PE-Quad-Inverse-Multiply        2.135 ms (pre 0.148 + iter 1.987) | mem   59MB | relerr vs solve: 3.304e-03 | bad 0
+PE-Quad-Coupled-Apply           1.436 ms (pre 0.148 + iter 1.288) | mem   61MB | relerr vs solve: 4.265e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.721 ms (pre 0.148 + iter 1.573) | mem   61MB | relerr vs solve: 4.265e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.725 ms (pre 0.148 + iter 2.577) | mem   65MB | relerr vs solve: 4.265e-03 | bad 0
+Auto-Switch-Production          1.340 ms (pre 0.148 + iter 1.192) | mem   63MB | relerr vs solve: 2.304e-03 | bad 0
+BEST finite: Auto-Switch-Production @ 1.340 ms, relerr=2.304e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case similarity_posspec --
+PE-Quad-Inverse-Multiply        2.233 ms (pre 0.151 + iter 2.082) | mem   59MB | relerr vs solve: 6.744e-03 | bad 0
+PE-Quad-Coupled-Apply           1.501 ms (pre 0.151 + iter 1.350) | mem   61MB | relerr vs solve: 7.584e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      1.882 ms (pre 0.151 + iter 1.731) | mem   61MB | relerr vs solve: 7.584e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    2.884 ms (pre 0.151 + iter 2.733) | mem   65MB | relerr vs solve: 7.584e-03 | bad 0
+Auto-Switch-Production          1.391 ms (pre 0.151 + iter 1.241) | mem   63MB | relerr vs solve: 1.587e-02 | bad 0
+BEST finite: Auto-Switch-Production @ 1.391 ms, relerr=1.587e-02
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case similarity_posspec_hard --
+PE-Quad-Inverse-Multiply        2.253 ms (pre 0.171 + iter 2.082) | mem   59MB | relerr vs solve: 1.000e+00 | bad 0
+PE-Quad-Coupled-Apply           1.522 ms (pre 0.171 + iter 1.350) | mem   61MB | relerr vs solve: 1.000e+00 | bad 0
+PE-Quad-Coupled-Apply-Safe      5.382 ms (pre 0.171 + iter 5.211) | mem   70MB | relerr vs solve: 1.169e-02 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    5.860 ms (pre 0.171 + iter 5.689) | mem   72MB | relerr vs solve: 1.169e-02 | bad 0
+Auto-Switch-Production          1.404 ms (pre 0.171 + iter 1.233) | mem   63MB | relerr vs solve: 1.000e+00 | bad 0
+BEST finite: Auto-Switch-Production @ 1.404 ms, relerr=1.000e+00
+
+== Non-SPD Size 1024x1024 | RHS 1024x1024 | dtype=torch.bfloat16 ==
+p=1 | precond=row-norm | precond_ruiz_iters=2 | compile=False | timing_reps=5 | timing_warmup_reps=2 | adapt(resid_tol=1.0, growth_tol=1.02, check_every=1, safe_fallback_tol=0.01, safe_early_y_tol=0.8)
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case gaussian_shifted --
+PE-Quad-Inverse-Multiply        2.397 ms (pre 0.165 + iter 2.232) | mem  102MB | relerr vs solve: 5.264e-03 | bad 0
+PE-Quad-Coupled-Apply           2.118 ms (pre 0.165 + iter 1.952) | mem  104MB | relerr vs solve: 5.737e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      2.612 ms (pre 0.165 + iter 2.447) | mem  108MB | relerr vs solve: 5.737e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    3.714 ms (pre 0.165 + iter 3.549) | mem  110MB | relerr vs solve: 5.737e-03 | bad 0
+Auto-Switch-Production          2.716 ms (pre 0.165 + iter 2.551) | mem  110MB | relerr vs solve: 5.737e-03 | bad 0
+BEST finite: PE-Quad-Coupled-Apply @ 2.118 ms, relerr=5.737e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case nonnormal_upper --
+PE-Quad-Inverse-Multiply        2.277 ms (pre 0.149 + iter 2.128) | mem  102MB | relerr vs solve: 3.395e-03 | bad 0
+PE-Quad-Coupled-Apply           2.021 ms (pre 0.149 + iter 1.872) | mem  104MB | relerr vs solve: 5.157e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      2.491 ms (pre 0.149 + iter 2.343) | mem  108MB | relerr vs solve: 5.157e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    3.369 ms (pre 0.149 + iter 3.220) | mem  110MB | relerr vs solve: 5.157e-03 | bad 0
+Auto-Switch-Production          2.505 ms (pre 0.149 + iter 2.356) | mem  110MB | relerr vs solve: 5.157e-03 | bad 0
+BEST finite: PE-Quad-Coupled-Apply @ 2.021 ms, relerr=5.157e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case similarity_posspec --
+PE-Quad-Inverse-Multiply        2.383 ms (pre 0.149 + iter 2.235) | mem  102MB | relerr vs solve: 6.912e-03 | bad 0
+PE-Quad-Coupled-Apply           2.101 ms (pre 0.149 + iter 1.953) | mem  104MB | relerr vs solve: 7.721e-03 | bad 0
+PE-Quad-Coupled-Apply-Safe      2.557 ms (pre 0.149 + iter 2.408) | mem  108MB | relerr vs solve: 7.721e-03 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    3.388 ms (pre 0.149 + iter 3.239) | mem  110MB | relerr vs solve: 7.721e-03 | bad 0
+Auto-Switch-Production          2.618 ms (pre 0.149 + iter 2.469) | mem  110MB | relerr vs solve: 7.721e-03 | bad 0
+BEST finite: PE-Quad-Coupled-Apply @ 2.101 ms, relerr=7.721e-03
+  SKIP Torch-Solve: "lu_factor_cusolver" not implemented for 'BFloat16'
+
+-- case similarity_posspec_hard --
+PE-Quad-Inverse-Multiply        2.385 ms (pre 0.153 + iter 2.232) | mem  102MB | relerr vs solve: 1.000e+00 | bad 0
+PE-Quad-Coupled-Apply           2.098 ms (pre 0.153 + iter 1.945) | mem  104MB | relerr vs solve: 1.000e+00 | bad 0
+PE-Quad-Coupled-Apply-Safe      6.932 ms (pre 0.153 + iter 6.779) | mem  126MB | relerr vs solve: 1.184e-02 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    7.314 ms (pre 0.153 + iter 7.161) | mem  128MB | relerr vs solve: 1.184e-02 | bad 0
+Auto-Switch-Production          7.053 ms (pre 0.153 + iter 6.899) | mem  126MB | relerr vs solve: 1.184e-02 | bad 0
+BEST finite: PE-Quad-Coupled-Apply @ 2.098 ms, relerr=1.000e+00

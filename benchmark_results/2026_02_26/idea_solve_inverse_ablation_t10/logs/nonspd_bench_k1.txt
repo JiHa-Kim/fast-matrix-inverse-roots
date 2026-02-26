@@ -1,0 +1,64 @@
+[coeff] using tuned(l_target=0.05, seed=0), safety=1.0, no_final_safety=False (PE steps = 4)
+
+== Non-SPD Size 1024x1024 | RHS 1024x1 | dtype=torch.float32 ==
+p=1 | precond=row-norm | precond_ruiz_iters=2 | compile=False | timing_reps=5 | timing_warmup_reps=2 | adapt(resid_tol=1.0, growth_tol=1.02, check_every=1, safe_fallback_tol=0.01, safe_early_y_tol=0.8)
+
+-- case gaussian_shifted --
+PE-Quad-Inverse-Multiply        4.073 ms (pre 0.201 + iter 3.872) | mem  104MB | relerr vs solve: 6.044e-04 | bad 0
+PE-Quad-Coupled-Apply           2.703 ms (pre 0.201 + iter 2.502) | mem  108MB | relerr vs solve: 6.712e-04 | bad 0
+PE-Quad-Coupled-Apply-Safe      2.978 ms (pre 0.201 + iter 2.777) | mem  108MB | relerr vs solve: 6.712e-04 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    4.022 ms (pre 0.201 + iter 3.822) | mem  116MB | relerr vs solve: 6.712e-04 | bad 0
+Torch-Solve                     4.335 ms (pre 0.201 + iter 4.134) | mem   92MB | relerr vs solve: 3.937e-07 | bad 0
+NSRC-Scalar-10                  1.067 ms (pre 0.201 + iter 0.866) | mem   88MB | relerr vs solve: 1.907e-01 | bad 0
+Hybrid-PE2-NSRC3                2.409 ms (pre 0.201 + iter 2.208) | mem  112MB | relerr vs solve: 2.532e-04 | bad 0
+Hybrid-PE2-NSRC5                2.530 ms (pre 0.201 + iter 2.329) | mem  112MB | relerr vs solve: 4.717e-06 | bad 0
+Block-CG-10                     4.460 ms (pre 0.201 + iter 4.260) | mem   88MB | relerr vs solve: 3.903e-02 | bad 0
+Cheb-Iter-20                    2.509 ms (pre 0.201 + iter 2.308) | mem   88MB | relerr vs solve: 1.738e-03 | bad 0
+LU-Direct                       4.439 ms (pre 0.201 + iter 4.238) | mem   92MB | relerr vs solve: 5.552e-07 | bad 0
+LU-IR-1                         4.943 ms (pre 0.201 + iter 4.742) | mem   92MB | relerr vs solve: 2.370e-07 | bad 0
+BEST finite: NSRC-Scalar-10 @ 1.067 ms, relerr=1.907e-01
+
+-- case nonnormal_upper --
+PE-Quad-Inverse-Multiply        3.924 ms (pre 0.185 + iter 3.739) | mem  104MB | relerr vs solve: 4.104e-04 | bad 0
+PE-Quad-Coupled-Apply           2.599 ms (pre 0.185 + iter 2.414) | mem  108MB | relerr vs solve: 4.726e-04 | bad 0
+PE-Quad-Coupled-Apply-Safe      2.836 ms (pre 0.185 + iter 2.651) | mem  108MB | relerr vs solve: 4.726e-04 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    4.113 ms (pre 0.185 + iter 3.927) | mem  116MB | relerr vs solve: 4.726e-04 | bad 0
+Torch-Solve                     4.295 ms (pre 0.185 + iter 4.109) | mem   92MB | relerr vs solve: 1.286e-07 | bad 0
+NSRC-Scalar-10                  1.052 ms (pre 0.185 + iter 0.866) | mem   88MB | relerr vs solve: 2.300e-01 | bad 0
+Hybrid-PE2-NSRC3                2.305 ms (pre 0.185 + iter 2.119) | mem  112MB | relerr vs solve: 4.139e-04 | bad 0
+Hybrid-PE2-NSRC5                2.423 ms (pre 0.185 + iter 2.238) | mem  112MB | relerr vs solve: 7.749e-06 | bad 0
+Block-CG-10                     4.592 ms (pre 0.185 + iter 4.407) | mem   88MB | relerr vs solve: 3.820e-03 | bad 0
+Cheb-Iter-20                    2.475 ms (pre 0.185 + iter 2.290) | mem   88MB | relerr vs solve: 9.425e-04 | bad 0
+LU-Direct                       4.356 ms (pre 0.185 + iter 4.171) | mem   92MB | relerr vs solve: 3.202e-07 | bad 0
+LU-IR-1                         4.671 ms (pre 0.185 + iter 4.485) | mem   92MB | relerr vs solve: 2.226e-07 | bad 0
+BEST finite: NSRC-Scalar-10 @ 1.052 ms, relerr=2.300e-01
+
+-- case similarity_posspec --
+PE-Quad-Inverse-Multiply        4.066 ms (pre 0.159 + iter 3.908) | mem  104MB | relerr vs solve: 7.047e-04 | bad 0
+PE-Quad-Coupled-Apply           2.664 ms (pre 0.159 + iter 2.506) | mem  108MB | relerr vs solve: 6.549e-04 | bad 0
+PE-Quad-Coupled-Apply-Safe      2.891 ms (pre 0.159 + iter 2.733) | mem  108MB | relerr vs solve: 6.549e-04 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    4.004 ms (pre 0.159 + iter 3.846) | mem  116MB | relerr vs solve: 6.549e-04 | bad 0
+Torch-Solve                     4.261 ms (pre 0.159 + iter 4.102) | mem   92MB | relerr vs solve: 5.081e-07 | bad 0
+NSRC-Scalar-10                  1.038 ms (pre 0.159 + iter 0.879) | mem   88MB | relerr vs solve: 3.589e-01 | bad 0
+Hybrid-PE2-NSRC3                2.350 ms (pre 0.159 + iter 2.191) | mem  112MB | relerr vs solve: 1.479e-02 | bad 0
+Hybrid-PE2-NSRC5                2.477 ms (pre 0.159 + iter 2.318) | mem  112MB | relerr vs solve: 2.554e-03 | bad 0
+Block-CG-10                     3.024 ms (pre 0.159 + iter 2.866) | mem   88MB | relerr vs solve: 6.837e-04 | bad 0
+Cheb-Iter-20                    2.444 ms (pre 0.159 + iter 2.286) | mem   88MB | relerr vs solve: 1.512e-02 | bad 0
+LU-Direct                       4.372 ms (pre 0.159 + iter 4.214) | mem   92MB | relerr vs solve: 6.175e-07 | bad 0
+LU-IR-1                         4.717 ms (pre 0.159 + iter 4.559) | mem   92MB | relerr vs solve: 2.982e-07 | bad 0
+BEST finite: NSRC-Scalar-10 @ 1.038 ms, relerr=3.589e-01
+
+-- case similarity_posspec_hard --
+PE-Quad-Inverse-Multiply        4.033 ms (pre 0.158 + iter 3.875) | mem  104MB | relerr vs solve: 9.988e-01 | bad 0
+PE-Quad-Coupled-Apply           2.658 ms (pre 0.158 + iter 2.500) | mem  108MB | relerr vs solve: 9.988e-01 | bad 0
+PE-Quad-Coupled-Apply-Safe      5.146 ms (pre 0.158 + iter 4.988) | mem  112MB | relerr vs solve: 7.119e-04 | bad 0
+PE-Quad-Coupled-Apply-Adaptive    5.595 ms (pre 0.158 + iter 5.437) | mem  116MB | relerr vs solve: 7.119e-04 | bad 0
+Torch-Solve                     4.263 ms (pre 0.158 + iter 4.105) | mem   92MB | relerr vs solve: 7.119e-04 | bad 0
+NSRC-Scalar-10                  1.016 ms (pre 0.158 + iter 0.858) | mem   88MB | relerr vs solve: 1.000e+00 | bad 0
+Hybrid-PE2-NSRC3                2.348 ms (pre 0.158 + iter 2.190) | mem  112MB | relerr vs solve: 9.997e-01 | bad 0
+Hybrid-PE2-NSRC5                2.470 ms (pre 0.158 + iter 2.311) | mem  112MB | relerr vs solve: 9.994e-01 | bad 0
+Block-CG-10                     4.186 ms (pre 0.158 + iter 4.028) | mem   88MB | relerr vs solve: inf | bad 8
+Cheb-Iter-20                    2.460 ms (pre 0.158 + iter 2.302) | mem   88MB | relerr vs solve: 9.998e-01 | bad 0
+LU-Direct                       4.403 ms (pre 0.158 + iter 4.245) | mem   92MB | relerr vs solve: 7.287e-04 | bad 0
+LU-IR-1                         4.723 ms (pre 0.158 + iter 4.565) | mem   92MB | relerr vs solve: 3.064e-04 | bad 0
+BEST finite: NSRC-Scalar-10 @ 1.016 ms, relerr=1.000e+00
