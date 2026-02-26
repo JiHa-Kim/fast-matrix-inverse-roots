@@ -8,6 +8,7 @@ from fast_iroot import (
     build_pe_schedules,
     precond_spd,
 )
+from fast_iroot.metrics import exact_inverse_proot
 from matrix_iroot import _spd_from_eigs
 
 
@@ -101,3 +102,28 @@ def test_apply_inverse_proot_chebyshev_validation():
     B_bad = torch.randn(8, 2)
     with pytest.raises(ValueError):
         apply_inverse_proot_chebyshev(A, B_bad, p_val=2, degree=10, l_min=0.1)
+
+
+def test_chebyshev_vs_exact():
+    n = 32
+    torch.manual_seed(42)
+    A = torch.randn(n, n)
+    A = (A @ A.mT) / n + torch.eye(n) * 0.1
+
+    l_target = 0.05
+    A_norm, _ = precond_spd(A, mode="frob", l_target=l_target)
+
+    B = torch.randn(n, 2)
+
+    for p in [1, 2, 4]:
+        X_exact = exact_inverse_proot(A_norm, p_val=p)
+        Z_expected = X_exact @ B
+
+        Z_cheb, _ = apply_inverse_proot_chebyshev(
+            A_norm, B, p_val=p, degree=128, l_min=l_target
+        )
+
+        rel_diff = torch.linalg.matrix_norm(
+            Z_cheb - Z_expected
+        ) / torch.linalg.matrix_norm(Z_expected)
+        assert rel_diff < 0.05, f"p={p} failed with rel_diff={rel_diff}"
