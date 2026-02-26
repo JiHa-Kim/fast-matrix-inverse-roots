@@ -7,7 +7,7 @@ Dedicated SPD inverse-solve benchmark artifacts with exact baselines:
 
 Script:
 
-- `scripts/matrix_solve.py --p 1`
+- `benchmarks/solve/matrix_solve.py --p 1`
 
 Base setup:
 
@@ -35,11 +35,12 @@ Base setup:
 ## Reproduce
 
 ```bash
-uv run python scripts/matrix_solve.py --p 1 --sizes 1024 --k 1  --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 > benchmark_results/2026_02_26/spd_p1_suite/t10_fp32_cholesky/solve_spd_p1_k1_t10_fp32_cholesky.txt
-uv run python scripts/matrix_solve.py --p 1 --sizes 1024 --k 16 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 > benchmark_results/2026_02_26/spd_p1_suite/t10_fp32_cholesky/solve_spd_p1_k16_t10_fp32_cholesky.txt
-uv run python scripts/matrix_solve.py --p 1 --sizes 1024 --k 64 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 > benchmark_results/2026_02_26/spd_p1_suite/t10_fp32_cholesky/solve_spd_p1_k64_t10_fp32_cholesky.txt
+uv run python benchmarks/solve/matrix_solve.py --p 1 --sizes 1024 --k 1  --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 > benchmark_results/2026_02_26/spd_p1_suite/t10_fp32_cholesky/solve_spd_p1_k1_t10_fp32_cholesky.txt
+uv run python benchmarks/solve/matrix_solve.py --p 1 --sizes 1024 --k 16 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 > benchmark_results/2026_02_26/spd_p1_suite/t10_fp32_cholesky/solve_spd_p1_k16_t10_fp32_cholesky.txt
+uv run python benchmarks/solve/matrix_solve.py --p 1 --sizes 1024 --k 64 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 > benchmark_results/2026_02_26/spd_p1_suite/t10_fp32_cholesky/solve_spd_p1_k64_t10_fp32_cholesky.txt
 
-uv run python scripts/matrix_solve.py --p 1 --sizes 256,512,1024 --k 16 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 > benchmark_results/2026_02_26/spd_p1_suite/cross_size_k16_t10_fp32_cholesky/solve_spd_p1_sizes256_512_1024_k16_t10_fp32_cholesky.txt
+uv run python benchmarks/solve/matrix_solve.py --p 1 --sizes 256,512,1024 --k 16 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 > benchmark_results/2026_02_26/spd_p1_suite/cross_size_k16_t10_fp32_cholesky/solve_spd_p1_sizes256_512_1024_k16_t10_fp32_cholesky.txt
 
-uv run python scripts/matrix_solve.py --p 1 --sizes 1024 --k 16 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 --cases gaussian_spd,illcond_1e6,illcond_1e12,near_rank_def,spike > benchmark_results/2026_02_26/spd_p1_suite/comprehensive_k16_t10_fp32_cholesky/solve_spd_p1_n1024_k16_t10_all_cases_fp32_cholesky.txt
+uv run python benchmarks/solve/matrix_solve.py --p 1 --sizes 1024 --k 16 --trials 10 --timing-reps 5 --timing-warmup-reps 2 --dtype fp32 --cases gaussian_spd,illcond_1e6,illcond_1e12,near_rank_def,spike > benchmark_results/2026_02_26/spd_p1_suite/comprehensive_k16_t10_fp32_cholesky/solve_spd_p1_n1024_k16_t10_all_cases_fp32_cholesky.txt
 ```
+
