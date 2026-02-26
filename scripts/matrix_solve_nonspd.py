@@ -267,7 +267,9 @@ def eval_method(
             relerr_list.append(float("inf"))
             continue
 
-        rel = torch.linalg.matrix_norm(Z_hat - Z_true) / torch.linalg.matrix_norm(Z_true)
+        rel = torch.linalg.matrix_norm(Z_hat - Z_true) / torch.linalg.matrix_norm(
+            Z_true
+        )
         relerr_list.append(float(rel))
 
     return NonSpdBenchResult(
@@ -288,7 +290,7 @@ def main():
     p.add_argument("--p", type=int, default=1, help="Must be 1 for this suite")
     p.add_argument("--sizes", type=str, default="256,512")
     p.add_argument("--k", type=int, default=16, help="RHS column count")
-    p.add_argument("--trials", type=int, default=5)
+    p.add_argument("--trials", type=int, default=10)
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument(
         "--cases",
@@ -412,7 +414,9 @@ def main():
 
     with torch.inference_mode():
         for n in sizes:
-            print(f"\n== Non-SPD Size {n}x{n} | RHS {n}x{args.k} | dtype={dtype_compute} ==")
+            print(
+                f"\n== Non-SPD Size {n}x{n} | RHS {n}x{args.k} | dtype={dtype_compute} =="
+            )
             print(
                 f"p=1 | compile={args.compile} | timing_reps={args.timing_reps} | "
                 f"timing_warmup_reps={args.timing_warmup_reps} | "
@@ -445,9 +449,7 @@ def main():
                         timing_reps=args.timing_reps,
                         timing_warmup_reps=args.timing_warmup_reps,
                         ms_precond_median=ms_precond_med,
-                        nonspd_adaptive_resid_tol=float(
-                            args.nonspd_adaptive_resid_tol
-                        ),
+                        nonspd_adaptive_resid_tol=float(args.nonspd_adaptive_resid_tol),
                         nonspd_adaptive_growth_tol=float(
                             args.nonspd_adaptive_growth_tol
                         ),

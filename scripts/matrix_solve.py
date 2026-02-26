@@ -53,7 +53,7 @@ def main():
     p.add_argument("--p", type=int, default=2, help="Root exponent")
     p.add_argument("--sizes", type=str, default="1024")
     p.add_argument("--k", type=int, default=16, help="Number of RHS columns (K << N)")
-    p.add_argument("--trials", type=int, default=5)
+    p.add_argument("--trials", type=int, default=10)
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--dtype", type=str, default="bf16", choices=["fp32", "bf16"])
     p.add_argument(
@@ -178,7 +178,9 @@ def main():
 
     args = p.parse_args()
     if int(args.symmetrize_every) < 1:
-        raise ValueError(f"--symmetrize-every must be >= 1, got {args.symmetrize_every}")
+        raise ValueError(
+            f"--symmetrize-every must be >= 1, got {args.symmetrize_every}"
+        )
     if int(args.precond_ruiz_iters) < 1:
         raise ValueError(
             f"--precond-ruiz-iters must be >= 1, got {args.precond_ruiz_iters}"
@@ -186,7 +188,9 @@ def main():
     if int(args.cheb_degree) < 0:
         raise ValueError(f"--cheb-degree must be >= 0, got {args.cheb_degree}")
     if int(args.cheb_error_grid) < 257:
-        raise ValueError(f"--cheb-error-grid must be >= 257, got {args.cheb_error_grid}")
+        raise ValueError(
+            f"--cheb-error-grid must be >= 257, got {args.cheb_error_grid}"
+        )
     if float(args.cheb_max_relerr_mult) < 1.0:
         raise ValueError(
             f"--cheb-max-relerr-mult must be >= 1.0, got {args.cheb_max_relerr_mult}"
@@ -194,7 +198,9 @@ def main():
     if float(args.online_stop_tol) < 0.0:
         raise ValueError(f"--online-stop-tol must be >= 0, got {args.online_stop_tol}")
     if int(args.online_min_steps) < 1:
-        raise ValueError(f"--online-min-steps must be >= 1, got {args.online_min_steps}")
+        raise ValueError(
+            f"--online-min-steps must be >= 1, got {args.online_min_steps}"
+        )
     if int(args.timing_warmup_reps) < 0:
         raise ValueError(
             f"--timing-warmup-reps must be >= 0, got {args.timing_warmup_reps}"

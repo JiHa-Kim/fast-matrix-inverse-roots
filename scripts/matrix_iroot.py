@@ -46,7 +46,7 @@ def main():
         "--p", type=int, default=4, help="Root exponent (e.g. 4 for inverse 4th root)"
     )
     p.add_argument("--sizes", type=str, default="256,512,1024")
-    p.add_argument("--trials", type=int, default=8)
+    p.add_argument("--trials", type=int, default=10)
     p.add_argument("--warmup", type=int, default=2)
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--dtype", type=str, default="bf16", choices=["fp32", "bf16"])
@@ -93,7 +93,9 @@ def main():
     p.add_argument("--hard-probe-iters", type=int, default=0)
     args = p.parse_args()
     if int(args.symmetrize_every) < 1:
-        raise ValueError(f"--symmetrize-every must be >= 1, got {args.symmetrize_every}")
+        raise ValueError(
+            f"--symmetrize-every must be >= 1, got {args.symmetrize_every}"
+        )
     if int(args.precond_ruiz_iters) < 1:
         raise ValueError(
             f"--precond-ruiz-iters must be >= 1, got {args.precond_ruiz_iters}"
@@ -245,7 +247,9 @@ def main():
                             f"BEST overall: {best_name} @ {best_rr.ms:.3f} ms, resid={best_rr.residual:.3e}, hard={best_rr.hard_dir:.3e}"
                         )
                     else:
-                        print("BEST overall: none (all runs produced non-finite output)")
+                        print(
+                            "BEST overall: none (all runs produced non-finite output)"
+                        )
                 print()
 
 

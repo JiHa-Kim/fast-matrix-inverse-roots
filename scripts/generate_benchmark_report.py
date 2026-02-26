@@ -6,7 +6,7 @@ import re
 import torch
 
 
-def run_benchmark(p_val, sizes="256,512", trials=5):
+def run_benchmark(p_val, sizes="256,512", trials=10):
     cmd = [
         "uv",
         "run",
