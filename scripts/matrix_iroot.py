@@ -9,40 +9,42 @@ from __future__ import annotations
 
 import argparse
 import math
-import sys
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 import torch
 
-# Allow running as `python scripts/matrix_iroot.py` from repo root.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from fast_iroot import (
-    _quad_coeffs,
-    build_pe_schedules,
-    inverse_proot_pe_quadratic_uncoupled,
-    inverse_proot_pe_quadratic_coupled,
-    precond_spd,
-)
-
 try:
-    from .bench_common import parse_shapes, make_spd_cases, maybe_compile, _spd_from_eigs
-    from .bench_iroot_core import (
+    from fast_iroot import (
+        _quad_coeffs,
+        build_pe_schedules,
+        inverse_proot_pe_quadratic_uncoupled,
+        inverse_proot_pe_quadratic_coupled,
+        precond_spd,
+    )
+    from scripts.bench_common import parse_shapes, make_spd_cases, maybe_compile
+    from scripts.bench_iroot_core import (
         BenchResult,
         MATRIX_IROOT_METHODS,
         prepare_preconditioned_inputs,
         eval_method,
     )
-except ImportError:
-    from scripts.bench_common import (
-        parse_shapes,
-        make_spd_cases,
-        maybe_compile,
-        _spd_from_eigs,
+except ModuleNotFoundError:
+    import sys
+    from pathlib import Path
+
+    # Fallback for direct script execution: `python scripts/matrix_iroot.py`.
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+
+    from fast_iroot import (
+        _quad_coeffs,
+        build_pe_schedules,
+        inverse_proot_pe_quadratic_uncoupled,
+        inverse_proot_pe_quadratic_coupled,
+        precond_spd,
     )
+    from scripts.bench_common import parse_shapes, make_spd_cases, maybe_compile
     from scripts.bench_iroot_core import (
         BenchResult,
         MATRIX_IROOT_METHODS,

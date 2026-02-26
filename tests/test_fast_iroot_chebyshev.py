@@ -9,7 +9,7 @@ from fast_iroot import (
     precond_spd,
 )
 from fast_iroot.metrics import exact_inverse_proot
-from scripts.matrix_iroot import _spd_from_eigs
+from scripts.bench_common import _spd_from_eigs
 
 
 def get_test_matrix(n: int = 128, case: str = "gaussian") -> torch.Tensor:

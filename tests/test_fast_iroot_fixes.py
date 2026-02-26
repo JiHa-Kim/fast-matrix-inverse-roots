@@ -9,7 +9,6 @@ from fast_iroot.utils import _addmm_into
 from fast_iroot.coupled import (
     inverse_solve_pe_quadratic_coupled,
     inverse_proot_pe_quadratic_coupled,
-    InverseSolveWorkspaceCoupled,
 )
 from fast_iroot import build_pe_schedules, precond_spd, apply_inverse_root
 from fast_iroot.metrics import isqrt_relative_error, exact_inverse_proot

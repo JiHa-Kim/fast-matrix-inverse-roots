@@ -8,23 +8,35 @@ p in {1, 2, 3, 4, 8} and n in {64, 256}.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 import torch
 
-# Allow running as `python scripts/verify_iroot.py` from repo root.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+try:
+    from fast_iroot import (
+        _quad_coeffs,
+        build_pe_schedules,
+        inverse_proot_pe_quadratic_uncoupled,
+        inverse_proot_pe_quadratic_coupled,
+        inverse_solve_pe_quadratic_coupled,
+        precond_spd,
+    )
+    from fast_iroot.metrics import compute_quality_stats, iroot_relative_error
+except ModuleNotFoundError:
+    from pathlib import Path
 
-from fast_iroot import (
-    _quad_coeffs,
-    build_pe_schedules,
-    inverse_proot_pe_quadratic_uncoupled,
-    inverse_proot_pe_quadratic_coupled,
-    inverse_solve_pe_quadratic_coupled,
-    precond_spd,
-)
-from fast_iroot.metrics import compute_quality_stats, iroot_relative_error
+    # Fallback for direct script execution: `python scripts/verify_iroot.py`.
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+
+    from fast_iroot import (
+        _quad_coeffs,
+        build_pe_schedules,
+        inverse_proot_pe_quadratic_uncoupled,
+        inverse_proot_pe_quadratic_coupled,
+        inverse_solve_pe_quadratic_coupled,
+        precond_spd,
+    )
+    from fast_iroot.metrics import compute_quality_stats, iroot_relative_error
 
 
 def make_spd(

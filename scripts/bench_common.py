@@ -10,7 +10,10 @@ def median(xs: Sequence[float]) -> float:
     ys = sorted(float(x) for x in xs)
     if not ys:
         return float("nan")
-    return ys[len(ys) // 2]
+    mid = len(ys) // 2
+    if len(ys) % 2 == 1:
+        return ys[mid]
+    return 0.5 * (ys[mid - 1] + ys[mid])
 
 
 def pctl(xs: Sequence[float], q: float) -> float:

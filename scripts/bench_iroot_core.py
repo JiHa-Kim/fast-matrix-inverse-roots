@@ -175,6 +175,16 @@ def eval_method(
             coupled_y_resid=float("nan"),
         )
 
+    runner = _build_runner(
+        method=method,
+        pe_quad_coeffs=pe_quad_coeffs,
+        symmetrize_Y=symmetrize_Y,
+        symmetrize_every=symmetrize_every,
+        p_val=p_val,
+        uncoupled_fn=uncoupled_fn,
+        coupled_fn=coupled_fn,
+    )
+
     ws: Optional[object] = None
     eye_mat: Optional[torch.Tensor] = None
 
@@ -188,16 +198,6 @@ def eval_method(
             or eye_mat.device != A_norm.device
         ):
             eye_mat = torch.eye(n, device=A_norm.device, dtype=torch.float32)
-
-        runner = _build_runner(
-            method=method,
-            pe_quad_coeffs=pe_quad_coeffs,
-            symmetrize_Y=symmetrize_Y,
-            symmetrize_every=symmetrize_every,
-            p_val=p_val,
-            uncoupled_fn=uncoupled_fn,
-            coupled_fn=coupled_fn,
-        )
 
         ws = None
 
@@ -215,7 +215,8 @@ def eval_method(
 
         def run_once() -> torch.Tensor:
             nonlocal ws
-            torch.compiler.cudagraph_mark_step_begin()
+            if device.type == "cuda":
+                torch.compiler.cudagraph_mark_step_begin()
             Xn, ws = runner(A_norm, ws)
             return Xn
 
