@@ -324,6 +324,7 @@ def eval_method(
             bad=0,
             mem_alloc_mb=float("nan"),
             mem_reserved_mb=float("nan"),
+            coupled_y_resid=float("nan"),
         )
 
     ws: Optional[object] = None
