@@ -44,6 +44,7 @@ METHODS: List[str] = [
     "PE-Quad-Coupled-Apply-Adaptive",
     "Torch-Solve",
 ]
+NONSPD_PRECOND_MODES: Tuple[str, ...] = ("row-norm", "frob", "ruiz")
 
 
 @dataclass
@@ -64,13 +65,40 @@ class NonSpdBenchResult:
 
 
 @torch.no_grad()
-def _precond_nonspd_row_norm(
+def precond_nonspd(
     A: torch.Tensor,
+    mode: str = "row-norm",
+    ruiz_iters: int = 2,
     eps: float = 1e-12,
 ) -> torch.Tensor:
-    # Generic non-SPD scaling: normalize by max absolute row-sum.
-    u = A.abs().sum(dim=-1).max(dim=-1).values.clamp_min(float(eps))
-    return A / u.unsqueeze(-1).unsqueeze(-1)
+    mode_s = str(mode)
+    eps_f = float(eps)
+    if eps_f <= 0.0:
+        raise ValueError(f"eps must be > 0, got {eps}")
+    if mode_s == "row-norm":
+        # Generic non-SPD scaling: normalize by max absolute row-sum.
+        u = A.abs().sum(dim=-1).max(dim=-1).values.clamp_min(eps_f)
+        return A / u.unsqueeze(-1).unsqueeze(-1)
+    if mode_s == "frob":
+        # Frobenius scaling to keep typical singular values around O(1).
+        n = float(A.shape[-1])
+        scale = (torch.linalg.matrix_norm(A, ord="fro") / math.sqrt(n)).clamp_min(eps_f)
+        return A / scale.unsqueeze(-1).unsqueeze(-1)
+    if mode_s == "ruiz":
+        iters = int(ruiz_iters)
+        if iters < 1:
+            raise ValueError(f"ruiz_iters must be >= 1, got {ruiz_iters}")
+        X = A.clone()
+        for _ in range(iters):
+            row = X.abs().sum(dim=-1).clamp_min(eps_f)
+            X = X / row.unsqueeze(-1)
+            col = X.abs().sum(dim=-2).clamp_min(eps_f)
+            X = X / col.unsqueeze(-2)
+        return X
+    raise ValueError(
+        "Unknown non-SPD preconditioner mode: "
+        f"'{mode}'. Supported modes are {list(NONSPD_PRECOND_MODES)}."
+    )
 
 
 @torch.no_grad()
@@ -80,12 +108,21 @@ def prepare_nonspd_solve_inputs(
     k: int,
     dtype: torch.dtype,
     generator: torch.Generator,
+    precond: str = "row-norm",
+    precond_ruiz_iters: int = 2,
 ) -> Tuple[List[NonSpdPreparedInput], float]:
     prepared: List[NonSpdPreparedInput] = []
     ms_pre_list: List[float] = []
 
     for A in mats:
-        t_pre, A_norm = time_ms_any(lambda: _precond_nonspd_row_norm(A), device)
+        t_pre, A_norm = time_ms_any(
+            lambda: precond_nonspd(
+                A,
+                mode=precond,
+                ruiz_iters=precond_ruiz_iters,
+            ),
+            device,
+        )
         ms_pre_list.append(t_pre)
 
         n = A_norm.shape[-1]
@@ -329,6 +366,19 @@ def main():
         help="Comma-separated non-SPD cases",
     )
     p.add_argument("--dtype", type=str, default="bf16", choices=["fp32", "bf16"])
+    p.add_argument(
+        "--precond",
+        type=str,
+        default="row-norm",
+        choices=list(NONSPD_PRECOND_MODES),
+        help="Non-SPD preconditioning/scaling mode",
+    )
+    p.add_argument(
+        "--precond-ruiz-iters",
+        type=int,
+        default=2,
+        help="Iteration count for --precond=ruiz",
+    )
     p.add_argument("--timing-reps", type=int, default=5)
     p.add_argument("--timing-warmup-reps", type=int, default=2)
     p.add_argument(
@@ -392,6 +442,10 @@ def main():
     if int(args.timing_warmup_reps) < 0:
         raise ValueError(
             f"--timing-warmup-reps must be >= 0, got {args.timing_warmup_reps}"
+        )
+    if int(args.precond_ruiz_iters) < 1:
+        raise ValueError(
+            f"--precond-ruiz-iters must be >= 1, got {args.precond_ruiz_iters}"
         )
     if float(args.nonspd_adaptive_resid_tol) <= 0.0:
         raise ValueError(
@@ -467,7 +521,8 @@ def main():
                 f"\n== Non-SPD Size {n}x{n} | RHS {n}x{args.k} | dtype={dtype_compute} =="
             )
             print(
-                f"p=1 | compile={args.compile} | timing_reps={args.timing_reps} | "
+                f"p=1 | precond={args.precond} | precond_ruiz_iters={args.precond_ruiz_iters} | "
+                f"compile={args.compile} | timing_reps={args.timing_reps} | "
                 f"timing_warmup_reps={args.timing_warmup_reps} | "
                 f"adapt(resid_tol={args.nonspd_adaptive_resid_tol}, "
                 f"growth_tol={args.nonspd_adaptive_growth_tol}, "
@@ -485,6 +540,8 @@ def main():
                     k=args.k,
                     dtype=dtype_compute,
                     generator=g,
+                    precond=str(args.precond),
+                    precond_ruiz_iters=int(args.precond_ruiz_iters),
                 )
                 Z_true = compute_ground_truth(prepared_inputs)
 
