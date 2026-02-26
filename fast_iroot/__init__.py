@@ -41,6 +41,13 @@ from .chebyshev import (
     ChebyshevApplyWorkspace,
 )
 
+from .nsrc import (
+    NSRCWorkspace,
+    nsrc_solve,
+    nsrc_solve_preconditioned,
+    hybrid_pe_nsrc_solve,
+)
+
 __all__ = [
     "_quad_coeffs",
     "build_pe_schedules",
@@ -73,4 +80,8 @@ __all__ = [
     "apply_inverse_chebyshev",
     "apply_inverse_proot_chebyshev",
     "ChebyshevApplyWorkspace",
+    "NSRCWorkspace",
+    "nsrc_solve",
+    "nsrc_solve_preconditioned",
+    "hybrid_pe_nsrc_solve",
 ]
