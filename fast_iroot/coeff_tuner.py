@@ -1,7 +1,7 @@
 import math
 import warnings
 from functools import lru_cache
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -986,6 +986,75 @@ def plan_coupled_quadratic_affine_opt_schedule(
         "affine_eval_avg_per_step": float(affine_eval_sum / float(len(coeffs))),
     }
     return planned, meta
+
+
+def truncate_coupled_schedule_by_interval_error(
+    coeffs: Sequence[Tuple[float, float, float]],
+    *,
+    p_val: int,
+    lo_init: float,
+    hi_init: float = 1.0,
+    target_err: Optional[float] = None,
+    min_steps: int = 1,
+    q_floor: float = 1e-6,
+) -> Tuple[List[Tuple[float, float, float]], Dict[str, float]]:
+    """Return the shortest coefficient prefix meeting a predicted interval target.
+
+    Uses the same scalar interval model as the online schedule planners.
+    When target_err is None, returns the full schedule unchanged.
+    """
+    if len(coeffs) == 0:
+        raise ValueError("coeffs must contain at least one coefficient triple")
+    p_i = int(p_val)
+    if p_i <= 0:
+        raise ValueError(f"p_val must be >= 1, got {p_val}")
+    min_steps_i = int(min_steps)
+    if min_steps_i < 1:
+        raise ValueError(f"min_steps must be >= 1, got {min_steps}")
+    if target_err is not None and float(target_err) <= 0.0:
+        raise ValueError(
+            f"target_err must be > 0 when provided, got {target_err}"
+        )
+
+    lo = max(float(lo_init), 1e-12)
+    hi = max(float(hi_init), lo * 1.0001)
+    coeffs_f = [(float(a), float(b), float(c)) for (a, b, c) in coeffs]
+    target = float(target_err) if target_err is not None else None
+    target_met = False
+    steps_used = len(coeffs_f)
+
+    for idx, abc in enumerate(coeffs_f, start=1):
+        a, b, c = abc
+        if p_i % 2 == 1:
+            pos_ok = certify_positivity_quadratic(
+                a, b, c, lo, hi, q_min=float(q_floor)
+            )
+            if not pos_ok:
+                # Keep full schedule if prefix becomes uncertifiable.
+                break
+        lo, hi = interval_update_quadratic_exact(abc, lo, hi, p_val=p_i)
+        lo = max(float(lo), 1e-15)
+        hi = max(float(hi), lo * 1.0001)
+        err = float(interval_error_to_identity(lo, hi))
+
+        if (
+            target is not None
+            and idx >= min_steps_i
+            and err <= target
+        ):
+            target_met = True
+            steps_used = idx
+            break
+
+    trimmed = coeffs_f[:steps_used]
+    meta: Dict[str, float] = {
+        "steps_used": float(steps_used),
+        "target_met": 1.0 if target_met else 0.0,
+        "pred_lo_final": float(lo),
+        "pred_hi_final": float(hi),
+        "pred_err_final": float(interval_error_to_identity(lo, hi)),
+    }
+    return trimmed, meta
 
 
 def _phi_and_dphi_coeffs_p2(a, b, c):

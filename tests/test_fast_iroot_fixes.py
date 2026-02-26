@@ -271,6 +271,31 @@ def test_inverse_solve_affine_step_matches_manual_apply():
     assert torch.allclose(Z, Z_ref, atol=1e-6, rtol=1e-6)
 
 
+def test_inverse_solve_quadratic_terminal_step_matches_manual_apply():
+    n = 7
+    torch.manual_seed(322)
+    A = torch.randn(n, n)
+    A = (A @ A.mT) / n + torch.eye(n) * 0.1
+    M = torch.randn(n, 3)
+    a, b, c = (1.1, -0.2, 0.05)
+
+    Z, _ = inverse_solve_pe_quadratic_coupled(
+        A,
+        M,
+        abc_t=[(a, b, c)],
+        p_val=2,
+        terminal_last_step=True,
+    )
+
+    A2 = A @ A
+    B = c * A2
+    B.add_(A, alpha=b)
+    B.diagonal().add_(a)
+    Z_ref = B @ M
+
+    assert torch.allclose(Z, Z_ref, atol=1e-6, rtol=1e-6)
+
+
 def test_apply_inverse_root_auto_direct_matches_apply_inverse_root():
     n = 10
     torch.manual_seed(999)

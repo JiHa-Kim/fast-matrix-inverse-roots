@@ -31,6 +31,7 @@ class IrootWorkspaceCoupled:
 class InverseSolveWorkspaceCoupled:
     Z: torch.Tensor
     Zbuf: torch.Tensor
+    Ztmp: torch.Tensor
     Y: torch.Tensor
     Ybuf: torch.Tensor
     B: torch.Tensor
@@ -144,6 +145,7 @@ def _alloc_ws_inverse_solve(
     return InverseSolveWorkspaceCoupled(
         Z=M.new_empty(shape_M),
         Zbuf=M.new_empty(shape_M),
+        Ztmp=M.new_empty(shape_M),
         Y=A.new_empty(shape_A),
         Ybuf=A.new_empty(shape_A),
         B=A.new_empty(shape_A),
@@ -167,12 +169,46 @@ def _ws_ok_inverse_solve(
     return (
         _ok_m(ws.Z)
         and _ok_m(ws.Zbuf)
+        and _ok_m(ws.Ztmp)
         and _ok_a(ws.Y)
         and _ok_a(ws.Ybuf)
         and _ok_a(ws.B)
         and _ok_a(ws.B2)
         and _ok_a(ws.tmp)
     )
+
+
+@torch.no_grad()
+def _apply_quadratic_left_rhs_terminal(
+    Y: torch.Tensor,
+    M: torch.Tensor,
+    *,
+    a: float,
+    b: float,
+    c: float,
+    tmp_rhs: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    """out <- (a I + b Y + c Y^2) M, without materializing B.
+
+    Used on terminal steps where Y is not updated; this avoids a dense n×n
+    polynomial build and is particularly faster for skinny RHS blocks (k << n).
+    """
+    _matmul_into(Y, M, tmp_rhs)  # Y M
+    if abs(float(c)) <= _AFFINE_C_EPS:
+        out.copy_(tmp_rhs)
+        if float(b) != 1.0:
+            out.mul_(float(b))
+        out.add_(M, alpha=float(a))
+        return out
+
+    _matmul_into(Y, tmp_rhs, out)  # Y^2 M
+    if float(c) != 1.0:
+        out.mul_(float(c))
+    if float(b) != 0.0:
+        out.add_(tmp_rhs, alpha=float(b))
+    out.add_(M, alpha=float(a))
+    return out
 
 
 @torch.no_grad()
@@ -500,8 +536,23 @@ def inverse_solve_pe_quadratic_coupled(
 
     def _apply_p1_step(a_step: float, b_step: float, c_step: float, *, terminal: bool) -> None:
         affine_step = abs(float(c_step)) <= _AFFINE_C_EPS
+        use_rhs_direct_terminal = (
+            (not affine_step)
+            and terminal
+            and (ws.Z.shape[-1] < ws.Y.shape[-1])
+        )
         if affine_step:
             _apply_affine_left(ws.Y, ws.Z, a=a_step, b=b_step, out=ws.Zbuf)
+        elif use_rhs_direct_terminal:
+            _apply_quadratic_left_rhs_terminal(
+                ws.Y,
+                ws.Z,
+                a=a_step,
+                b=b_step,
+                c=c_step,
+                tmp_rhs=ws.Ztmp,
+                out=ws.Zbuf,
+            )
         else:
             _build_step_polynomial(ws.Y, a=a_step, b=b_step, c=c_step, out=ws.B)
             _matmul_into(ws.B, ws.Z, ws.Zbuf)
@@ -588,15 +639,31 @@ def inverse_solve_pe_quadratic_coupled(
                     break
             continue
 
+        is_terminal = bool(terminal_last_step and (t == T - 1))
         affine_step = abs(float(c)) <= _AFFINE_C_EPS
+        use_rhs_direct_terminal = (
+            (not affine_step)
+            and is_terminal
+            and (ws.Z.shape[-1] < ws.Y.shape[-1])
+        )
         if affine_step and (p_val == 1 or (p_val == 2 and assume_spd)):
             _apply_affine_left(ws.Y, ws.Z, a=a, b=b, out=ws.Zbuf)
+        elif use_rhs_direct_terminal:
+            _apply_quadratic_left_rhs_terminal(
+                ws.Y,
+                ws.Z,
+                a=a,
+                b=b,
+                c=c,
+                tmp_rhs=ws.Ztmp,
+                out=ws.Zbuf,
+            )
         else:
             _build_step_polynomial(ws.Y, a=a, b=b, c=c, out=ws.B)
             _matmul_into(ws.B, ws.Z, ws.Zbuf)
         ws.Z, ws.Zbuf = ws.Zbuf, ws.Z
 
-        if terminal_last_step and (t == T - 1):
+        if is_terminal:
             break
 
         if affine_step and p_val == 1:

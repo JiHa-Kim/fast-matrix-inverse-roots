@@ -9,6 +9,7 @@ from fast_iroot.coeff_tuner import (
     plan_coupled_quadratic_affine_opt_schedule,
     plan_coupled_local_minimax_schedule,
     plan_coupled_quadratic_newton_schedule,
+    truncate_coupled_schedule_by_interval_error,
 )
 from fast_iroot import precond_spd
 from fast_iroot.chebyshev import (
@@ -75,6 +76,7 @@ class SolveBenchResult:
     pe_newton_steps_used: float
     pe_minimax_steps_used: float
     pe_affine_opt_steps_used: float
+    pe_steps_used: float
 
 
 @torch.no_grad()
@@ -305,6 +307,8 @@ def eval_solve_method(
     online_coeff_mode: str,
     online_coeff_min_rel_improve: float,
     online_coeff_min_ns_logwidth_rel_improve: float,
+    online_coeff_target_interval_err: float,
+    online_coeff_min_steps: int,
     use_cuda_graph: bool,
     cuda_graph_warmup: int,
     uncoupled_fn: Callable[..., Tuple[torch.Tensor, object]],
@@ -319,6 +323,7 @@ def eval_solve_method(
     pe_newton_steps_list: List[float] = []
     pe_minimax_steps_list: List[float] = []
     pe_affine_opt_steps_list: List[float] = []
+    pe_steps_used_list: List[float] = []
 
     if len(prepared_inputs) == 0:
         return SolveBenchResult(
@@ -332,6 +337,7 @@ def eval_solve_method(
             pe_newton_steps_used=float("nan"),
             pe_minimax_steps_used=float("nan"),
             pe_affine_opt_steps_used=float("nan"),
+            pe_steps_used=float("nan"),
         )
 
     for i, prep in enumerate(prepared_inputs):
@@ -352,6 +358,7 @@ def eval_solve_method(
         pe_newton_steps_eff = 0.0
         pe_minimax_steps_eff = 0.0
         pe_affine_opt_steps_eff = 0.0
+        pe_steps_used_eff = float(len(pe_step_coeffs_eff))
         if method == "Chebyshev-Apply":
             if cheb_mode == "fixed":
                 cheb_degree_used_list.append(float(cheb_degree_eff))
@@ -424,6 +431,61 @@ def eval_solve_method(
             pe_newton_steps_eff = float(sched_meta.get("newton_steps", 0.0))
             pe_minimax_steps_eff = float(sched_meta.get("minimax_steps", 0.0))
             pe_affine_opt_steps_eff = float(sched_meta.get("affine_opt_steps", 0.0))
+
+        if (
+            method == "PE-Quad-Coupled-Apply"
+            and float(online_coeff_target_interval_err) > 0.0
+        ):
+            lo_hint = float(l_min)
+            if hasattr(prep.stats, "gersh_lo"):
+                try:
+                    lo_hint = max(lo_hint, float(prep.stats.gersh_lo))
+                except Exception:
+                    pass
+            pe_step_coeffs_eff, trim_meta = truncate_coupled_schedule_by_interval_error(
+                pe_step_coeffs_eff,
+                p_val=p_val,
+                lo_init=lo_hint,
+                hi_init=1.0,
+                target_err=float(online_coeff_target_interval_err),
+                min_steps=int(online_coeff_min_steps),
+            )
+            pe_steps_used_eff = float(trim_meta.get("steps_used", len(pe_step_coeffs_eff)))
+        elif method == "PE-Quad-Coupled-Apply":
+            pe_steps_used_eff = float(len(pe_step_coeffs_eff))
+
+        if method == "PE-Quad-Coupled-Apply":
+            # Recompute per-step usage counters after optional trimming.
+            ns_step = ((p_val + 1.0) / p_val, -1.0 / p_val, 0.0)
+
+            def _same_step(
+                lhs: Tuple[float, float, float],
+                rhs: Tuple[float, float, float],
+                *,
+                tol: float = 1e-10,
+            ) -> bool:
+                return (
+                    abs(float(lhs[0]) - float(rhs[0])) <= tol
+                    and abs(float(lhs[1]) - float(rhs[1])) <= tol
+                    and abs(float(lhs[2]) - float(rhs[2])) <= tol
+                )
+
+            n_newton = 0
+            n_minimax = 0
+            n_affine_opt = 0
+            for j, step in enumerate(pe_step_coeffs_eff):
+                if j < len(pe_quad_coeffs) and _same_step(step, pe_quad_coeffs[j]):
+                    continue
+                if _same_step(step, ns_step):
+                    n_newton += 1
+                elif online_coeff_mode == "greedy-minimax":
+                    n_minimax += 1
+                elif online_coeff_mode == "greedy-affine-opt":
+                    n_affine_opt += 1
+
+            pe_newton_steps_eff = float(n_newton)
+            pe_minimax_steps_eff = float(n_minimax)
+            pe_affine_opt_steps_eff = float(n_affine_opt)
 
         runner = _build_solve_runner(
             method=method,
@@ -499,6 +561,7 @@ def eval_solve_method(
             pe_newton_steps_list.append(pe_newton_steps_eff)
             pe_minimax_steps_list.append(pe_minimax_steps_eff)
             pe_affine_opt_steps_list.append(pe_affine_opt_steps_eff)
+            pe_steps_used_list.append(pe_steps_used_eff)
 
     ms_iter_med = median(ms_iter_list)
     ms_pre_med = ms_precond_median
@@ -523,6 +586,9 @@ def eval_solve_method(
             median(pe_affine_opt_steps_list)
             if pe_affine_opt_steps_list
             else float("nan")
+        ),
+        pe_steps_used=(
+            median(pe_steps_used_list) if pe_steps_used_list else float("nan")
         ),
     )
 

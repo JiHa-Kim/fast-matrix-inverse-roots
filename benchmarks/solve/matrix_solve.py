@@ -176,6 +176,23 @@ def main():
         ),
     )
     p.add_argument(
+        "--online-coeff-target-interval-err",
+        type=float,
+        default=0.01,
+        help=(
+            "If > 0, trim the coupled PE schedule to the shortest prefix whose "
+            "predicted scalar interval error is <= this target."
+        ),
+    )
+    p.add_argument(
+        "--online-coeff-min-steps",
+        type=int,
+        default=1,
+        help=(
+            "Minimum number of PE coupled steps to keep when interval-target trimming is enabled."
+        ),
+    )
+    p.add_argument(
         "--online-stop-tol",
         type=float,
         default=0.0,
@@ -234,6 +251,15 @@ def main():
             "--online-coeff-min-ns-logwidth-rel-improve must be >= 0, "
             f"got {args.online_coeff_min_ns_logwidth_rel_improve}"
         )
+    if float(args.online_coeff_target_interval_err) < 0.0:
+        raise ValueError(
+            "--online-coeff-target-interval-err must be >= 0, "
+            f"got {args.online_coeff_target_interval_err}"
+        )
+    if int(args.online_coeff_min_steps) < 1:
+        raise ValueError(
+            f"--online-coeff-min-steps must be >= 1, got {args.online_coeff_min_steps}"
+        )
     cheb_candidate_degrees = _parse_int_csv(args.cheb_candidate_degrees)
     ks = parse_shapes(args.k)
     online_stop_tol = (
@@ -285,6 +311,7 @@ def main():
                     f"cheb_deg={args.cheb_degree} | cheb_mode={args.cheb_mode} | "
                     f"symEvery={args.symmetrize_every} | "
                     f"online_coeff_mode={online_coeff_mode} | "
+                    f"online_coeff_target_err={args.online_coeff_target_interval_err} | "
                     f"online_stop_tol={args.online_stop_tol} | "
                     f"cuda_graph={bool(args.cuda_graph)}"
                 )
@@ -336,6 +363,10 @@ def main():
                                 online_coeff_min_ns_logwidth_rel_improve=(
                                     args.online_coeff_min_ns_logwidth_rel_improve
                                 ),
+                                online_coeff_target_interval_err=(
+                                    args.online_coeff_target_interval_err
+                                ),
+                                online_coeff_min_steps=args.online_coeff_min_steps,
                                 use_cuda_graph=bool(args.cuda_graph),
                                 cuda_graph_warmup=int(args.cuda_graph_warmup),
                                 uncoupled_fn=uncoupled_fn,
@@ -374,10 +405,15 @@ def main():
                             if not math.isnan(rr.pe_affine_opt_steps_used)
                             else ""
                         )
+                        pe_steps_str = (
+                            f" | steps {rr.pe_steps_used:.0f}"
+                            if not math.isnan(rr.pe_steps_used)
+                            else ""
+                        )
                         print(
                             f"{name:<28s} {rr.ms:8.3f} ms (pre {rr.ms_precond:.3f} + iter {rr.ms_iter:.3f}){mem_str} | "
                             f"relerr vs true: {rr.rel_err:.3e}"
-                            f"{cheb_deg_str}{pe_newton_str}{pe_minimax_str}{pe_affine_str}"
+                            f"{cheb_deg_str}{pe_newton_str}{pe_minimax_str}{pe_affine_str}{pe_steps_str}"
                         )
 
 

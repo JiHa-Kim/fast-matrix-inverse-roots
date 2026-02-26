@@ -19,6 +19,7 @@ from fast_iroot.coeff_tuner import (
     plan_coupled_quadratic_newton_schedule,
     solve_local_affine_b_optimal,
     solve_local_alpha_minimax,
+    truncate_coupled_schedule_by_interval_error,
 )
 
 
@@ -255,3 +256,39 @@ def test_plan_coupled_quadratic_affine_opt_schedule_reports_step_counts():
     )
     assert math.isclose(total_steps, 3.0)
     assert math.isfinite(meta["pred_err_final"])
+
+
+def test_truncate_coupled_schedule_by_interval_error_p2_shortens():
+    base = make_schedule("quad", T=4, l0=0.05, u0=1.0, certified=True, p_val=2)
+    coeffs = [(float(a), float(b), float(c)) for (a, b, c, *_rest) in base]
+
+    trimmed, meta = truncate_coupled_schedule_by_interval_error(
+        coeffs,
+        p_val=2,
+        lo_init=0.05,
+        hi_init=1.0,
+        target_err=1e-2,
+        min_steps=1,
+    )
+
+    assert 1 <= len(trimmed) <= len(coeffs)
+    assert len(trimmed) < len(coeffs)
+    assert meta["target_met"] == 1.0
+    assert meta["pred_err_final"] <= 1e-2
+
+
+def test_truncate_coupled_schedule_by_interval_error_respects_min_steps():
+    base = make_schedule("quad", T=4, l0=0.05, u0=1.0, certified=True, p_val=4)
+    coeffs = [(float(a), float(b), float(c)) for (a, b, c, *_rest) in base]
+
+    trimmed, meta = truncate_coupled_schedule_by_interval_error(
+        coeffs,
+        p_val=4,
+        lo_init=0.05,
+        hi_init=1.0,
+        target_err=1.0,
+        min_steps=3,
+    )
+
+    assert len(trimmed) >= 3
+    assert math.isclose(meta["steps_used"], float(len(trimmed)))
