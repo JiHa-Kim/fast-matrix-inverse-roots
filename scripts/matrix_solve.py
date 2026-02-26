@@ -107,7 +107,7 @@ def main():
     p.add_argument(
         "--online-coeff-mode",
         type=str,
-        default="greedy-newton",
+        default="greedy-affine-opt",
         choices=["off", "greedy-newton", "greedy-minimax", "greedy-affine-opt"],
         help=(
             "Optional coupled PE coefficient schedule adaptation. "

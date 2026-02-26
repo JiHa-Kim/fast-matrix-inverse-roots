@@ -13,3 +13,7 @@
 - `idea4_gram_precond_t20/`
   - Gram-path parity/timing check for `precond_gram_spd`.
   - Summary: `summary.md`.
+
+- `idea_affine_online_t20/`
+  - Solve online-schedule ablation logs including `greedy-affine-opt`.
+  - Aggregated summary: `summary_coupled_apply.md`.
