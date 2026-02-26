@@ -17,27 +17,27 @@ When $K \ll N$ (where $A$ is $N \times N$ and $B$ is $N \times K$), computing an
 ### Size $1024 \times 1024$
 | Method | RHS ($K$) | Iteration Time | Memory Usage | Relative Error vs True |
 |--------|:-------:|---------------:|-------------:|-----------------------:|
-| PE-Quad-Inverse-Multiply | 16 | 3.796 ms | 37 MB | 3.891e-03 |
-| PE-Quad-Coupled-Apply    | 16 | 2.583 ms | 39 MB | 4.242e-03 |
-| **Chebyshev-Apply**          | 16 | **3.430 ms** | **29 MB** | **2.991e-03** |
-| PE-Quad-Inverse-Multiply | 64 | 3.765 ms | 38 MB | 3.891e-03 |
-| **Chebyshev-Apply**          | 64 | **9.046 ms** | **30 MB** | **2.975e-03** |
+| PE-Quad-Inverse-Multiply | 16 | 3.885 ms | 37 MB | 3.891e-03 |
+| PE-Quad-Coupled-Apply    | 16 | 2.617 ms | 39 MB | 4.242e-03 |
+| **Chebyshev-Apply**          | 16 | **3.331 ms** | **29 MB** | **2.991e-03** |
+| PE-Quad-Inverse-Multiply | 64 | 4.052 ms | 38 MB | 3.891e-03 |
+| **Chebyshev-Apply**          | 64 | **3.594 ms** | **30 MB** | **2.975e-03** |
 
 ### Size $2048 \times 2048$
 | Method | RHS ($K$) | Iteration Time | Memory Usage | Relative Error vs True |
 |--------|:-------:|---------------:|-------------:|-----------------------:|
-| PE-Quad-Inverse-Multiply | 16 | 20.102 ms | 121 MB | 2.884e-03 |
-| PE-Quad-Coupled-Apply    | 16 | 13.358 ms | 129 MB | 4.272e-03 |
-| **Chebyshev-Apply**          | 16 |  **3.599 ms** |  **89 MB** | **3.143e-03** |
+| PE-Quad-Inverse-Multiply | 16 | 22.980 ms | 121 MB | 2.869e-03 |
+| PE-Quad-Coupled-Apply    | 16 | 14.476 ms | 129 MB | 4.272e-03 |
+| **Chebyshev-Apply**          | 16 |  **4.931 ms** |  **89 MB** | **3.143e-03** |
 
 ### Size $4096 \times 4096$
 | Method | RHS ($K$) | Iteration Time | Memory Usage | Relative Error vs True |
 |--------|:-------:|---------------:|-------------:|-----------------------:|
-| PE-Quad-Inverse-Multiply | 16 | 151.602 ms | 458 MB | 2.869e-03 |
-| PE-Quad-Coupled-Apply    | 16 |  98.498 ms | 490 MB | 5.066e-03 |
-| **Chebyshev-Apply**          | 16 |  **7.035 ms** | **330 MB** | **3.128e-03** |
-| PE-Quad-Inverse-Multiply | 64 | 151.798 ms | 463 MB | 1.389e-03 |
-| **Chebyshev-Apply**          | 64 |  **7.251 ms** | **337 MB** | **2.975e-03** |
+| PE-Quad-Inverse-Multiply | 16 | 154.463 ms | 458 MB | 2.884e-03 |
+| PE-Quad-Coupled-Apply    | 16 |  99.497 ms | 490 MB | 5.066e-03 |
+| **Chebyshev-Apply**          | 16 |  **7.059 ms** | **330 MB** | **3.113e-03** |
+| PE-Quad-Inverse-Multiply | 64 | 152.340 ms | 463 MB | 1.389e-03 |
+| **Chebyshev-Apply**          | 64 |  **7.253 ms** | **337 MB** | **2.975e-03** |
 
 ## Conclusion
 As $N$ grows, the $O(N^3)$ computational wall of full inversion rapidly collapses performance. At size $4096 \times 4096$, **Chebyshev Apply is approximately 22 times faster** than forming an explicit inverse operator via Polynomial Expansions, completing the identical operation in 7 milliseconds compared to 151 milliseconds. 
