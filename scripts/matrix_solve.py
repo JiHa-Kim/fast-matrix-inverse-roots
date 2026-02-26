@@ -36,7 +36,7 @@ from fast_iroot import (
 )
 
 try:
-    from .matrix_iroot import (
+    from .bench_common import (
         time_ms_any,
         time_ms_repeat,
         parse_shapes,
@@ -44,7 +44,7 @@ try:
         median,
     )
 except ImportError:
-    from scripts.matrix_iroot import (
+    from scripts.bench_common import (
         time_ms_any,
         time_ms_repeat,
         parse_shapes,
