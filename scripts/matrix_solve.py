@@ -195,12 +195,22 @@ def eval_solve_method(
         B = prep.B
         Z_true = ground_truth_Z[i]
 
+        # If available, tighten Chebyshev's lower interval bound using preconditioning stats.
+        # Larger l_min (while still <= lambda_min) reduces the approximation interval and typically
+        # improves accuracy at fixed degree.
+        l_min_eff = float(l_min)
+        if method == "Chebyshev-Apply" and hasattr(prep.stats, "gersh_lo"):
+            try:
+                l_min_eff = max(l_min_eff, float(prep.stats.gersh_lo))
+            except Exception:
+                pass
+
         runner = _build_solve_runner(
             method=method,
             pe_quad_coeffs=pe_quad_coeffs,
             cheb_degree=cheb_degree,
             p_val=p_val,
-            l_min=l_min,
+            l_min=l_min_eff,
         )
 
         # measure memory
