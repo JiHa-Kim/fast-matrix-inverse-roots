@@ -96,17 +96,17 @@ def _bpow_times_y(
     if p <= 0:
         raise ValueError("p must be positive")
     if p == 1:
-        torch.matmul(B, Y, out=out)
+        _matmul_into(B, Y, out)
         return
     if p == 2:
-        torch.matmul(B, Y, out=tmp1)
-        torch.matmul(B, tmp1, out=out)
+        _matmul_into(B, Y, tmp1)
+        _matmul_into(B, tmp1, out)
         return
     if p == 4:
         # B^2 -> tmp1, B^2*Y -> tmp2, B^4*Y -> out  (3 matmuls)
-        torch.matmul(B, B, out=tmp1)
-        torch.matmul(tmp1, Y, out=tmp2)
-        torch.matmul(tmp1, tmp2, out=out)
+        _matmul_into(B, B, tmp1)
+        _matmul_into(tmp1, Y, tmp2)
+        _matmul_into(tmp1, tmp2, out)
         return
 
     # General binary exponentiation for p >= 3
@@ -124,7 +124,7 @@ def _bpow_times_y(
                     break
             if next_res is None:
                 raise RuntimeError("no free buffer available")
-            torch.matmul(cur_base, cur_res, out=next_res)
+            _matmul_into(cur_base, cur_res, next_res)
             cur_res = next_res
 
         if i < len(bits) - 1:
@@ -135,7 +135,7 @@ def _bpow_times_y(
                     break
             if next_base is None:
                 raise RuntimeError("no free buffer available")
-            torch.matmul(cur_base, cur_base, out=next_base)
+            _matmul_into(cur_base, cur_base, next_base)
             cur_base = next_base
 
     if cur_res is not out:
@@ -162,11 +162,11 @@ def _bpow(
         out.copy_(B)
         return
     if p == 2:
-        torch.matmul(B, B, out=out)
+        _matmul_into(B, B, out)
         return
     if p == 4:
-        torch.matmul(B, B, out=tmp1)
-        torch.matmul(tmp1, tmp1, out=out)
+        _matmul_into(B, B, tmp1)
+        _matmul_into(tmp1, tmp1, out)
         return
 
     bits = [(p >> i) & 1 for i in range(p.bit_length())]
@@ -190,7 +190,7 @@ def _bpow(
                         break
                 if next_res is None:
                     raise RuntimeError("no free buffer available")
-                torch.matmul(cur_base, cur_res, out=next_res)
+                _matmul_into(cur_base, cur_res, next_res)
                 cur_res = next_res
 
         if i < len(bits) - 1:
@@ -201,7 +201,7 @@ def _bpow(
                     break
             if next_base is None:
                 raise RuntimeError("no free buffer available")
-            torch.matmul(cur_base, cur_base, out=next_base)
+            _matmul_into(cur_base, cur_base, next_base)
             cur_base = next_base
 
     if cur_res is not out:

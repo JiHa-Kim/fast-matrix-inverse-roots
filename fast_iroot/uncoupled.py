@@ -70,6 +70,12 @@ def inverse_proot_pe_quadratic_uncoupled(
             _matmul_into(ws.X, ws.X, ws.T2)  # X^2
             _matmul_into(ws.T2, ws.T2, ws.T1)  # X^4
             _matmul_into(ws.T1, A_norm, ws.T2)
+        elif p_val == 3:
+            # Specialized odd-p fast path to avoid generic binary-power buffer logic.
+            _matmul_into(ws.X, A_norm, ws.T1)  # X * A
+            _matmul_into(ws.X, ws.T1, ws.T2)  # X^2 * A
+            _matmul_into(ws.X, ws.T2, ws.T1)  # X^3 * A
+            ws.T1, ws.T2 = ws.T2, ws.T1
         else:
             _bpow_times_y(ws.X, A_norm, p_val, out=ws.T2, tmp1=ws.T1, tmp2=ws.Xbuf)
 
