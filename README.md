@@ -26,7 +26,7 @@ This project prioritizes:
   - Benchmark harness CLI tailored for Direct Chebyshev Solves ($Z \approx A^{-1/p} B$) 
 - `coeff_tuner.py`
   - Offline schedule tuning utility
-- `verify_iroot.py`
+- `scripts/verify_iroot.py`
   - Correctness test across p∈{1,2,3,4,8}
 - `reports/`
   - Benchmark results and comprehensive report (`chebyshev_solve_benchmark.md`)
@@ -106,7 +106,7 @@ uv run python matrix_iroot.py --p 1 --sizes 256,512,1024 --dtype bf16 --trials 8
 Verify correctness across multiple p values:
 
 ```bash
-uv run python verify_iroot.py
+uv run python scripts/verify_iroot.py
 ```
 
 ## Methods

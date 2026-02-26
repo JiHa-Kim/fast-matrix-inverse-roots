@@ -8,7 +8,13 @@ p in {1, 2, 3, 4, 8} and n in {64, 256}.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 import torch
+
+# Allow running as `python scripts/verify_iroot.py` from repo root.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from fast_iroot import (
     _quad_coeffs,
@@ -146,6 +152,7 @@ def main():
                             A_norm,
                             M_norm,
                             abc_t=quad_coeffs,
+                            p_val=p_val,
                             symmetrize_Y=True,
                             terminal_last_step=True,
                         )
