@@ -340,6 +340,7 @@ def main() -> None:
                     f"delta   {(r_ps.ms - r_pe2.ms):+8.3f} ms | resid x{(r_ps.residual / r_pe2.residual):.3f} | "
                     f"hard x{(r_ps.hard / r_pe2.hard):.3f}"
                 )
+                # Note: uses _addmm_into internally; for A.dim() > 3, batch shapes must match (no broadcasting).
                 print()
 
 

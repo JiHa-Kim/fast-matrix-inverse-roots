@@ -63,6 +63,7 @@ $$
 - Gershgorin-style lower proxy
 - diagonal shift if needed to enforce `l_target`
 - properly scaling renormalizer by `r + shift` to lock the explicit lower bounds
+- **Strict SPD requirement:** `precond_spd` verifies that input matrices have strictly positive diagonals, as required for SPD logic and Gershgorin proxies.
 
 Returned:
 - normalized `A_norm`

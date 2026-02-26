@@ -25,7 +25,8 @@ $$ \text{Result} = c_0 B + t(A) y_1 - y_2 $$
 
 - **$O(N^2 K)$ Complexity:** Because the recurrence natively groups multiplication by $B$ (which is $N \times K$), all operations are bounded by block-matrix multiplication sizes shape $N \times K$. For $K \ll N$, this is fundamentally faster than iterating intermediate $N \times N$ matrices ($O(N^3)$).
 - **Static Coefficient Caching:** Calculates Scipy matrices exactly once via `functools.lru_cache` and seamlessly passes `Tuple[float]` pointers into PyTorch execution memory. 
-- **Workspace Reuse:** Pre-allocates precisely 5 working buffers of size $N \times K$ (`T_curr`, `T_prev`, `T_next`, `Z`, `tmp`). Uses mapped, fused PyTorch BLAS steps (`_matmul_into`, `mul_`, `add_`) natively avoiding allocation overhead entirely. 
+- **Workspace Reuse:** Pre-allocates precisely 5 working buffers of size $N \times K$ (`T_curr`, `T_prev`, `T_next`, `Z`, `tmp`). These are Clenshaw b-recurrence buffers (not Chebyshev $T$ polynomials). Uses mapped, fused PyTorch BLAS steps (`_matmul_into`, `mul_`, `add_`) natively avoiding allocation overhead entirely. 
+- **Domain Validation:** Strictly enforces $\ell_{min} > 0$ for inverse-root functions to prevent division-by-zero or non-finite coefficients.
 
 ## When to Use Which Variant
 
