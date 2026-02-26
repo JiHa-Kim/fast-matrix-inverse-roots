@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import torch
 
 from fast_iroot import precond_spd
+from fast_iroot.chebyshev import (
+    apply_inverse_chebyshev_with_coeffs,
+    select_inverse_proot_chebyshev_minimax_auto,
+)
 
 from .bench_common import median, time_ms_any, time_ms_repeat
 
@@ -31,6 +35,7 @@ class SolveBenchResult:
     rel_err: float
     mem_alloc_mb: float
     mem_reserved_mb: float
+    cheb_degree_used: float
 
 
 @torch.no_grad()
@@ -74,6 +79,7 @@ def _build_solve_runner(
     method: str,
     pe_quad_coeffs: List[Tuple[float, float, float]],
     cheb_degree: int,
+    cheb_coeffs: Optional[Tuple[float, ...]],
     p_val: int,
     l_min: float,
     symmetrize_every: int,
@@ -119,6 +125,23 @@ def _build_solve_runner(
     if method == "Chebyshev-Apply":
         ws_cheb = None
 
+        if cheb_coeffs is not None:
+
+            def run(A_norm: torch.Tensor, B: torch.Tensor):
+                nonlocal ws_cheb
+                Zn, ws_cheb = apply_inverse_chebyshev_with_coeffs(
+                    A_norm,
+                    B,
+                    c_list=cheb_coeffs,
+                    degree=cheb_degree,
+                    l_min=l_min,
+                    l_max=1.0,
+                    ws=ws_cheb,
+                )
+                return Zn
+
+            return run
+
         def run(A_norm: torch.Tensor, B: torch.Tensor):
             nonlocal ws_cheb
             Zn, ws_cheb = cheb_apply_fn(
@@ -146,6 +169,10 @@ def eval_solve_method(
     method: str,
     pe_quad_coeffs: List[Tuple[float, float, float]],
     cheb_degree: int,
+    cheb_mode: str,
+    cheb_candidate_degrees: Tuple[int, ...],
+    cheb_error_grid_n: int,
+    cheb_max_relerr_mult: float,
     timing_reps: int,
     p_val: int,
     l_min: float,
@@ -158,6 +185,7 @@ def eval_solve_method(
     err_list: List[float] = []
     mem_alloc_list: List[float] = []
     mem_res_list: List[float] = []
+    cheb_degree_used_list: List[float] = []
 
     if len(prepared_inputs) == 0:
         return SolveBenchResult(
@@ -167,6 +195,7 @@ def eval_solve_method(
             rel_err=float("nan"),
             mem_alloc_mb=float("nan"),
             mem_reserved_mb=float("nan"),
+            cheb_degree_used=float("nan"),
         )
 
     for i, prep in enumerate(prepared_inputs):
@@ -181,10 +210,37 @@ def eval_solve_method(
             except Exception:
                 pass
 
+        cheb_degree_eff = int(cheb_degree)
+        cheb_coeffs_eff: Optional[Tuple[float, ...]] = None
+        if method == "Chebyshev-Apply":
+            if cheb_mode == "fixed":
+                cheb_degree_used_list.append(float(cheb_degree_eff))
+            elif cheb_mode == "minimax-auto":
+                deg_sel, coeff_sel, _, _, mode_used = (
+                    select_inverse_proot_chebyshev_minimax_auto(
+                        p_val=p_val,
+                        baseline_degree=int(cheb_degree),
+                        l_min=l_min_eff,
+                        l_max=1.0,
+                        candidate_degrees=cheb_candidate_degrees,
+                        error_grid_n=int(cheb_error_grid_n),
+                        max_relerr_mult=float(cheb_max_relerr_mult),
+                    )
+                )
+                cheb_degree_eff = int(deg_sel)
+                cheb_degree_used_list.append(float(cheb_degree_eff))
+                if mode_used == "minimax-auto":
+                    cheb_coeffs_eff = coeff_sel
+            else:
+                raise ValueError(
+                    f"Unknown cheb_mode: '{cheb_mode}'. Supported modes are 'fixed', 'minimax-auto'."
+                )
+
         runner = _build_solve_runner(
             method=method,
             pe_quad_coeffs=pe_quad_coeffs,
-            cheb_degree=cheb_degree,
+            cheb_degree=cheb_degree_eff,
+            cheb_coeffs=cheb_coeffs_eff,
             p_val=p_val,
             l_min=l_min_eff,
             symmetrize_every=symmetrize_every,
@@ -231,6 +287,9 @@ def eval_solve_method(
         rel_err=median(err_list),
         mem_alloc_mb=median(mem_alloc_list) if mem_alloc_list else float("nan"),
         mem_reserved_mb=median(mem_res_list) if mem_res_list else float("nan"),
+        cheb_degree_used=(
+            median(cheb_degree_used_list) if cheb_degree_used_list else float("nan")
+        ),
     )
 
 

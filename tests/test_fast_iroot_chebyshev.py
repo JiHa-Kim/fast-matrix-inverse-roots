@@ -8,6 +8,10 @@ from fast_iroot import (
     build_pe_schedules,
     precond_spd,
 )
+from fast_iroot.chebyshev import (
+    estimate_inverse_proot_chebyshev_error,
+    select_inverse_proot_chebyshev_minimax_auto,
+)
 from fast_iroot.metrics import exact_inverse_proot
 from scripts.bench_common import _spd_from_eigs
 
@@ -127,3 +131,55 @@ def test_chebyshev_vs_exact():
             Z_cheb - Z_expected
         ) / torch.linalg.matrix_norm(Z_expected)
         assert rel_diff < 0.05, f"p={p} failed with rel_diff={rel_diff}"
+
+
+def test_chebyshev_minimax_auto_no_worse_than_baseline_bound():
+    degree, coeffs, baseline_rel, selected_rel, mode = (
+        select_inverse_proot_chebyshev_minimax_auto(
+            p_val=2,
+            baseline_degree=24,
+            l_min=0.05,
+            l_max=1.0,
+            candidate_degrees=(8, 12, 16, 20, 24),
+            error_grid_n=1025,
+        )
+    )
+
+    assert degree <= 24
+    assert selected_rel <= baseline_rel + 1e-12
+    assert mode in {"fixed", "minimax-auto"}
+
+    _, rel_check = estimate_inverse_proot_chebyshev_error(
+        coeffs, p_val=2, l_min=0.05, l_max=1.0, grid_n=1025
+    )
+    assert rel_check <= baseline_rel + 1e-8
+
+
+def test_chebyshev_minimax_auto_empty_candidates_falls_back():
+    degree, _, baseline_rel, selected_rel, mode = (
+        select_inverse_proot_chebyshev_minimax_auto(
+            p_val=4,
+            baseline_degree=16,
+            l_min=0.05,
+            l_max=1.0,
+            candidate_degrees=tuple(),
+            error_grid_n=1025,
+        )
+    )
+
+    assert degree == 16
+    assert mode == "fixed"
+    assert selected_rel == baseline_rel
+
+
+def test_chebyshev_minimax_auto_rejects_invalid_relerr_multiplier():
+    with pytest.raises(ValueError, match="max_relerr_mult"):
+        select_inverse_proot_chebyshev_minimax_auto(
+            p_val=2,
+            baseline_degree=16,
+            l_min=0.05,
+            l_max=1.0,
+            candidate_degrees=(8, 12, 16),
+            error_grid_n=1025,
+            max_relerr_mult=0.99,
+        )

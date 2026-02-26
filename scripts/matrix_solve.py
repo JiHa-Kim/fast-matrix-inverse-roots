@@ -36,6 +36,15 @@ from scripts.bench_solve_core import (
 )
 
 
+def _parse_int_csv(csv: str) -> tuple[int, ...]:
+    vals = [int(tok.strip()) for tok in csv.split(",") if tok.strip()]
+    if len(vals) == 0:
+        raise ValueError("Expected at least one integer in comma-separated list")
+    if any(v < 0 for v in vals):
+        raise ValueError(f"All values must be >= 0, got {vals}")
+    return tuple(sorted(set(vals)))
+
+
 def main():
     p = argparse.ArgumentParser(
         description="Benchmark inverse-p-th-root Solve (Z = A^{-1/p} B)"
@@ -60,11 +69,52 @@ def main():
     p.add_argument(
         "--cheb-degree", type=int, default=32, help="Degree for Chebyshev polynomial"
     )
+    p.add_argument(
+        "--cheb-mode",
+        type=str,
+        default="fixed",
+        choices=["fixed", "minimax-auto"],
+        help=(
+            "Chebyshev mode: fixed uses --cheb-degree; minimax-auto chooses the "
+            "smallest minimax-approx degree (from --cheb-candidate-degrees) whose "
+            "grid error bound is no worse than fixed baseline."
+        ),
+    )
+    p.add_argument(
+        "--cheb-candidate-degrees",
+        type=str,
+        default="8,12,16,24,32",
+        help="Comma-separated degree candidates for --cheb-mode=minimax-auto.",
+    )
+    p.add_argument(
+        "--cheb-error-grid",
+        type=int,
+        default=4097,
+        help="Grid size used for chebyshev minimax-auto bound checks (>=257).",
+    )
+    p.add_argument(
+        "--cheb-max-relerr-mult",
+        type=float,
+        default=1.0,
+        help=(
+            "Accept minimax-auto candidate only if its grid max-relative-error <= "
+            "baseline_error * this multiplier (>=1.0)."
+        ),
+    )
     p.add_argument("--compile", action="store_true")
 
     args = p.parse_args()
     if int(args.symmetrize_every) < 1:
         raise ValueError(f"--symmetrize-every must be >= 1, got {args.symmetrize_every}")
+    if int(args.cheb_degree) < 0:
+        raise ValueError(f"--cheb-degree must be >= 0, got {args.cheb_degree}")
+    if int(args.cheb_error_grid) < 257:
+        raise ValueError(f"--cheb-error-grid must be >= 257, got {args.cheb_error_grid}")
+    if float(args.cheb_max_relerr_mult) < 1.0:
+        raise ValueError(
+            f"--cheb-max-relerr-mult must be >= 1.0, got {args.cheb_max_relerr_mult}"
+        )
+    cheb_candidate_degrees = _parse_int_csv(args.cheb_candidate_degrees)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
@@ -107,7 +157,8 @@ def main():
             print(f"\n== SPD Size {n}x{n} | RHS {n}x{k} | dtype={dtype_compute} ==")
             print(
                 f"precond={args.precond} | l_target={args.l_target} | p={p_val} | "
-                f"cheb_deg={args.cheb_degree} | symEvery={args.symmetrize_every}"
+                f"cheb_deg={args.cheb_degree} | cheb_mode={args.cheb_mode} | "
+                f"symEvery={args.symmetrize_every}"
             )
 
             for case in cases:
@@ -137,6 +188,10 @@ def main():
                         method=name,
                         pe_quad_coeffs=pe_quad_coeffs,
                         cheb_degree=args.cheb_degree,
+                        cheb_mode=args.cheb_mode,
+                        cheb_candidate_degrees=cheb_candidate_degrees,
+                        cheb_error_grid_n=args.cheb_error_grid,
+                        cheb_max_relerr_mult=args.cheb_max_relerr_mult,
                         timing_reps=args.timing_reps,
                         p_val=p_val,
                         l_min=args.l_target,
@@ -154,9 +209,14 @@ def main():
                         if not math.isnan(rr.mem_alloc_mb)
                         else ""
                     )
+                    cheb_deg_str = (
+                        f" | cheb_deg {rr.cheb_degree_used:.0f}"
+                        if not math.isnan(rr.cheb_degree_used)
+                        else ""
+                    )
                     print(
                         f"{name:<28s} {rr.ms:8.3f} ms (pre {rr.ms_precond:.3f} + iter {rr.ms_iter:.3f}){mem_str} | "
-                        f"relerr vs true: {rr.rel_err:.3e}"
+                        f"relerr vs true: {rr.rel_err:.3e}{cheb_deg_str}"
                     )
 
 
