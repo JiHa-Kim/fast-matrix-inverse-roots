@@ -1,5 +1,36 @@
 # Benchmark Decisions
 
+## 2026-02-27: Gram precondition cache reuse (`reuse_precond=True`) validation sweep
+
+Decision:
+- Keep `apply_inverse_root_gram_spd(..., reuse_precond=True)` as the recommended path when the same Gram source `G` is reused across solves.
+- Standard full-suite A/B (non-Gram-focused) was near-neutral overall, while Gram-focused sweep showed consistent large wins with exact output parity.
+
+Benchmark arguments:
+- Full maintained matrix (baseline-row A/B):
+  - `uv run python benchmarks/run_benchmarks.py --markdown --ab-baseline-rows-in baseline_rows.json --ab-label-a baseline --ab-label-b gram_cached --ab-out benchmark_results/runs/2026_02_27/ab_fullsuite_gram_cached/report.md --manifest-out benchmark_results/runs/2026_02_27/ab_fullsuite_gram_cached/manifest.json`
+- Gram-focused sweep (directly exercises new path):
+  - `uv run python -m benchmarks.solve.matrix_solve_gram --p 2 --m 2048 --n 512 --k 16 --trials 10 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi --markdown --out benchmark_results/runs/2026_02_27/gram_reuse_sweep/p2_m2048_n512_k16.md`
+  - `uv run python -m benchmarks.solve.matrix_solve_gram --p 2 --m 2048 --n 512 --k 64 --trials 10 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi --markdown --out benchmark_results/runs/2026_02_27/gram_reuse_sweep/p2_m2048_n512_k64.md`
+  - `uv run python -m benchmarks.solve.matrix_solve_gram --p 4 --m 2048 --n 512 --k 16 --trials 10 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi --markdown --out benchmark_results/runs/2026_02_27/gram_reuse_sweep/p4_m2048_n512_k16.md`
+  - `uv run python -m benchmarks.solve.matrix_solve_gram --p 4 --m 2048 --n 512 --k 64 --trials 10 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi --markdown --out benchmark_results/runs/2026_02_27/gram_reuse_sweep/p4_m2048_n512_k64.md`
+  - `uv run python -m benchmarks.solve.matrix_solve_gram --p 2 --m 4096 --n 1024 --k 64 --trials 10 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi --markdown --out benchmark_results/runs/2026_02_27/gram_reuse_sweep/p2_m4096_n1024_k64.md`
+  - `uv run python -m benchmarks.solve.matrix_solve_gram --p 4 --m 4096 --n 1024 --k 64 --trials 10 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi --markdown --out benchmark_results/runs/2026_02_27/gram_reuse_sweep/p4_m4096_n1024_k64.md`
+
+Key results:
+- Full maintained matrix A/B (`ab_fullsuite_gram_cached`):
+  - Matched aggregate delta (B vs A): `+0.62%` total ms (near-neutral, mixed by cell).
+  - Relative error unchanged on matched rows (`relerr_ratio(B/A)=1.000`).
+- Gram-focused sweep (`reuse_precond=True` vs `False`):
+  - `p=2, 2048x512, k=16`: `2.823x` faster
+  - `p=2, 2048x512, k=64`: `2.936x` faster
+  - `p=2, 4096x1024, k=64`: `1.883x` faster
+  - `p=4, 2048x512, k=16`: `2.634x` faster
+  - `p=4, 2048x512, k=64`: `2.587x` faster
+  - `p=4, 4096x1024, k=64`: `1.728x` faster
+  - Geometric-mean speedup across sweep: `2.384x`
+  - Output parity: all sweep cells reported relative diff `0.000e+00`
+
 ## 2026-02-27: Gram precondition cache reuse (`reuse_precond=True`)
 
 Decision:
