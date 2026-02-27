@@ -82,6 +82,24 @@ Key results:
 - Accuracy changes were mixed (some cells better, some worse), with no decisive global gain.
 - Conclusion: no strict win; keep `row-norm` as default and archive this run.
 
+## 2026-02-27: non-SPD `p=1` main-path adaptive toggle
+
+Decision:
+- Reject and archive; keep main `PE-Quad-Coupled-Apply` with adaptive toggle off by default.
+- Revert temporary benchmark wiring that enabled this toggle.
+
+Why tested:
+- We evaluated enabling the existing in-kernel adaptive step selection for the main method
+  as a one-change policy switch.
+
+Benchmark arguments:
+- `uv run python benchmarks/run_benchmarks.py --only "non-SPD p=1 k<n" --ab-extra-args-a="--no-p1-use-adaptive-main" --ab-extra-args-b="--p1-use-adaptive-main" --ab-label-a baseline --ab-label-b adaptive_main --ab-out benchmark_results/runs/2026_02_27/ab_nonspd_p1_adaptive_main_step5/report.md --manifest-out benchmark_results/runs/2026_02_27/ab_nonspd_p1_adaptive_main_step5/manifest.json`
+
+Key results:
+- Clear speed regression in all cells (`~+6%` to `~+82%` total ms).
+- Accuracy unchanged in all matched rows (`relerr_ratio(B/A)=1.000`).
+- Conclusion: strict regression, so this switch is rejected and archived.
+
 ## 2026-02-27: Dual Gram-RHS apply path (`apply_inverse_root_gram_rhs_spd`)
 
 Decision:
