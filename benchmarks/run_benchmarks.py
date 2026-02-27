@@ -692,6 +692,12 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--run-name",
+        type=str,
+        default="solver_benchmarks",
+        help="Custom name for the run directory (prefixed by HHMMSS).",
+    )
+    parser.add_argument(
         "--extra-args",
         type=str,
         default="",
@@ -798,9 +804,12 @@ def main() -> None:
     if int(args.timing_warmup_reps) < 0:
         raise ValueError("--timing-warmup-reps must be >= 0")
 
-    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    today_ts = datetime.now().strftime("%Y_%m_%d")
+    time_prefix = datetime.now().strftime("%H%M%S")
+    run_name = str(args.run_name).strip() or "solver_benchmarks"
+
     run_dir_rel = os.path.join(
-        "benchmark_results", "runs", f"{run_ts}_solver_benchmarks"
+        "benchmark_results", "runs", today_ts, f"{time_prefix}_{run_name}"
     )
     run_dir_abs = os.path.join(REPO_ROOT, run_dir_rel)
     spd_dir_abs = os.path.join(run_dir_abs, "spd_solve_logs")
@@ -820,7 +829,7 @@ def main() -> None:
         warmup_reps=int(args.timing_warmup_reps),
         spd_dir=spd_dir_abs,
         nonspd_dir=nonspd_dir_abs,
-        ts=run_ts,
+        ts=time_prefix,
     )
     specs = _filter_specs(specs_all, _parse_csv_tokens(args.only))
     if len(specs) == 0:
