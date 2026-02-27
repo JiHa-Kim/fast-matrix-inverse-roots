@@ -219,3 +219,41 @@ Key results:
 - Iteration win: It does reduce iteration time in some cases (e.g., ~0.8ms vs ~0.85ms), but not enough to offset the pre-processing cost for the tested RHS counts (k=1 to 1024).
 - Total time regression: Aggregate total ms increased (regressed) by ~20-50% across most cells.
 - Conclusion: The overhead of batched EVD/inversion for 32x32 blocks is too high for a single-solve preconditioning step at these matrix sizes. It remains available as an opt-in for specialized workloads where the preconditioner can be heavily reused.
+
+## 2026-02-27: lambda_min power iteration estimation
+
+Decision:
+- Reject power iteration approach for `lambda_min` estimation.
+
+Why tested:
+- Attempted to calculate a tight `l_min` bound for PE/Chebyshev polynomials dynamically using shifted power iterations to improve initial convergence.
+
+Benchmark arguments:
+- Run: `2026_02_27/ab_precond_power_lmin_p2_v2`
+- command: `uv run python -m benchmarks.run_benchmarks --only "SPD p=2" --ab-extra-args-a="--lambda-max-est row_sum --l-target 0.05" --ab-extra-args-b="--lambda-max-est row_sum --lambda-min-est power --l-target 0.05"`
+
+Key results:
+- Speed regression: The power iteration overhead was significant, causing total times to regress heavily (e.g. +35% to +68% on smaller sizes) without sufficient reduction in the number of PE steps.
+- Conclusion: The overhead of estimating `lambda_min` via shifted power iteration outweighs the benefits of a tighter interval for these matrix sizes. It was rejected and reverted.
+
+## 2026-02-27: Matrix-Free Chebyshev Apply for Gram Matrices
+
+Decision:
+- Keep the `apply_inverse_proot_chebyshev_gram` implementation as the preferred path for $b \ll n$ workloads.
+- Avoid forming the dense $n \times n$ matrix $A = G^T G$.
+
+Why tested:
+- For ML workloads where features are represented by a wide matrix $G$ ($b \times n$ where $b \ll n$), forming the dense Gram matrix $G^T G$ takes $O(n^2 b)$ compute and $O(n^2)$ memory.
+- We implemented a Matrix-Free path that computes $A(Y) = G^T (G Y)$, passing this callable to the Chebyshev Clenshaw recurrence.
+
+Benchmark arguments:
+- Run: Standalone `bench_gram.py`
+- $n = 4096$, $b \in \{64, 256\}$, $k = 64$.
+- Compared `apply_inverse_sqrt_gram_spd` (Dense PE-Quad) vs `apply_inverse_proot_chebyshev_gram` (Matrix-Free Chebyshev, degree 32).
+
+Key results:
+- Speedup: Matrix-Free was consistently $>10\times$ faster.
+  - $b=64$: Matrix-Free `14.11 ms` vs Dense `162.15 ms`.
+  - $b=256$: Matrix-Free `11.25 ms` vs Dense `163.34 ms`.
+- Memory: By avoiding the dense $4096 \times 4096$ allocation, memory overhead was dramatically reduced.
+- Conclusion: The matrix-free Chebyshev path is a strict and massive win for wide Gram matrices. The changes have been kept and integrated.
