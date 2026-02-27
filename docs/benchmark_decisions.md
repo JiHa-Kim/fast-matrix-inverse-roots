@@ -1,5 +1,24 @@
 # Benchmark Decisions
 
+## 2026-02-27: non-SPD `p=1` monotone residual damping safeguard
+
+Decision:
+- Reject and archive this prototype.
+- Revert the code path/flags from active sources; keep benchmark artifacts for record.
+
+Why tested:
+- We tested an opt-in monotone residual safeguard for non-SPD `p=1` coupled apply:
+  per checked step, retry with damped coefficients (`omega = 1, 1/2, 1/4`) and accept only residual-nondegrading updates.
+
+Benchmark arguments:
+- Focused A/B on maintained non-SPD `p=1 k<n` slice:
+  - `uv run python benchmarks/run_benchmarks.py --only "non-SPD p=1 k<n" --ab-extra-args-a="--no-nonspd-monotone-residual" --ab-extra-args-b="--nonspd-monotone-residual --nonspd-monotone-growth-tol 1.0 --nonspd-monotone-check-every 1 --nonspd-monotone-backtracks 2" --ab-label-a baseline --ab-label-b monotone --ab-out benchmark_results/runs/2026_02_27/ab_nonspd_p1_monotone_step1/report.md --manifest-out benchmark_results/runs/2026_02_27/ab_nonspd_p1_monotone_step1/manifest.json`
+
+Key results:
+- Accuracy was unchanged in matched rows (`relerr_ratio(B/A)=1.000`).
+- Runtime regressed materially across all measured cells (roughly `+9%` to `+156%` total ms).
+- Conclusion: no robustness gain in this matrix with clear cost regression, so it is archived and not kept in active code.
+
 ## 2026-02-27: Dual Gram-RHS apply path (`apply_inverse_root_gram_rhs_spd`)
 
 Decision:
