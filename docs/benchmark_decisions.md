@@ -63,6 +63,25 @@ Key results:
   `similarity_posspec`; hard-case accuracy stayed unchanged due fallback.
 - Conclusion: this configuration is not robustly better in the maintained matrix and is archived.
 
+## 2026-02-27: non-SPD `p=1` preconditioner policy (`row-norm` vs `ruiz`)
+
+Decision:
+- Keep `row-norm` as maintained default for the non-SPD `p=1` benchmark matrix.
+- Reject switching default to `ruiz` (`ruiz_iters=2`) based on this focused A/B.
+
+Why tested:
+- The p=1 notes suggest stronger balancing may help non-normal stability.
+- We ran a direct one-change A/B on maintained `k<n` cells.
+
+Benchmark arguments:
+- `uv run python benchmarks/run_benchmarks.py --only "non-SPD p=1 k<n" --ab-extra-args-a="--precond row-norm --precond-ruiz-iters 2" --ab-extra-args-b="--precond ruiz --precond-ruiz-iters 2" --ab-label-a row_norm --ab-label-b ruiz --ab-out benchmark_results/runs/2026_02_27/ab_nonspd_p1_precond_ruiz_step4/report.md --manifest-out benchmark_results/runs/2026_02_27/ab_nonspd_p1_precond_ruiz_step4/manifest.json`
+
+Key results:
+- Mixed behavior with broad total-time regressions from higher preconditioning cost.
+- `ruiz` reduced iteration time in some cells, but preconditioning overhead dominated.
+- Accuracy changes were mixed (some cells better, some worse), with no decisive global gain.
+- Conclusion: no strict win; keep `row-norm` as default and archive this run.
+
 ## 2026-02-27: Dual Gram-RHS apply path (`apply_inverse_root_gram_rhs_spd`)
 
 Decision:
