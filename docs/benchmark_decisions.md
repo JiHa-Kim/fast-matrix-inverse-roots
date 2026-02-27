@@ -132,6 +132,20 @@ Key results:
 - Accuracy differences were negligible (near-parity relerr ratios around `1.0`).
 - Conclusion: no performance justification to switch from fixed mode in this p=1 slice.
 
+## 2026-02-27: SPD `p=1` Chebyshev k<n degree cap (`24` vs `16`)
+
+Decision:
+- No default change; keep current `--cheb-degree-klt 24` baseline for p=1 benchmarking.
+- Treat this run as inconclusive due highly mixed per-case outcomes.
+
+Benchmark arguments:
+- `uv run python benchmarks/run_benchmarks.py --only "_spd_p1_klt_n_" --ab-extra-args-a="--methods Chebyshev-Apply --cheb-mode fixed --cheb-degree-klt 24" --ab-extra-args-b="--methods Chebyshev-Apply --cheb-mode fixed --cheb-degree-klt 16" --ab-label-a cheb_klt24 --ab-label-b cheb_klt16 --ab-match-on-method --ab-out benchmark_results/runs/2026_02_27/ab_spd_p1_cheb_klt_step8/report.md --manifest-out benchmark_results/runs/2026_02_27/ab_spd_p1_cheb_klt_step8/manifest.json`
+
+Key results:
+- Mixed with conflicting outliers: one cell regressed heavily while another improved heavily.
+- Relerr stayed near parity (ratios close to `1.0`) but timing stability was not reliable enough for policy change.
+- Conclusion: do not switch k<n cap from `24` to `16` on this evidence.
+
 ## 2026-02-27: Dual Gram-RHS apply path (`apply_inverse_root_gram_rhs_spd`)
 
 Decision:
