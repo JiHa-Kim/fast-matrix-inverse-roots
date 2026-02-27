@@ -1,5 +1,22 @@
 # Benchmark Decisions
 
+## 2026-02-26: Kappa-bin minimax lookup candidate (k<n-only wiring)
+
+Decision:
+- Reject `kappa-minimax-table-klt-only`.
+- Keep `greedy-affine-opt` as default for coupled PE scheduling.
+
+Benchmark arguments:
+- `p=2`:
+  - `uv run python benchmarks/run_benchmarks.py --only "SPD p=2 k<n,SPD p=2 k=n=256,SPD p=2 k=n=512,SPD p=2 k=n=1024" --ab-extra-args-a="--online-coeff-mode greedy-affine-opt" --ab-extra-args-b="--online-coeff-mode kappa-minimax-table-klt-only" --ab-label-a greedy_affine_opt --ab-label-b kappa_table_klt_only --ab-out benchmark_results/runs/2026_02_26/ab_onechange_kappa_table_klt_only_p2/report.md --manifest-out benchmark_results/runs/2026_02_26/ab_onechange_kappa_table_klt_only_p2/manifest.json`
+- `p=4`:
+  - `uv run python benchmarks/run_benchmarks.py --only "SPD p=4 k<n,SPD p=4 k=n=256,SPD p=4 k=n=512,SPD p=4 k=n=1024" --ab-extra-args-a="--online-coeff-mode greedy-affine-opt" --ab-extra-args-b="--online-coeff-mode kappa-minimax-table-klt-only" --ab-label-a greedy_affine_opt --ab-label-b kappa_table_klt_only --ab-out benchmark_results/runs/2026_02_26/ab_onechange_kappa_table_klt_only_p4/report.md --manifest-out benchmark_results/runs/2026_02_26/ab_onechange_kappa_table_klt_only_p4/manifest.json`
+
+Key results (`PE-Quad-Coupled-Apply`):
+- `p=2`: slight gain overall (`-1.20%`), with `k<n` gain (`-4.75%`) but `k=n` regression (`+2.55%`), relerr stable.
+- `p=4`: clear regression (`+17.29%` total), including `k<n` (`+28.74%`) and `k=n` (`+7.80%`).
+- Relerr drift was not large in this run, but speed regressions were decisive.
+
 ## 2026-02-26: Staged minimax+Newton-tail schedule candidate (`p=2,4`)
 
 Decision:
