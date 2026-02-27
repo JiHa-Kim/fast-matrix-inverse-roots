@@ -199,3 +199,23 @@ Key results:
 - `p=4` aggregate speed: `+1.35%` total ms (regression/neutral).
 - Accuracy regression: Consistent `relerr_ratio (B/A)` of `1.18x` to `1.33x` across most `p=2,4` cells in `bf16`.
 - Conclusion: While `addmm` reduces kernel launches, it appears to introduce accumulation noise in `bf16` that regresses relative error by ~20-30%. Since there is no "essentially strict win" on both speed and accuracy (especially for `p=4`), the change is rejected.
+
+## 2026-02-27: Block-Jacobi preconditioning for p=1
+
+Decision:
+- Reject `block-jacobi` as default preconditioner.
+- Keep `jacobi` (diagonal) or `row-norm` as defaults.
+- Keep the `block-jacobi` implementation as an optional mode (`--precond block-jacobi`).
+
+Why tested:
+- Block-diagonal scaling can theoretically cluster eigenvalues better than simple diagonal scaling for matrices with block structure.
+
+Benchmark arguments:
+- Run: `2026_02_27/ab_precond_block_jacobi_p1_v3`
+- command: `uv run python -m benchmarks.run_benchmarks --only "SPD p=1" --ab-extra-args-a="--precond jacobi" --ab-extra-args-b="--precond block-jacobi"`
+
+Key results:
+- Speed regression: `block-jacobi` pre-processing (`ms_precond`) is significantly more expensive than `jacobi` (e.g., ~2.5ms vs ~1.2ms for 1024x1024).
+- Iteration win: It does reduce iteration time in some cases (e.g., ~0.8ms vs ~0.85ms), but not enough to offset the pre-processing cost for the tested RHS counts (k=1 to 1024).
+- Total time regression: Aggregate total ms increased (regressed) by ~20-50% across most cells.
+- Conclusion: The overhead of batched EVD/inversion for 32x32 blocks is too high for a single-solve preconditioning step at these matrix sizes. It remains available as an opt-in for specialized workloads where the preconditioner can be heavily reused.
