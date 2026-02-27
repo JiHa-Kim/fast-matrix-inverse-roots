@@ -147,8 +147,8 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Allow CUDA graph replay for Chebyshev-Apply when --cuda-graph is enabled "
-            "(CUDA only)."
+            "Allow CUDA graph replay for Chebyshev-Apply (CUDA only), independent "
+            "of the global --cuda-graph toggle used by other methods."
         ),
     )
     p.add_argument(

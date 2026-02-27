@@ -49,6 +49,13 @@ def test_can_use_cuda_graph_for_method_rules():
         online_stop_tol=1e-3,
         cheb_cuda_graph=True,
     )
+    assert _can_use_cuda_graph_for_method(
+        "Chebyshev-Apply",
+        use_cuda_graph=False,
+        device=dev_cuda,
+        online_stop_tol=None,
+        cheb_cuda_graph=True,
+    )
     assert not _can_use_cuda_graph_for_method(
         "Chebyshev-Apply",
         use_cuda_graph=True,

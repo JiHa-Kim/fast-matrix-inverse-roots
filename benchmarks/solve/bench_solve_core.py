@@ -38,14 +38,14 @@ def _can_use_cuda_graph_for_method(
     online_stop_tol: Optional[float],
     cheb_cuda_graph: bool,
 ) -> bool:
-    if not bool(use_cuda_graph):
-        return False
     if device.type != "cuda":
+        return False
+    if method == "Chebyshev-Apply":
+        return bool(cheb_cuda_graph)
+    if not bool(use_cuda_graph):
         return False
     if method == "PE-Quad-Coupled-Apply":
         return online_stop_tol is None
-    if method == "Chebyshev-Apply":
-        return bool(cheb_cuda_graph)
     return False
 
 
