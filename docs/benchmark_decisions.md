@@ -1,5 +1,20 @@
 # Benchmark Decisions
 
+## 2026-02-27: Gram precondition cache reuse (`reuse_precond=True`)
+
+Decision:
+- Keep `apply_inverse_root_gram_spd(..., reuse_precond=True)` as the preferred path for repeated solves with fixed `G`.
+- The cache-reuse path is materially faster with identical outputs in the measured run.
+
+Benchmark arguments:
+- `uv run python -m benchmarks.solve.matrix_solve_gram --p 2 --m 2048 --n 512 --k 64 --trials 12 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi --markdown --out benchmark_results/runs/2026_02_27/gram_reuse_precond_p2_cpu/report.md`
+
+Key results:
+- `reuse_precond=False`: `3.543 ms`
+- `reuse_precond=True`: `1.202 ms`
+- Speedup: `2.947x`
+- Output parity: relative diff `0.000e+00`
+
 ## 2026-02-26: Kappa-bin minimax lookup candidate (k<n-only wiring)
 
 Decision:

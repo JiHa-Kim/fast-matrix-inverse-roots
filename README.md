@@ -45,6 +45,7 @@ This runs the maintained batch benchmark flow and writes logs under `benchmark_r
 ```bash
 uv run python -m benchmarks.solve.matrix_solve --p 1 --sizes 1024 --k 1,16,64,1024 --trials 5 --dtype bf16
 uv run python -m benchmarks.solve.matrix_solve_nonspd --p 1 --sizes 1024 --k 1,16,64,1024 --trials 5 --dtype bf16
+uv run python -m benchmarks.solve.matrix_solve_gram --p 2 --m 2048 --n 512 --k 64 --trials 12 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi
 ```
 
 ## Notes
