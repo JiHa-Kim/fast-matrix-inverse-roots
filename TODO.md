@@ -3,12 +3,6 @@
 Date: 2026-02-26
 Scope: prioritize unimplemented ideas from `ideas/p.md`, `ideas/p1.md`, and `ideas/1.md`, with emphasis on `p=2,4`.
 
-## P0: Highest Priority (p=2,4)
-
-- [ ] Implement full interval-minimax coefficient lookup by `(p, degree, kappa-bin)` for the contraction objective `max | t*q(t)^p - 1 |`.
-  - Gap today: local minimax-alpha candidate exists, but not full degree-`d` runtime lookup from precomputed tables.
-  - Exit check: online schedule uses nonzero minimax steps in real runs and improves total ms or relerr at fixed ms.
-
 ## P1: Next Wave
 
 - [ ] Add stronger Turbo-style normalization for SPD: robust `lambda_min` estimation + scalar scaling target beyond current row-sum/Gershgorin proxies.
