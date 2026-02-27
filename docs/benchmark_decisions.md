@@ -1,5 +1,22 @@
 # Benchmark Decisions
 
+## 2026-02-26: Chebyshev CUDA graph on default path (`p=2,4`)
+
+Decision:
+- Enable `Chebyshev-Apply` CUDA graph replay via `--cheb-cuda-graph` independently from global `--cuda-graph`.
+- Keep `--cheb-cuda-graph` default enabled.
+
+Benchmark arguments:
+- `p=2`:
+  - `uv run python benchmarks/run_benchmarks.py --only "SPD p=2 k<n,SPD p=2 k=n=256,SPD p=2 k=n=512,SPD p=2 k=n=1024,SPD p=2 k=n=2048" --ab-extra-args-a=--no-cheb-cuda-graph --ab-extra-args-b=--cheb-cuda-graph --ab-label-a cheb_graph_off --ab-label-b cheb_graph_on --ab-out benchmark_results/runs/2026_02_26/ab_onechange_cheb_graph_defaultpath_p2/report.md --manifest-out benchmark_results/runs/2026_02_26/ab_onechange_cheb_graph_defaultpath_p2/manifest.json`
+- `p=4`:
+  - `uv run python benchmarks/run_benchmarks.py --only "SPD p=4 k<n,SPD p=4 k=n=256,SPD p=4 k=n=512,SPD p=4 k=n=1024,SPD p=4 k=n=2048" --ab-extra-args-a=--no-cheb-cuda-graph --ab-extra-args-b=--cheb-cuda-graph --ab-label-a cheb_graph_off --ab-label-b cheb_graph_on --ab-out benchmark_results/runs/2026_02_26/ab_onechange_cheb_graph_defaultpath_p4/report.md --manifest-out benchmark_results/runs/2026_02_26/ab_onechange_cheb_graph_defaultpath_p4/manifest.json`
+
+Key results (`Chebyshev-Apply`):
+- `p=2`: aggregate total ms `-12.98%`, `k<n` `-36.72%`, `k=n` `-2.96%`, relerr unchanged.
+- `p=4`: aggregate total ms `-16.15%`, `k<n` `-45.13%`, `k=n` `-2.72%`, relerr unchanged.
+- Non-Chebyshev methods were effectively unchanged on aggregate.
+
 ## 2026-02-26: Global CUDA graph default (`off` vs `on`) for `p=2,4`
 
 Decision:
