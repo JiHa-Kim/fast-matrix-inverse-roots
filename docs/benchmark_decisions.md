@@ -100,6 +100,24 @@ Key results:
 - Accuracy unchanged in all matched rows (`relerr_ratio(B/A)=1.000`).
 - Conclusion: strict regression, so this switch is rejected and archived.
 
+## 2026-02-27: SPD `p=1` Chebyshev method exposure in benchmark suite
+
+Decision:
+- Keep: expose `Chebyshev-Apply` as an available method for `p=1` in the SPD solve benchmark CLI.
+- Do not change default benchmark method selection (`PE-Quad-Coupled-Apply` remains default).
+
+Why tested:
+- The p=1 notes propose Chebyshev/minimax polynomial evaluation as a robust SPD path.
+- We added only method availability and performed cross-method A/B.
+
+Benchmark arguments:
+- `uv run python benchmarks/run_benchmarks.py --only "_spd_p1_klt_n_" --ab-extra-args-a="--methods PE-Quad-Coupled-Apply" --ab-extra-args-b="--methods Chebyshev-Apply" --ab-label-a pe_quad --ab-label-b chebyshev --no-ab-match-on-method --ab-out benchmark_results/runs/2026_02_27/ab_spd_p1_cheb_vs_pe_step6/report.md --manifest-out benchmark_results/runs/2026_02_27/ab_spd_p1_cheb_vs_pe_step6/manifest.json`
+
+Key results:
+- Speed: Chebyshev was faster in `5/6` cells (`-2.2%` to `-63.6%`), slower in `1/6` (`+14.5%` on `illcond_1e6, k=64`).
+- Accuracy: Chebyshev relerr was higher in `5/6` cells (about `1.14x` to `1.27x` of PE), better in `1/6`.
+- Conclusion: mixed speed/accuracy tradeoff, so this remains an optional method for analysis, not a default replacement.
+
 ## 2026-02-27: Dual Gram-RHS apply path (`apply_inverse_root_gram_rhs_spd`)
 
 Decision:
