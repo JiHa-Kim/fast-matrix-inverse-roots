@@ -1,0 +1,20 @@
+[coeff] using tuned(l_target=0.05, seed=0), safety=1.0, no_final_safety=False (PE steps = 4)
+
+== SPD Size 1024x1024 | RHS 1024x1024 | dtype=torch.bfloat16 ==
+precond=jacobi | l_target=0.05 | p=1 | ruiz_iters=2 | cheb_deg=32 | cheb_deg_klt=24 | cheb_mode=fixed | symEvery=1 | online_coeff_mode=greedy-affine-opt | online_coeff_cost_model=shape-aware | online_coeff_target_err=0.01 | online_stop_tol=0.0 | terminal_tail_steps=1 | online_stop_metric=inf | post_correction_steps=0 | cuda_graph=False | methods=PE-Quad-Coupled-Apply,Inverse-Newton-Coupled-Apply,Torch-Linalg-Solve,Torch-Cholesky-Solve,Torch-EVD-Solve,Torch-Cholesky-Solve-ReuseFactor
+
+-- case gaussian_spd --
+PE-Quad-Coupled-Apply           4.535 ms (pre 2.537 + iter 1.998) | mem   84MB | relerr 3.904e-03 (p90 4.654e-03) | resid 3.914e-03 (p90 4.657e-03) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 1.205e+00 | newton_steps 0 | minimax_steps 0 | affineopt_steps 1 | steps 4
+Inverse-Newton-Coupled-Apply    4.325 ms (pre 2.537 + iter 1.788) | mem   88MB | relerr 6.022e-01 (p90 6.022e-01) | resid 6.016e-01 (p90 6.016e-01) | fail 100.0% (nf 0.0%, q 100.0%) | q_per_ms 1.232e-01
+Torch-Linalg-Solve              8.703 ms (pre 2.537 + iter 6.167) | mem   88MB | relerr 4.373e-05 (p90 4.479e-05) | resid 8.860e-06 (p90 8.904e-06) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 7.069e-01
+Torch-Cholesky-Solve            5.534 ms (pre 2.537 + iter 2.998) | mem   88MB | relerr 1.891e-07 (p90 1.914e-07) | resid 4.285e-05 (p90 4.392e-05) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 2.243e+00
+Torch-EVD-Solve                31.417 ms (pre 2.537 + iter 28.880) | mem   97MB | relerr 3.597e-04 (p90 3.598e-04) | resid 3.625e-04 (p90 3.627e-04) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 1.193e-01
+Torch-Cholesky-Solve-ReuseFactor    4.602 ms (pre 2.537 + iter 2.065) | mem   88MB | relerr 1.891e-07 (p90 1.914e-07) | resid 4.285e-05 (p90 4.392e-05) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 3.256e+00
+
+-- case illcond_1e6 --
+PE-Quad-Coupled-Apply           3.977 ms (pre 2.271 + iter 1.706) | mem   84MB | relerr 5.088e-03 (p90 5.136e-03) | resid 5.080e-03 (p90 5.129e-03) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 1.344e+00 | newton_steps 0 | minimax_steps 0 | affineopt_steps 1 | steps 4
+Inverse-Newton-Coupled-Apply    4.066 ms (pre 2.271 + iter 1.795) | mem   88MB | relerr 6.021e-01 (p90 6.021e-01) | resid 6.016e-01 (p90 6.016e-01) | fail 100.0% (nf 0.0%, q 100.0%) | q_per_ms 1.227e-01
+Torch-Linalg-Solve              8.454 ms (pre 2.271 + iter 6.183) | mem   88MB | relerr 8.205e-05 (p90 8.250e-05) | resid 8.518e-06 (p90 8.579e-06) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 6.608e-01
+Torch-Cholesky-Solve            5.299 ms (pre 2.271 + iter 3.028) | mem   88MB | relerr 1.870e-07 (p90 1.898e-07) | resid 8.165e-05 (p90 8.214e-05) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 2.222e+00
+Torch-EVD-Solve                30.555 ms (pre 2.271 + iter 28.285) | mem   97MB | relerr 3.596e-04 (p90 3.600e-04) | resid 3.689e-04 (p90 3.695e-04) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 1.218e-01
+Torch-Cholesky-Solve-ReuseFactor    4.341 ms (pre 2.271 + iter 2.070) | mem   88MB | relerr 1.870e-07 (p90 1.898e-07) | resid 8.165e-05 (p90 8.214e-05) | fail 0.0% (nf 0.0%, q 0.0%) | q_per_ms 3.250e+00

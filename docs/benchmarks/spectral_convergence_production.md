@@ -1,6 +1,6 @@
 # Spectral Convergence Benchmark
 
-Generated: 2026-02-28T04:35:06
+Generated: 2026-02-28T05:23:35
 
 ## Run Configuration
 
@@ -62,6 +62,6 @@ Generated: 2026-02-28T04:35:06
 ## Reproducibility
 
 This report is paired with:
-- `benchmark_results/runs/2026_02_28/043454_spectral_convergence/spectral_convergence.json` (raw per-step rows)
-- `benchmark_results/runs/2026_02_28/043454_spectral_convergence/spectral_manifest.json` (run metadata + reproducibility fingerprint)
+- `benchmark_results/runs/2026_02_28/052324_spectral_convergence/spectral_convergence.json` (raw per-step rows)
+- `benchmark_results/runs/2026_02_28/052324_spectral_convergence/spectral_manifest.json` (run metadata + reproducibility fingerprint)
 - `.sha256` sidecars for all output files
