@@ -39,7 +39,7 @@ from benchmarks.common import (
 METHODS: List[str] = [
     "PE-Quad-Coupled-Apply",
     "Inverse-Newton-Coupled-Apply",
-    "Torch-Solve",
+    "Torch-Linalg-Solve",
 ]
 
 
@@ -286,7 +286,7 @@ def _build_runner(
 
         return run
 
-    if method == "Torch-Solve":
+    if method == "Torch-Linalg-Solve":
 
         def run(A_norm: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
             A_f32 = A_norm.to(torch.float32)
@@ -431,8 +431,11 @@ def eval_method(
         else float("nan")
     )
 
-    if rel_err_med > 0.0 and math.isfinite(rel_err_med) and ms_iter_med > 0.0:
-        quality_per_ms = max(0.0, -math.log10(rel_err_med)) / ms_iter_med
+    ms_iter_med = median(ms_iter_list)
+    relerr_med = median(relerr_list)
+    resid_med = median(resid_list)
+    if relerr_med > 0.0 and math.isfinite(relerr_med) and ms_iter_med > 0.0:
+        quality_per_ms = max(0.0, -math.log10(relerr_med)) / ms_iter_med
     else:
         quality_per_ms = float("nan")
 
@@ -440,7 +443,7 @@ def eval_method(
         ms=(ms_precond_median + ms_iter_med),
         ms_iter=ms_iter_med,
         ms_precond=ms_precond_median,
-        rel_err=rel_err_med,
+        rel_err=relerr_med,
         rel_err_p90=pctl(relerr_list, 0.90),
         residual=resid_med,
         residual_p90=pctl(resid_list, 0.90),
@@ -474,11 +477,10 @@ def main():
     p.add_argument(
         "--methods",
         type=str,
-        default="PE-Quad-Coupled-Apply,Inverse-Newton-Coupled-Apply,Torch-Solve",
+        default="PE-Quad-Coupled-Apply,Inverse-Newton-Coupled-Apply,Torch-Linalg-Solve",
         help=(
-            "Optional comma-separated method subset. Defaults to best target method "
-            "only (`PE-Quad-Coupled-Apply`). "
-            "Example: 'PE-Quad-Coupled-Apply,Inverse-Newton-Coupled-Apply'"
+            "Optional comma-separated method subset. Defaults to all target methods. "
+            "Example: 'PE-Quad-Coupled-Apply,Inverse-Newton-Coupled-Apply,Torch-Linalg-Solve'"
         ),
     )
     p.add_argument("--dtype", type=str, default="bf16", choices=["fp32", "bf16"])

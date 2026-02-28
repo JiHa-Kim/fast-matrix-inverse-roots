@@ -24,8 +24,8 @@ BASE_MATRIX_SOLVE_METHODS: List[str] = [
     "PE-Quad-Coupled-Apply",
     "Inverse-Newton-Coupled-Apply",
 ]
-P_GT1_SPD_EXTRA_METHODS: List[str] = ["Chebyshev-Apply", "Torch-EVD-Solve"]
-P1_SPD_SOLVE_BASELINES: List[str] = ["Torch-Solve", "Torch-Cholesky-Solve", "Torch-EVD-Solve"]
+P_GT1_SPD_EXTRA_METHODS: List[str] = ["Chebyshev-Apply", "Torch-Linalg-Solve", "Torch-EVD-Solve"]
+P1_SPD_SOLVE_BASELINES: List[str] = ["Torch-Linalg-Solve", "Torch-Cholesky-Solve", "Torch-EVD-Solve"]
 P1_SPD_SOLVE_EXTRA_CASES: List[str] = ["Torch-Cholesky-Solve-ReuseFactor"]
 
 
@@ -323,7 +323,7 @@ def _build_solve_runner(
 
         return run
 
-    if method == "Torch-Solve":
+    if method == "Torch-Linalg-Solve":
         def run(A_norm: torch.Tensor, B: torch.Tensor):
             if int(p_val) == 1:
                 A_f32 = A_norm.to(torch.float32)
@@ -337,7 +337,7 @@ def _build_solve_runner(
                 L, Q = torch.linalg.eigh(A_f32)
                 L_inv = torch.pow(L.clamp_min(1e-12), -1.0 / p_val)
                 Z = (Q * L_inv.unsqueeze(0)) @ (Q.mT @ B_f32)
-                return Z  # Return in fp32 for low origin error
+                return Z
 
         return run
 
