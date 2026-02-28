@@ -21,6 +21,7 @@ from benchmarks.utils import (
     write_json_file,
     write_sha256_sidecar,
     format_timestamp,
+    repo_relative,
 )
 from benchmarks.solver_utils import (
     ParsedRow,
@@ -339,9 +340,14 @@ def main() -> None:
         write_text_file(args.out, report)
 
     # Simplified manifest and checksum logic
+    safe_args = dict(vars(args))
+    for k in ["out", "ab_out", "manifest_out", "ab_baseline_rows_in", "baseline_rows_out"]:
+        if safe_args.get(k):
+            safe_args[k] = repo_relative(safe_args[k], str(REPO_ROOT))
+
     manifest = {
         "generated_at": format_timestamp(),
-        "args": vars(args),
+        "args": safe_args,
         "git": get_git_metadata(str(REPO_ROOT)),
         "runs": run_records,
     }
@@ -351,7 +357,7 @@ def main() -> None:
             if os.path.exists(p):
                 write_sha256_sidecar(p)
 
-    print(f"Done. Report at: {args.out}")
+    print(f"Done. Report at: {repo_relative(args.out, str(REPO_ROOT))}")
 
 
 if __name__ == "__main__":
