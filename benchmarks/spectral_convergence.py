@@ -19,6 +19,39 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any, List, Tuple
 
+try:
+    from .utils import (
+        clean_method_name,
+        format_scientific,
+        get_git_metadata,
+        get_repro_context,
+        stable_json_sha256,
+        write_text_file,
+        write_json_file,
+        write_sha256_sidecar,
+        format_timestamp,
+        repo_relative,
+        sha256_file,
+        sha256_text,
+        write_repro_fingerprint_sidecar,
+    )
+except ImportError:
+    from utils import (
+        clean_method_name,
+        format_scientific,
+        get_git_metadata,
+        get_repro_context,
+        stable_json_sha256,
+        write_text_file,
+        write_json_file,
+        write_sha256_sidecar,
+        format_timestamp,
+        repo_relative,
+        sha256_file,
+        sha256_text,
+        write_repro_fingerprint_sidecar,
+    )
+
 import torch
 
 try:
@@ -38,59 +71,10 @@ from fast_iroot.diagnostics import (
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _write_text(path: str, text: str) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(text)
+# Logic moved to utils.py
 
 
-def _write_json(path: str, payload: dict[str, Any]) -> None:
-    _write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
-
-
-def _sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(1024 * 1024)
-            if not chunk:
-                break
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _write_sha_sidecar(path: str, digest: str) -> str:
-    sidecar = f"{path}.sha256"
-    _write_text(sidecar, f"{digest}  {os.path.basename(path)}\n")
-    return sidecar
-
-
-def _stable_json_sha(payload: Any) -> str:
-    return _sha256_text(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-
-
-def _git_meta() -> dict[str, Any]:
-    def _run(cmd: list[str]) -> str | None:
-        try:
-            out = subprocess.check_output(
-                cmd,
-                cwd=REPO_ROOT,
-                stderr=subprocess.DEVNULL,
-                text=True,
-            ).strip()
-            return out or None
-        except Exception:
-            return None
-
-    return {
-        "commit": _run(["git", "rev-parse", "HEAD"]),
-        "branch": _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
-        "is_dirty": (_run(["git", "status", "--porcelain"]) or "") != "",
-    }
+# Moved to utils.py
 
 
 def run_diagnostic_iteration(
@@ -117,7 +101,9 @@ def run_diagnostic_iteration(
     return stats
 
 
-def aggregate_worst_case(all_stats: List[List[SpectralStepStats]]) -> List[SpectralStepStats]:
+def aggregate_worst_case(
+    all_stats: List[List[SpectralStepStats]],
+) -> List[SpectralStepStats]:
     num_steps = len(all_stats[0])
     out: list[SpectralStepStats] = []
     for step_idx in range(num_steps):
@@ -153,7 +139,7 @@ def _build_markdown(
     lines: list[str] = []
     lines.append("# Spectral Convergence Benchmark")
     lines.append("")
-    lines.append(f"Generated: {datetime.now().isoformat(timespec='seconds')}")
+    lines.append(f"Generated: {format_timestamp()}")
     lines.append("")
     lines.append("## Run Configuration")
     lines.append("")
@@ -189,7 +175,9 @@ def _build_markdown(
     lines.append("")
     lines.append("This report is paired with:")
     lines.append("- `spectral_convergence.json` (raw per-step rows)")
-    lines.append("- `spectral_manifest.json` (run metadata + reproducibility fingerprint)")
+    lines.append(
+        "- `spectral_manifest.json` (run metadata + reproducibility fingerprint)"
+    )
     lines.append("- `.sha256` sidecars for all output files")
     lines.append("")
     return "\n".join(lines)
@@ -244,9 +232,15 @@ def main() -> None:
     run_dir_rel = os.path.join("benchmark_results", "runs", today, f"{now}_{run_name}")
     run_dir_abs = os.path.join(REPO_ROOT, run_dir_rel)
 
-    out_path = str(args.out).strip() or os.path.join(run_dir_abs, "spectral_convergence.md")
-    json_path = str(args.json_out).strip() or os.path.join(run_dir_abs, "spectral_convergence.json")
-    manifest_path = str(args.manifest_out).strip() or os.path.join(run_dir_abs, "spectral_manifest.json")
+    out_path = str(args.out).strip() or os.path.join(
+        run_dir_abs, "spectral_convergence.md"
+    )
+    json_path = str(args.json_out).strip() or os.path.join(
+        run_dir_abs, "spectral_convergence.json"
+    )
+    manifest_path = str(args.manifest_out).strip() or os.path.join(
+        run_dir_abs, "spectral_manifest.json"
+    )
 
     pe_sched, _ = build_pe_schedules(
         l_target=float(args.l_target),
@@ -258,7 +252,9 @@ def main() -> None:
         p_val=int(args.p),
     )
     abc_pe = _quad_coeffs(pe_sched)
-    abc_ns = [((float(args.p) + 1.0) / float(args.p), -1.0 / float(args.p), 0.0)] * len(abc_pe)
+    abc_ns = [((float(args.p) + 1.0) / float(args.p), -1.0 / float(args.p), 0.0)] * len(
+        abc_pe
+    )
 
     all_pe_stats: list[list[SpectralStepStats]] = []
     all_ns_stats: list[list[SpectralStepStats]] = []
@@ -276,7 +272,9 @@ def main() -> None:
             dtype=dtype,
         )
         Q, _ = torch.linalg.qr(
-            torch.randn(int(args.n), int(args.n), device=device, dtype=dtype, generator=g)
+            torch.randn(
+                int(args.n), int(args.n), device=device, dtype=dtype, generator=g
+            )
         )
         A_norm = (Q * e.unsqueeze(0)) @ Q.mT
         all_pe_stats.append(run_diagnostic_iteration(A_norm, abc_pe, int(args.p)))
@@ -294,15 +292,16 @@ def main() -> None:
         worst_pe=worst_pe,
         worst_ns=worst_ns,
     )
-    _write_text(out_path, report)
+    write_text_file(out_path, report)
 
     raw_payload: dict[str, Any] = {
         "schema": "spectral_convergence.v1",
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "generated_at": format_timestamp(),
         "run_dir": run_dir_rel.replace("\\", "/"),
+        "argv": list(sys.argv[1:]),
         "args": vars(args),
-        "device": str(device),
-        "dtype": str(dtype),
+        "hash_algorithm": "sha256",
+        "git": get_git_metadata(REPO_ROOT),
         "pe_steps": len(abc_pe),
         "pe_coeffs": [{"a": a, "b": b, "c": c} for (a, b, c) in abc_pe],
         "worst_case": {
@@ -310,50 +309,40 @@ def main() -> None:
             "newton_schulz": _stats_to_json_rows(worst_ns),
         },
     }
-    _write_json(json_path, raw_payload)
+    write_json_file(json_path, raw_payload)
 
-    repro_context = {
-        "args": vars(args),
-        "device": str(device),
-        "dtype": str(dtype),
-        "python": sys.version,
-        "platform": platform.platform(),
-        "torch_version": torch.__version__,
-        "cuda_available": bool(torch.cuda.is_available()),
-        "git": _git_meta(),
-    }
+    repro_context = get_repro_context(REPO_ROOT, args)
     manifest: dict[str, Any] = {
         "schema": "spectral_manifest.v1",
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "generated_at": format_timestamp(),
         "run_dir": run_dir_rel.replace("\\", "/"),
         "outputs": {
-            "markdown": os.path.relpath(out_path, REPO_ROOT).replace("\\", "/"),
-            "json": os.path.relpath(json_path, REPO_ROOT).replace("\\", "/"),
+            "markdown": repo_relative(out_path, REPO_ROOT),
+            "json": repo_relative(json_path, REPO_ROOT),
         },
         "repro_context": repro_context,
-        "repro_fingerprint_sha256": _stable_json_sha(repro_context),
+        "repro_fingerprint_sha256": stable_json_sha256(repro_context),
     }
-    _write_json(manifest_path, manifest)
+    write_json_file(manifest_path, manifest)
 
     checksum_paths: list[str] = []
     if bool(args.integrity_checksums):
         for pth in (out_path, json_path, manifest_path):
-            checksum_paths.append(_write_sha_sidecar(pth, _sha256_file(pth)))
-        repro_sidecar = f"{manifest_path}.repro.sha256"
-        _write_text(
-            repro_sidecar,
-            f"{manifest['repro_fingerprint_sha256']}  reproducibility_fingerprint\n",
+            write_sha256_sidecar(pth)
+            checksum_paths.append(f"{pth}.sha256")
+        repro_sidecar = write_repro_fingerprint_sidecar(
+            manifest_path, manifest["repro_fingerprint_sha256"]
         )
         checksum_paths.append(repro_sidecar)
 
-    print(f"Wrote report: {os.path.relpath(out_path, REPO_ROOT)}")
-    print(f"Wrote raw JSON: {os.path.relpath(json_path, REPO_ROOT)}")
-    print(f"Wrote manifest: {os.path.relpath(manifest_path, REPO_ROOT)}")
+    print(f"Wrote report: {repo_relative(out_path, REPO_ROOT)}")
+    print(f"Wrote raw JSON: {repo_relative(json_path, REPO_ROOT)}")
+    print(f"Wrote manifest: {repo_relative(manifest_path, REPO_ROOT)}")
     print(f"Repro fingerprint: {manifest['repro_fingerprint_sha256']}")
     if checksum_paths:
         print("Wrote checksum sidecars:")
         for pth in checksum_paths:
-            print(f"  - {os.path.relpath(pth, REPO_ROOT).replace('\\', '/')}")
+            print(f"  - {repo_relative(pth, REPO_ROOT)}")
 
 
 if __name__ == "__main__":

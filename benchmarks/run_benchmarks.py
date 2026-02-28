@@ -10,23 +10,55 @@ Modes:
   benchmark_results/runs/<timestamp>_solver_benchmarks/*_solve_logs/
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
-import math
 import os
 import platform
-import re
-import shlex
-import socket
 import subprocess
 import sys
 import threading
-from dataclasses import dataclass
+import shlex
+import math
+import socket
+import re
+from collections import defaultdict
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Any, Iterable
+
+try:
+    from .utils import (
+        clean_method_name,
+        format_scientific,
+        get_git_metadata,
+        get_repro_context,
+        stable_json_sha256,
+        write_text_file,
+        write_json_file,
+        write_sha256_sidecar,
+        format_timestamp,
+        repo_relative,
+        sha256_file,
+        sha256_text,
+        write_repro_fingerprint_sidecar,
+    )
+except ImportError:
+    from utils import (
+        clean_method_name,
+        format_scientific,
+        get_git_metadata,
+        get_repro_context,
+        stable_json_sha256,
+        write_text_file,
+        write_json_file,
+        write_sha256_sidecar,
+        format_timestamp,
+        repo_relative,
+        sha256_file,
+        sha256_text,
+        write_repro_fingerprint_sidecar,
+    )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -121,19 +153,7 @@ def _run_and_capture(cmd: list[str]) -> str:
 def _run_and_write_txt(cmd: list[str], out_path: str) -> None:
     out = _run_and_capture(cmd)
     print(f"Logging to: {out_path}")
-    _write_text_file(out_path, out)
-
-
-def _write_text_file(path: str, text: str) -> None:
-    dir_name = os.path.dirname(path)
-    if dir_name:
-        os.makedirs(dir_name, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(text)
-
-
-def _write_json_file(path: str, payload: dict[str, Any]) -> None:
-    _write_text_file(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    write_text_file(out_path, out)
 
 
 def _load_json_file(path: str) -> Any:
@@ -198,7 +218,7 @@ def _write_rows_cache(path: str, rows: list[ParsedRow]) -> None:
         "row_count": len(rows),
         "rows": [_row_to_dict(r) for r in rows],
     }
-    _write_json_file(path, payload)
+    write_json_file(path, payload)
 
 
 def _load_rows_cache(path: str) -> list[ParsedRow]:
@@ -219,160 +239,37 @@ def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _sha256_text(text: str) -> str:
-    return _sha256_bytes(text.encode("utf-8"))
-
-
-def _stable_json_sha256(payload: Any) -> str:
-    canon = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return _sha256_text(canon)
-
-
-def _sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(1024 * 1024)
-            if not chunk:
-                break
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _write_sha256_sidecar(path: str, digest: str) -> str:
-    sidecar = f"{path}.sha256"
-    line = f"{digest}  {os.path.basename(path)}\n"
-    _write_text_file(sidecar, line)
-    return sidecar
-
-
-def _write_repro_fingerprint_sidecar(manifest_path: str, fingerprint: str) -> str:
-    sidecar = f"{manifest_path}.repro.sha256"
-    line = f"{fingerprint}  reproducibility_fingerprint\n"
-    _write_text_file(sidecar, line)
-    return sidecar
-
-
-def _rel(path: str) -> str:
-    return os.path.relpath(path, REPO_ROOT).replace("\\", "/")
-
-
-def _capture_optional(cmd: list[str]) -> str | None:
-    try:
-        res = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=REPO_ROOT,
-            check=False,
-        )
-    except Exception:
-        return None
-    if res.returncode != 0:
-        return None
-    return res.stdout.strip() if res.stdout is not None else None
-
-
-def _tracked_source_sha256() -> str | None:
-    """Hash current tracked source content (working tree, not just HEAD commit)."""
-    try:
-        res = subprocess.run(
-            ["git", "ls-files", "-z"],
-            capture_output=True,
-            cwd=REPO_ROOT,
-            check=False,
-        )
-    except Exception:
-        return None
-    if res.returncode != 0 or not isinstance(res.stdout, (bytes, bytearray)):
-        return None
-
-    paths = [
-        p.decode("utf-8", errors="replace")
-        for p in bytes(res.stdout).split(b"\x00")
-        if p
-    ]
-    h = hashlib.sha256()
-    for rel_path in sorted(paths):
-        norm_rel = rel_path.replace("\\", "/")
-        abs_path = os.path.join(REPO_ROOT, rel_path)
-        h.update(norm_rel.encode("utf-8"))
-        h.update(b"\x00")
-        try:
-            with open(abs_path, "rb") as f:
-                while True:
-                    chunk = f.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    h.update(chunk)
-        except Exception:
-            # Keep hash deterministic even if a tracked file disappears mid-run.
-            h.update(b"<missing>")
-        h.update(b"\x00")
-    return h.hexdigest()
-
-
-def _git_meta() -> dict[str, Any]:
-    head = _capture_optional(["git", "rev-parse", "HEAD"])
-    branch = _capture_optional(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-    status = _capture_optional(["git", "status", "--short"])
-    tracked_sha = _tracked_source_sha256()
-    return {
-        "head": head,
-        "branch": branch,
-        "dirty": bool(status),
-        "tracked_source_sha256": tracked_sha,
-    }
-
-
 def _base_manifest(args: argparse.Namespace, mode: str) -> dict[str, Any]:
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "mode": mode,
-        "repo_root": REPO_ROOT.replace("\\", "/"),
+        "repo_root": repo_relative(REPO_ROOT, REPO_ROOT),
         "python_version": platform.python_version(),
         "platform": platform.platform(),
         "hostname": socket.gethostname(),
         "argv": list(sys.argv[1:]),
         "args": vars(args),
         "hash_algorithm": "sha256",
-        "git": _git_meta(),
+        "git": get_git_metadata(REPO_ROOT),
     }
 
 
 def _repro_context(
-    *,
     mode: str,
     specs: list[RunSpec],
-    extra_args: dict[str, list[str]],
+    extra_args: dict[str, Any],
     args: argparse.Namespace,
 ) -> dict[str, Any]:
-    env_keys = [
-        "CUDA_VISIBLE_DEVICES",
-        "CUBLAS_WORKSPACE_CONFIG",
-        "PYTORCH_CUDA_ALLOC_CONF",
-        "OMP_NUM_THREADS",
-        "MKL_NUM_THREADS",
-    ]
-    env = {k: os.environ.get(k) for k in env_keys if os.environ.get(k) is not None}
-    return {
-        "mode": mode,
-        "argv": list(sys.argv[1:]),
-        "args": vars(args),
-        "specs": [
-            {
-                "name": spec.name,
-                "kind": spec.kind,
-                "cmd_base": spec.cmd,
-            }
-            for spec in specs
-        ],
-        "extra_args": extra_args,
-        "git": _git_meta(),
-        "python_version": platform.python_version(),
-        "platform": platform.platform(),
-        "env": env,
-    }
+    repro_context = get_repro_context(REPO_ROOT, args)
+    repro_context.update(
+        {
+            "mode": mode,
+            "spec_count": len(specs),
+            "extra_args": extra_args,
+            "hostname": socket.gethostname(),
+        }
+    )
+    return repro_context
 
 
 def _parse_csv_tokens(spec: str) -> list[str]:
@@ -638,9 +535,7 @@ def _parse_rows(raw: str, kind: str) -> list[ParsedRow]:
             fail_m = fail_rate_re.search(line)
             qpm_m = q_per_ms_re.search(line)
             relerr_p90 = float(p90_m.group(1)) if p90_m else float("nan")
-            failure_rate = (
-                float(fail_m.group(1)) / 100.0 if fail_m else float("nan")
-            )
+            failure_rate = float(fail_m.group(1)) / 100.0 if fail_m else float("nan")
             quality_per_ms = float(qpm_m.group(1)) if qpm_m else float("nan")
             rows.append(
                 (
@@ -667,20 +562,82 @@ def _to_markdown(
     *,
     config: dict[str, Any] | None = None,
 ) -> str:
+    # Heuristic score for identifying winners within _to_markdown
+    # (Simplified version of _assessment_score that works directly on ParsedRow)
+    def row_score(row: ParsedRow) -> float:
+        return _assessment_score(row)
+
+    def clean_method_name(n: str) -> str:
+        return (
+            n.replace("-Apply", "")
+            .replace("Torch-", "T-")
+            .replace("-ReuseFactor", "-Reuse")
+        )
+
     out: list[str] = []
     out.append("# Solver Benchmark Report")
     out.append("")
-    out.append(f"Generated: {datetime.now().isoformat(timespec='seconds')}")
+    out.append(f"Generated: {format_timestamp()}")
     out.append("")
     out.append("Assessment metrics:")
     out.append("- `relerr`: median relative error across trials.")
     out.append("- `relerr_p90`: 90th percentile relative error (tail quality).")
     out.append("- `fail_rate`: fraction of failed/non-finite trials.")
     out.append("- `q_per_ms`: `max(0, -log10(relerr)) / iter_ms`.")
-    out.append("- assessment score: `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`.")
+    out.append(
+        "- assessment score: `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`."
+    )
     out.append("")
     _append_run_config(out, config=config)
-    out.append("## Assessment Leaders")
+
+    # Group by (kind, p) -> (n, k, case) -> list of rows
+    groups = defaultdict(list)
+    for row in all_rows:
+        kind, p, n, k, case = row[0], row[1], row[2], row[3], row[4]
+        groups[(kind, p)].append(row)
+
+    for kind, p in sorted(groups.keys()):
+        kind_label = "SPD" if kind == "spd" else "Non-Normal"
+        out.append(f"## {kind_label} (p={p})")
+        out.append("")
+        out.append(
+            "| Problem Scenario | Fastest Method | Most Accurate | Overall Winner |"
+        )
+        out.append("|:---|:---|:---|:---|")
+
+        # Group rows by scenario within this section
+        scenario_rows = defaultdict(list)
+        for row in groups[(kind, p)]:
+            n, k, case = row[2], row[3], row[4]
+            scenario_rows[(n, k, case)].append(row)
+
+        for n, k, case in sorted(scenario_rows.keys()):
+            rows = scenario_rows[(n, k, case)]
+            # Find winners
+            fastest = min(rows, key=lambda r: r[6])  # total_ms
+            accurate = min(rows, key=lambda r: r[8])  # relerr
+            best = max(rows, key=row_score)  # score
+
+            scenario_label = f"**{n}** / **{k}**<br>`{case}`"
+            f_str = f"{clean_method_name(fastest[5])}<br>({fastest[6]:.2f}ms)"
+            a_str = f"{clean_method_name(accurate[5])}<br>({accurate[8]:.1e})"
+            w_str = f"**{clean_method_name(best[5])}**"
+
+            out.append(f"| {scenario_label} | {f_str} | {a_str} | {w_str} |")
+        out.append("")
+
+    out.append("## Legend")
+    out.append("")
+    out.append("- **Scenario**: Matrix size (n) / RHS dimension (k) / Problem case.")
+    out.append("- **Fastest**: Method with lowest execution time.")
+    out.append("- **Most Accurate**: Method with lowest median relative error.")
+    out.append(
+        "- **Overall Winner**: Optimal balance of speed and quality (highest assessment score)."
+    )
+    out.append("")
+    out.append("---")
+    out.append("")
+    out.append("### Detailed Assessment Leaders")
     out.append("")
     out.append(
         "| kind | p | n | k | case | best_method | score | total_ms | relerr | relerr_p90 | fail_rate | q_per_ms |"
@@ -698,33 +655,6 @@ def _to_markdown(
             f"| {key[0]} | {key[1]} | {key[2]} | {key[3]} | {key[4]} | {best[5]} | "
             f"{score:.3e} | {best[6]:.3f} | {best[8]:.3e} | {best[9]:.3e} | "
             f"{100.0 * best[10]:.1f}% | {best[11]:.3e} |"
-        )
-    out.append("")
-    out.append(
-        "| kind | p | n | k | case | method | total_ms | iter_ms | relerr | "
-        "relerr_p90 | fail_rate | q_per_ms |"
-    )
-    out.append("|---|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|")
-
-    for row in sorted(all_rows, key=lambda r: (r[0], r[1], r[2], r[3], r[4], r[5])):
-        (
-            kind,
-            p_val,
-            n,
-            k,
-            case_name,
-            method,
-            total_ms,
-            iter_ms,
-            relerr,
-            relerr_p90,
-            failure_rate,
-            quality_per_ms,
-        ) = row
-        out.append(
-            f"| {kind} | {p_val} | {n} | {k} | {case_name} | {method} | "
-            f"{total_ms:.3f} | {iter_ms:.3f} | {relerr:.3e} | {relerr_p90:.3e} | "
-            f"{100.0 * failure_rate:.1f}% | {quality_per_ms:.3e} |"
         )
     out.append("")
     return "\n".join(out)
@@ -758,7 +688,9 @@ def _to_markdown_ab(
     def _key_case(row: ParsedRow):
         return row[0], row[1], row[2], row[3], row[4]
 
-    def _build_index(rows: list[ParsedRow], use_method_key: bool) -> dict[Any, ParsedRow]:
+    def _build_index(
+        rows: list[ParsedRow], use_method_key: bool
+    ) -> dict[Any, ParsedRow]:
         out: dict[Any, ParsedRow] = {}
         for r in rows:
             key = _key_method(r) if use_method_key else _key_case(r)
@@ -789,7 +721,9 @@ def _to_markdown_ab(
     out.append("- `relerr_p90`: 90th percentile relative error (tail quality).")
     out.append("- `fail_rate`: fraction of failed/non-finite trials.")
     out.append("- `q_per_ms`: `max(0, -log10(relerr)) / iter_ms`.")
-    out.append("- assessment score: `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`.")
+    out.append(
+        "- assessment score: `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`."
+    )
     out.append("")
     _append_run_config(out, config=config)
     out.append(f"A: {label_a}")
@@ -890,7 +824,9 @@ def _to_markdown_ab(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run maintained solver benchmark suites")
+    parser = argparse.ArgumentParser(
+        description="Run maintained solver benchmark suites"
+    )
     parser.add_argument("--trials", type=int, default=10)
     parser.add_argument("--dtype", type=str, default="bf16", choices=["fp32", "bf16"])
     parser.add_argument("--timing-reps", type=int, default=10)
@@ -1085,7 +1021,7 @@ def main() -> None:
                 {
                     "variant": "A",
                     "source": "rows_cache",
-                    "rows_cache_path": _rel(baseline_in_path),
+                    "rows_cache_path": repo_relative(baseline_in_path, REPO_ROOT),
                     "parsed_rows": len(rows_a),
                 }
             )
@@ -1101,7 +1037,7 @@ def main() -> None:
                         "kind": spec.kind,
                         "variant": "A",
                         "cmd": cmd_a,
-                        "stdout_sha256": _sha256_text(raw_a),
+                        "stdout_sha256": sha256_text(raw_a),
                         "parsed_rows": len(rows_a_spec),
                     }
                 )
@@ -1116,7 +1052,7 @@ def main() -> None:
                         "kind": spec.kind,
                         "variant": "B",
                         "cmd": cmd_b,
-                        "stdout_sha256": _sha256_text(raw_b),
+                        "stdout_sha256": sha256_text(raw_b),
                         "parsed_rows": len(rows_b_spec),
                     }
                 )
@@ -1132,7 +1068,7 @@ def main() -> None:
                         "kind": spec.kind,
                         "variant": "A",
                         "cmd": cmd_a,
-                        "stdout_sha256": _sha256_text(raw_a),
+                        "stdout_sha256": sha256_text(raw_a),
                         "parsed_rows": len(rows_a_spec),
                     }
                 )
@@ -1148,7 +1084,7 @@ def main() -> None:
                         "kind": spec.kind,
                         "variant": "B",
                         "cmd": cmd_b,
-                        "stdout_sha256": _sha256_text(raw_b),
+                        "stdout_sha256": sha256_text(raw_b),
                         "parsed_rows": len(rows_b_spec),
                     }
                 )
@@ -1164,7 +1100,7 @@ def main() -> None:
                         "kind": spec.kind,
                         "variant": "B",
                         "cmd": cmd_b,
-                        "stdout_sha256": _sha256_text(raw_b),
+                        "stdout_sha256": sha256_text(raw_b),
                         "parsed_rows": len(rows_b_spec),
                     }
                 )
@@ -1193,22 +1129,20 @@ def main() -> None:
                 "ab_extra_args_b": " ".join(b_extra),
             },
         )
-        _write_text_file(out_path, md_text)
+        write_text_file(out_path, md_text)
         out_sidecar: str | None = None
         out_sha: str | None = None
         if integrity_checksums:
-            out_sha = _sha256_file(out_path)
-            out_sidecar = _write_sha256_sidecar(out_path, out_sha)
+            out_sha = write_sha256_sidecar(out_path)
+            out_sidecar = f"{out_path}.sha256"
         baseline_rows_path_abs: str | None = None
         baseline_rows_sidecar: str | None = None
         if baseline_rows_out:
             baseline_rows_path_abs = os.path.join(REPO_ROOT, baseline_rows_out)
             _write_rows_cache(baseline_rows_path_abs, rows_a)
             if integrity_checksums:
-                baseline_rows_sha = _sha256_file(baseline_rows_path_abs)
-                baseline_rows_sidecar = _write_sha256_sidecar(
-                    baseline_rows_path_abs, baseline_rows_sha
-                )
+                baseline_rows_sha = write_sha256_sidecar(baseline_rows_path_abs)
+                baseline_rows_sidecar = f"{baseline_rows_path_abs}.sha256"
 
         manifest = _base_manifest(args, mode="ab_markdown")
         manifest["spec_count"] = len(specs)
@@ -1236,39 +1170,39 @@ def main() -> None:
             args=args,
         )
         manifest["repro_context"] = repro
-        manifest["repro_fingerprint_sha256"] = _stable_json_sha256(repro)
-        manifest["outputs"] = [{"path": _rel(out_path)}]
+        manifest["repro_fingerprint_sha256"] = stable_json_sha256(repro)
+        manifest["outputs"] = [{"path": repo_relative(out_path, REPO_ROOT)}]
         manifest["integrity_checksums_enabled"] = integrity_checksums
         if integrity_checksums and out_sha is not None and out_sidecar is not None:
             manifest["outputs"][0]["sha256"] = out_sha
             manifest["outputs"].append(
                 {
-                    "path": _rel(out_sidecar),
-                    "sha256": _sha256_file(out_sidecar),
+                    "path": repo_relative(out_sidecar, REPO_ROOT),
+                    "sha256": sha256_file(out_sidecar),
                 }
             )
         if baseline_rows_path_abs is not None:
-            row_out_rec: dict[str, Any] = {"path": _rel(baseline_rows_path_abs)}
+            row_out_rec: dict[str, Any] = {
+                "path": repo_relative(baseline_rows_path_abs, REPO_ROOT)
+            }
             if integrity_checksums:
-                row_out_rec["sha256"] = _sha256_file(baseline_rows_path_abs)
+                row_out_rec["sha256"] = sha256_file(baseline_rows_path_abs)
             manifest["outputs"].append(row_out_rec)
             if integrity_checksums and baseline_rows_sidecar is not None:
                 manifest["outputs"].append(
                     {
-                        "path": _rel(baseline_rows_sidecar),
-                        "sha256": _sha256_file(baseline_rows_sidecar),
+                        "path": repo_relative(baseline_rows_sidecar, REPO_ROOT),
+                        "sha256": sha256_file(baseline_rows_sidecar),
                     }
                 )
-        _write_json_file(manifest_path, manifest)
-        repro_sidecar = _write_repro_fingerprint_sidecar(
+        write_json_file(manifest_path, manifest)
+        repro_sidecar = write_repro_fingerprint_sidecar(
             manifest_path, manifest["repro_fingerprint_sha256"]
         )
         manifest_integrity_sidecar: str | None = None
         if integrity_checksums:
-            manifest_sha = _sha256_file(manifest_path)
-            manifest_integrity_sidecar = _write_sha256_sidecar(
-                manifest_path, manifest_sha
-            )
+            manifest_sha = write_sha256_sidecar(manifest_path)
+            manifest_integrity_sidecar = f"{manifest_path}.sha256"
 
         print(f"Wrote A/B markdown report: {out_path}")
         if baseline_rows_path_abs is not None:
@@ -1280,9 +1214,13 @@ def main() -> None:
             if out_sidecar is not None:
                 print(f"Wrote output integrity checksum: {out_sidecar}")
             if baseline_rows_sidecar is not None:
-                print(f"Wrote baseline rows integrity checksum: {baseline_rows_sidecar}")
+                print(
+                    f"Wrote baseline rows integrity checksum: {baseline_rows_sidecar}"
+                )
             if manifest_integrity_sidecar is not None:
-                print(f"Wrote manifest integrity checksum: {manifest_integrity_sidecar}")
+                print(
+                    f"Wrote manifest integrity checksum: {manifest_integrity_sidecar}"
+                )
         return
 
     if not args.markdown:
@@ -1295,31 +1233,33 @@ def main() -> None:
             rows = _parse_rows(raw, spec.kind)
             all_rows.extend(rows)
             print(f"Logging to: {spec.txt_out}")
-            _write_text_file(spec.txt_out, raw)
+            write_text_file(spec.txt_out, raw)
             out_sha: str | None = None
             out_sidecar: str | None = None
             if integrity_checksums:
-                out_sha = _sha256_file(spec.txt_out)
-                out_sidecar = _write_sha256_sidecar(spec.txt_out, out_sha)
+                out_sha = write_sha256_sidecar(spec.txt_out)
+                out_sidecar = f"{spec.txt_out}.sha256"
             run_records.append(
                 {
                     "spec_name": spec.name,
                     "kind": spec.kind,
                     "cmd": cmd,
-                    "stdout_sha256": _sha256_text(raw),
-                    "output_path": _rel(spec.txt_out),
+                    "stdout_sha256": sha256_text(raw),
+                    "output_path": repo_relative(spec.txt_out, REPO_ROOT),
                     "parsed_rows": len(rows),
                 }
             )
-            out_rec: dict[str, str] = {"path": _rel(spec.txt_out)}
+            out_rec: dict[str, str] = {"path": repo_relative(spec.txt_out, REPO_ROOT)}
             if integrity_checksums and out_sha is not None and out_sidecar is not None:
                 out_rec["sha256"] = out_sha
                 run_records[-1]["output_sha256"] = out_sha
-                run_records[-1]["output_sha256_file"] = _rel(out_sidecar)
+                run_records[-1]["output_sha256_file"] = repo_relative(
+                    out_sidecar, REPO_ROOT
+                )
                 out_records.append(
                     {
-                        "path": _rel(out_sidecar),
-                        "sha256": _sha256_file(out_sidecar),
+                        "path": repo_relative(out_sidecar, REPO_ROOT),
+                        "sha256": sha256_file(out_sidecar),
                     }
                 )
             out_records.append(out_rec)
@@ -1329,17 +1269,17 @@ def main() -> None:
         if baseline_rows_out:
             baseline_rows_path_abs = os.path.join(REPO_ROOT, baseline_rows_out)
             _write_rows_cache(baseline_rows_path_abs, all_rows)
-            row_out_rec: dict[str, str] = {"path": _rel(baseline_rows_path_abs)}
+            row_out_rec: dict[str, str] = {
+                "path": repo_relative(baseline_rows_path_abs, REPO_ROOT)
+            }
             if integrity_checksums:
-                row_sha = _sha256_file(baseline_rows_path_abs)
+                row_sha = write_sha256_sidecar(baseline_rows_path_abs)
                 row_out_rec["sha256"] = row_sha
-                baseline_rows_sidecar = _write_sha256_sidecar(
-                    baseline_rows_path_abs, row_sha
-                )
+                baseline_rows_sidecar = f"{baseline_rows_path_abs}.sha256"
                 out_records.append(
                     {
-                        "path": _rel(baseline_rows_sidecar),
-                        "sha256": _sha256_file(baseline_rows_sidecar),
+                        "path": repo_relative(baseline_rows_sidecar, REPO_ROOT),
+                        "sha256": sha256_file(baseline_rows_sidecar),
                     }
                 )
             out_records.append(row_out_rec)
@@ -1356,19 +1296,17 @@ def main() -> None:
             args=args,
         )
         manifest["repro_context"] = repro
-        manifest["repro_fingerprint_sha256"] = _stable_json_sha256(repro)
+        manifest["repro_fingerprint_sha256"] = stable_json_sha256(repro)
         manifest["integrity_checksums_enabled"] = integrity_checksums
         manifest["outputs"] = out_records
-        _write_json_file(manifest_path, manifest)
-        repro_sidecar = _write_repro_fingerprint_sidecar(
+        write_json_file(manifest_path, manifest)
+        repro_sidecar = write_repro_fingerprint_sidecar(
             manifest_path, manifest["repro_fingerprint_sha256"]
         )
         manifest_integrity_sidecar: str | None = None
         if integrity_checksums:
-            manifest_sha = _sha256_file(manifest_path)
-            manifest_integrity_sidecar = _write_sha256_sidecar(
-                manifest_path, manifest_sha
-            )
+            manifest_sha = write_sha256_sidecar(manifest_path)
+            manifest_integrity_sidecar = f"{manifest_path}.sha256"
         print(f"Repro fingerprint: {manifest['repro_fingerprint_sha256']}")
         print(f"Wrote manifest: {manifest_path}")
         if baseline_rows_path_abs is not None:
@@ -1392,7 +1330,7 @@ def main() -> None:
                 "spec_name": spec.name,
                 "kind": spec.kind,
                 "cmd": cmd,
-                "stdout_sha256": _sha256_text(raw),
+                "stdout_sha256": sha256_text(raw),
                 "parsed_rows": len(rows),
             }
         )
@@ -1403,7 +1341,7 @@ def main() -> None:
         )
 
     out_path = os.path.join(REPO_ROOT, args.out)
-    _write_text_file(
+    write_text_file(
         out_path,
         _to_markdown(
             all_rows,
@@ -1420,18 +1358,16 @@ def main() -> None:
     out_sha: str | None = None
     out_sidecar: str | None = None
     if integrity_checksums:
-        out_sha = _sha256_file(out_path)
-        out_sidecar = _write_sha256_sidecar(out_path, out_sha)
+        out_sha = write_sha256_sidecar(out_path)
+        out_sidecar = f"{out_path}.sha256"
     baseline_rows_path_abs: str | None = None
     baseline_rows_sidecar: str | None = None
     if baseline_rows_out:
         baseline_rows_path_abs = os.path.join(REPO_ROOT, baseline_rows_out)
         _write_rows_cache(baseline_rows_path_abs, all_rows)
         if integrity_checksums:
-            baseline_rows_sha = _sha256_file(baseline_rows_path_abs)
-            baseline_rows_sidecar = _write_sha256_sidecar(
-                baseline_rows_path_abs, baseline_rows_sha
-            )
+            baseline_rows_sha = write_sha256_sidecar(baseline_rows_path_abs)
+            baseline_rows_sidecar = f"{baseline_rows_path_abs}.sha256"
 
     manifest = _base_manifest(args, mode="markdown")
     manifest["spec_count"] = len(specs)
@@ -1445,37 +1381,39 @@ def main() -> None:
         args=args,
     )
     manifest["repro_context"] = repro
-    manifest["repro_fingerprint_sha256"] = _stable_json_sha256(repro)
-    manifest["outputs"] = [{"path": _rel(out_path)}]
+    manifest["repro_fingerprint_sha256"] = stable_json_sha256(repro)
+    manifest["outputs"] = [{"path": repo_relative(out_path, REPO_ROOT)}]
     manifest["integrity_checksums_enabled"] = integrity_checksums
     if integrity_checksums and out_sha is not None and out_sidecar is not None:
         manifest["outputs"][0]["sha256"] = out_sha
         manifest["outputs"].append(
             {
-                "path": _rel(out_sidecar),
-                "sha256": _sha256_file(out_sidecar),
+                "path": repo_relative(out_sidecar, REPO_ROOT),
+                "sha256": sha256_file(out_sidecar),
             }
         )
     if baseline_rows_path_abs is not None:
-        row_out_rec: dict[str, Any] = {"path": _rel(baseline_rows_path_abs)}
+        row_out_rec: dict[str, Any] = {
+            "path": repo_relative(baseline_rows_path_abs, REPO_ROOT)
+        }
         if integrity_checksums:
-            row_out_rec["sha256"] = _sha256_file(baseline_rows_path_abs)
+            row_out_rec["sha256"] = sha256_file(baseline_rows_path_abs)
         manifest["outputs"].append(row_out_rec)
         if integrity_checksums and baseline_rows_sidecar is not None:
             manifest["outputs"].append(
                 {
-                    "path": _rel(baseline_rows_sidecar),
-                    "sha256": _sha256_file(baseline_rows_sidecar),
+                    "path": repo_relative(baseline_rows_sidecar, REPO_ROOT),
+                    "sha256": sha256_file(baseline_rows_sidecar),
                 }
             )
-    _write_json_file(manifest_path, manifest)
-    repro_sidecar = _write_repro_fingerprint_sidecar(
+    write_json_file(manifest_path, manifest)
+    repro_sidecar = write_repro_fingerprint_sidecar(
         manifest_path, manifest["repro_fingerprint_sha256"]
     )
     manifest_integrity_sidecar: str | None = None
     if integrity_checksums:
-        manifest_sha = _sha256_file(manifest_path)
-        manifest_integrity_sidecar = _write_sha256_sidecar(manifest_path, manifest_sha)
+        manifest_sha = write_sha256_sidecar(manifest_path)
+        manifest_integrity_sidecar = f"{manifest_path}.sha256"
 
     print(f"Wrote markdown report: {out_path}")
     if baseline_rows_path_abs is not None:
