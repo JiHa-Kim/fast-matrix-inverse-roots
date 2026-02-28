@@ -97,6 +97,8 @@ def aggregate_worst_case(
                 mean_eig=sum(t.mean_eig for t in trials) / float(len(trials)),
                 std_eig=0.0,
                 rho_residual=max(t.rho_residual for t in trials),
+                log_width=max(t.log_width for t in trials),
+                error_to_identity=max(t.error_to_identity for t in trials),
                 clustering_90=min(t.clustering_90 for t in trials),
                 clustering_99=min(t.clustering_99 for t in trials),
             )
