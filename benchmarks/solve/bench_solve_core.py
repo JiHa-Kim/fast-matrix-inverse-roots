@@ -126,6 +126,8 @@ class SolvePreparedInput:
     A_norm: torch.Tensor
     B: torch.Tensor
     stats: object
+    A_root_f64: Optional[torch.Tensor] = None  # Cached A^{1/p} in double
+    B_f64: Optional[torch.Tensor] = None       # Cached B in double
 
 
 @dataclass
@@ -137,7 +139,9 @@ class SolveBenchResult:
     rel_err_p90: float
     residual: float
     residual_p90: float
-    failure_rate: float
+    nonfinite_rate: float
+    quality_fail_rate: float
+    failure_rate: float  # (nonfinite | quality_fail)
     quality_per_ms: float
     mem_alloc_mb: float
     mem_reserved_mb: float
@@ -159,6 +163,7 @@ def prepare_solve_inputs(
     l_target: float,
     dtype: torch.dtype,
     generator: torch.Generator,
+    p_val: int,
 ) -> Tuple[List[SolvePreparedInput], float]:
     prepared: List[SolvePreparedInput] = []
     ms_pre_list: List[float] = []
@@ -183,7 +188,26 @@ def prepare_solve_inputs(
             *A_norm.shape[:-2], n, k, device=device, dtype=dtype, generator=generator
         )
 
-        prepared.append(SolvePreparedInput(A_norm=A_norm, B=B, stats=stats))
+        A_f64 = A_norm.detach().cpu().double()
+        B_f64 = B.detach().cpu().double()
+        
+        if p_val == 1:
+            A_root_f64 = A_f64
+        else:
+            # Precompute A^{1/p} for faster residual checks in eval
+            L, Q = torch.linalg.eigh(A_f64)
+            L_root = torch.pow(L.clamp_min(1e-12), 1.0 / p_val)
+            A_root_f64 = (Q * L_root.unsqueeze(0)) @ Q.mT
+
+        prepared.append(
+            SolvePreparedInput(
+                A_norm=A_norm,
+                B=B,
+                stats=stats,
+                A_root_f64=A_root_f64,
+                B_f64=B_f64,
+            )
+        )
 
     return prepared, (median(ms_pre_list) if ms_pre_list else float("nan"))
 
@@ -304,8 +328,7 @@ def _build_solve_runner(
             if int(p_val) == 1:
                 A_f32 = A_norm.to(torch.float32)
                 B_f32 = B.to(torch.float32)
-                L = torch.linalg.cholesky(A_f32)
-                Z = torch.cholesky_solve(B_f32, L)
+                Z = torch.linalg.solve(A_f32, B_f32)
                 return Z  # Return in fp32 for low origin error
             else:
                 # For p > 1, we must use EVD or similar to compute A^{-1/p}
@@ -415,7 +438,8 @@ def eval_solve_method(
     pe_minimax_steps_list: List[float] = []
     pe_affine_opt_steps_list: List[float] = []
     pe_steps_used_list: List[float] = []
-    fail_count = 0
+    nonfinite_count = 0
+    quality_fail_count = 0
 
     # Failure thresholds: if relerr or residual exceeds these, treat as failure
     # for accounting purposes.
@@ -431,6 +455,8 @@ def eval_solve_method(
             rel_err_p90=float("nan"),
             residual=float("nan"),
             residual_p90=float("nan"),
+            nonfinite_rate=float("nan"),
+            quality_fail_rate=float("nan"),
             failure_rate=float("nan"),
             quality_per_ms=float("nan"),
             mem_alloc_mb=float("nan"),
@@ -634,14 +660,16 @@ def eval_solve_method(
         )
 
         if device.type == "cuda":
-            torch.cuda.reset_peak_memory_stats(device=device)
-            _ = runner(A_norm, B)
-            mem_alloc_list.append(
-                torch.cuda.max_memory_allocated(device=device) / (1024**2)
-            )
-            mem_res_list.append(
-                torch.cuda.max_memory_reserved(device=device) / (1024**2)
-            )
+            # Only measure peak memory on the first trial to reduce overhead
+            if i == 0:
+                torch.cuda.reset_peak_memory_stats(device=device)
+                _ = runner(A_norm, B)
+                mem_alloc_list.append(
+                    torch.cuda.max_memory_allocated(device=device) / (1024**2)
+                )
+                mem_res_list.append(
+                    torch.cuda.max_memory_reserved(device=device) / (1024**2)
+                )
 
         graph_active = False
 
@@ -683,35 +711,26 @@ def eval_solve_method(
             # Compute relative error in double precision
             Zn_f64 = Zn.detach().cpu().double()
             Zt_f64 = Z_true.detach().cpu().double()
-            A_f64 = A_norm.detach().cpu().double()
-            B_f64 = B.detach().cpu().double()
             
             norm_zt = torch.linalg.matrix_norm(Zt_f64).clamp_min(1e-12)
             rel_err = float(torch.linalg.matrix_norm(Zn_f64 - Zt_f64) / norm_zt)
             
-            # Residual calculation
-            norm_b = torch.linalg.matrix_norm(B_f64).clamp_min(1e-12)
-            if p_val == 1:
-                # |A*Z - B| / |B|
-                resid = float(torch.linalg.matrix_norm(A_f64 @ Zn_f64 - B_f64) / norm_b)
-            else:
-                # For p > 1: |A^{1/p}*Z - B| / |B|
-                # We reuse EVD logic on A_norm to compute A^{1/p}
-                L, Q = torch.linalg.eigh(A_f64)
-                L_root = torch.pow(L.clamp_min(1e-12), 1.0 / p_val)
-                A_root = (Q * L_root.unsqueeze(0)) @ Q.mT
-                resid = float(torch.linalg.matrix_norm(A_root @ Zn_f64 - B_f64) / norm_b)
+            # Optimized residual calculation using cached A^{1/p} and B
+            assert prep.A_root_f64 is not None
+            assert prep.B_f64 is not None
+            norm_b = torch.linalg.matrix_norm(prep.B_f64).clamp_min(1e-12)
+            resid = float(torch.linalg.matrix_norm(prep.A_root_f64 @ Zn_f64 - prep.B_f64) / norm_b)
             
             err_list.append(rel_err)
             resid_list.append(resid)
             
             # Failure accounting: finite but garbage result
             if rel_err > RELERR_MAX_FAIL or resid > RESID_MAX_FAIL:
-                fail_count += 1
+                quality_fail_count += 1
         else:
             err_list.append(float("inf"))
             resid_list.append(float("inf"))
-            fail_count += 1
+            nonfinite_count += 1
 
         if method == "PE-Quad-Coupled-Apply":
             pe_newton_steps_list.append(pe_newton_steps_eff)
@@ -726,9 +745,18 @@ def eval_solve_method(
     resid_med = median(resid_list)
     resid_p90 = pctl(resid_list, 0.90)
     total_count = len(prepared_inputs)
-    failure_rate = (
-        float(fail_count) / float(total_count) if total_count > 0 else float("nan")
+    nf_rate = (
+        float(nonfinite_count) / float(total_count) if total_count > 0 else float("nan")
     )
+    qf_rate = (
+        float(quality_fail_count) / float(total_count) if total_count > 0 else float("nan")
+    )
+    failure_rate = (
+        float(nonfinite_count + quality_fail_count) / float(total_count)
+        if total_count > 0
+        else float("nan")
+    )
+
     if rel_err_med > 0.0 and math.isfinite(rel_err_med) and ms_iter_med > 0.0:
         quality_per_ms = max(0.0, -math.log10(rel_err_med)) / ms_iter_med
     else:
@@ -742,6 +770,8 @@ def eval_solve_method(
         rel_err_p90=rel_err_p90,
         residual=resid_med,
         residual_p90=resid_p90,
+        nonfinite_rate=nf_rate,
+        quality_fail_rate=qf_rate,
         failure_rate=failure_rate,
         quality_per_ms=quality_per_ms,
         mem_alloc_mb=median(mem_alloc_list) if mem_alloc_list else float("nan"),

@@ -261,11 +261,11 @@ def main():
     p.add_argument(
         "--online-stop-metric",
         type=str,
-        default="diag",
-        choices=["diag", "fro"],
+        default="inf",
+        choices=["diag", "inf", "fro"],
         help=(
             "Metric used for coupled online early-stop when --online-stop-tol > 0: "
-            "'diag' uses max|diag(Y)-1|, 'fro' uses ||Y-I||_F/sqrt(n)."
+            "'diag' uses max|diag(Y)-1|, 'inf' uses ||Y-I||_inf, 'fro' uses ||Y-I||_F/sqrt(n)."
         ),
     )
     p.add_argument(
@@ -458,6 +458,7 @@ def main():
                         l_target=args.l_target,
                         dtype=dtype_compute,
                         generator=g,
+                        p_val=p_val,
                     )
 
                     Z_true = compute_ground_truth(prepared_inputs, p_val)
@@ -545,11 +546,10 @@ def main():
                         )
                         print(
                             f"{name:<28s} {rr.ms:8.3f} ms (pre {rr.ms_precond:.3f} + iter {rr.ms_iter:.3f}){mem_str} | "
-                            f"relerr vs true: {rr.rel_err:.3e}"
-                            f" | resid {rr.residual:.3e}"
-                            f" | relerr_p90 {rr.rel_err_p90:.3e}"
-                            f" | fail_rate {100.0 * rr.failure_rate:.1f}%"
-                            f" | q_per_ms {rr.quality_per_ms:.3e}"
+                            f"relerr {rr.rel_err:.3e} (p90 {rr.rel_err_p90:.3e}) | "
+                            f"resid {rr.residual:.3e} (p90 {rr.residual_p90:.3e}) | "
+                            f"fail {100.0 * rr.failure_rate:.1f}% (nf {100.0 * rr.nonfinite_rate:.1f}%, q {100.0 * rr.quality_fail_rate:.1f}%) | "
+                            f"q_per_ms {rr.quality_per_ms:.3e}"
                             f"{cheb_deg_str}{pe_newton_str}{pe_minimax_str}{pe_affine_str}{pe_steps_str}"
                         )
 

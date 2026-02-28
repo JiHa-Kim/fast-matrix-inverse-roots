@@ -58,6 +58,8 @@ class NonSpdBenchResult:
     rel_err_p90: float
     residual: float
     residual_p90: float
+    nonfinite_rate: float
+    quality_fail_rate: float
     failure_rate: float
     quality_per_ms: float
     bad: int
@@ -338,7 +340,8 @@ def eval_method(
     resid_list: List[float] = []
     mem_alloc_list: List[float] = []
     mem_res_list: List[float] = []
-    bad = 0
+    nonfinite_count = 0
+    quality_fail_count = 0
 
     # Failure thresholds: if relerr or residual exceeds these, treat as failure
     # for accounting purposes.
@@ -349,6 +352,14 @@ def eval_method(
         A_norm = prep.A_norm
         B = prep.B
         Z_true = ground_truth_Z[i]
+        
+        # Precompute double-precision tensors once per scenario input
+        A_f64 = A_norm.detach().cpu().double()
+        B_f64 = B.detach().cpu().double()
+        Z_true_f64 = Z_true.detach().cpu().double()
+        norm_zt = torch.linalg.matrix_norm(Z_true_f64).clamp_min(1e-12)
+        norm_b = torch.linalg.matrix_norm(B_f64).clamp_min(1e-12)
+
         runner = _build_runner(
             method,
             pe_coeffs,
@@ -364,14 +375,16 @@ def eval_method(
         )
 
         if device.type == "cuda":
-            torch.cuda.reset_peak_memory_stats(device=device)
-            _ = runner(A_norm, B)
-            mem_alloc_list.append(
-                torch.cuda.max_memory_allocated(device=device) / (1024**2)
-            )
-            mem_res_list.append(
-                torch.cuda.max_memory_reserved(device=device) / (1024**2)
-            )
+            # Only measure peak memory on first trial
+            if i == 0:
+                torch.cuda.reset_peak_memory_stats(device=device)
+                _ = runner(A_norm, B)
+                mem_alloc_list.append(
+                    torch.cuda.max_memory_allocated(device=device) / (1024**2)
+                )
+                mem_res_list.append(
+                    torch.cuda.max_memory_reserved(device=device) / (1024**2)
+                )
 
         warm = max(0, int(timing_warmup_reps))
         for _ in range(warm):
@@ -388,32 +401,36 @@ def eval_method(
         ms_iter_list.append(ms_iter)
 
         if not torch.isfinite(Z_hat).all():
-            bad += 1
+            nonfinite_count += 1
             relerr_list.append(float("inf"))
             resid_list.append(float("inf"))
             continue
 
         # Compute relative error and residual in double precision
         Z_hat_f64 = Z_hat.detach().cpu().double()
-        Z_true_f64 = Z_true.detach().cpu().double()
-        A_f64 = A_norm.detach().cpu().double()
-        B_f64 = B.detach().cpu().double()
         
-        norm_zt = torch.linalg.matrix_norm(Z_true_f64).clamp_min(1e-12)
         rel = float(torch.linalg.matrix_norm(Z_hat_f64 - Z_true_f64) / norm_zt)
-        
-        norm_b = torch.linalg.matrix_norm(B_f64).clamp_min(1e-12)
         resid = float(torch.linalg.matrix_norm(A_f64 @ Z_hat_f64 - B_f64) / norm_b)
         
         relerr_list.append(rel)
         resid_list.append(resid)
         
         if rel > RELERR_MAX_FAIL or resid > RESID_MAX_FAIL:
-            bad += 1
+            quality_fail_count += 1
 
-    ms_iter_med = median(ms_iter_list)
-    rel_err_med = median(relerr_list)
-    resid_med = median(resid_list)
+    total_count = len(prepared_inputs)
+    nf_rate = (
+        float(nonfinite_count) / float(total_count) if total_count > 0 else float("nan")
+    )
+    qf_rate = (
+        float(quality_fail_count) / float(total_count) if total_count > 0 else float("nan")
+    )
+    failure_rate = (
+        float(nonfinite_count + quality_fail_count) / float(total_count)
+        if total_count > 0
+        else float("nan")
+    )
+
     if rel_err_med > 0.0 and math.isfinite(rel_err_med) and ms_iter_med > 0.0:
         quality_per_ms = max(0.0, -math.log10(rel_err_med)) / ms_iter_med
     else:
@@ -427,13 +444,11 @@ def eval_method(
         rel_err_p90=pctl(relerr_list, 0.90),
         residual=resid_med,
         residual_p90=pctl(resid_list, 0.90),
-        failure_rate=(
-            float(bad) / float(len(prepared_inputs))
-            if len(prepared_inputs) > 0
-            else float("nan")
-        ),
+        nonfinite_rate=nf_rate,
+        quality_fail_rate=qf_rate,
+        failure_rate=failure_rate,
         quality_per_ms=quality_per_ms,
-        bad=bad,
+        bad=nonfinite_count + quality_fail_count,
         mem_alloc_mb=median(mem_alloc_list) if mem_alloc_list else float("nan"),
         mem_reserved_mb=median(mem_res_list) if mem_res_list else float("nan"),
     )
@@ -521,11 +536,11 @@ def main():
     p.add_argument(
         "--nonspd-safe-early-metric",
         type=str,
-        default="diag",
-        choices=["diag", "fro"],
+        default="inf",
+        choices=["diag", "inf", "fro"],
         help=(
             "Proxy metric for early non-SPD fallback gate: "
-            "'fro' uses ||Y-I||_F/sqrt(n), 'diag' uses max|diag(Y)-1|."
+            "'fro' uses ||Y-I||_F/sqrt(n), 'inf' uses ||Y-I||_inf, 'diag' uses max|diag(Y)-1|."
         ),
     )
     p.add_argument(
@@ -728,12 +743,10 @@ def main():
                         print(
                             f"{name:<28s} {rr.ms:8.3f} ms "
                             f"(pre {rr.ms_precond:.3f} + iter {rr.ms_iter:.3f}){mem_str} | "
-                            f"relerr vs solve: {rr.rel_err:.3e}"
-                            f" | resid {rr.residual:.3e}"
-                            f" | relerr_p90 {rr.rel_err_p90:.3e}"
-                            f" | fail_rate {100.0 * rr.failure_rate:.1f}%"
-                            f" | q_per_ms {rr.quality_per_ms:.3e}"
-                            f" | bad {rr.bad}"
+                            f"relerr {rr.rel_err:.3e} (p90 {rr.rel_err_p90:.3e}) | "
+                            f"resid {rr.residual:.3e} (p90 {rr.residual_p90:.3e}) | "
+                            f"fail {100.0 * rr.failure_rate:.1f}% (nf {100.0 * rr.nonfinite_rate:.1f}%, q {100.0 * rr.quality_fail_rate:.1f}%) | "
+                            f"q_per_ms {rr.quality_per_ms:.3e} | bad {rr.bad}"
                         )
 
                     finite = [
