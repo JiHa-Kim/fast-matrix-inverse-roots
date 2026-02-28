@@ -82,6 +82,15 @@ def _online_stop_error(
     if m == "diag":
         diag = Y.diagonal(dim1=-2, dim2=-1)
         return float(torch.max(torch.abs(diag - 1.0)).item())
+    if m == "inf":
+        # ||Y - I||_inf = max_i sum_j |(Y - I)_{ij}|
+        # = max_i ( sum_{j!=i} |Y_{ij}| + |Y_{ii} - 1| )
+        row_sum_abs = Y.abs().sum(dim=-1)
+        diag_abs = Y.diagonal(dim1=-2, dim2=-1).abs()
+        diag_err = (Y.diagonal(dim1=-2, dim2=-1) - 1.0).abs()
+        # Row sum of absolute values minus absolute diagonal, plus absolute diagonal error
+        inf_norm = (row_sum_abs - diag_abs + diag_err).max()
+        return float(inf_norm.item())
     if m == "fro":
         scratch.copy_(Y)
         scratch.diagonal(dim1=-2, dim2=-1).sub_(1.0)
@@ -89,7 +98,7 @@ def _online_stop_error(
         scaled = fro / math.sqrt(float(Y.shape[-1]))
         return float(torch.max(scaled).item())
     raise ValueError(
-        f"online_stop_metric must be 'diag' or 'fro', got '{metric}'"
+        f"online_stop_metric must be 'diag', 'inf', or 'fro', got '{metric}'"
     )
 
 
@@ -349,7 +358,7 @@ def inverse_proot_pe_quadratic_coupled(
     terminal_tail_steps: int = 1,
     online_stop_tol: Optional[float] = None,
     online_min_steps: int = 2,
-    online_stop_metric: str = "diag",
+    online_stop_metric: str = "inf",
     online_stop_check_every: int = 1,
     post_correction_steps: int = 0,
     post_correction_order: int = 2,
@@ -385,9 +394,9 @@ def inverse_proot_pe_quadratic_coupled(
     if online_min < 1:
         raise ValueError(f"online_min_steps must be >= 1, got {online_min_steps}")
     online_metric = str(online_stop_metric).strip().lower()
-    if online_metric not in ("diag", "fro"):
+    if online_metric not in ("diag", "inf", "fro"):
         raise ValueError(
-            "online_stop_metric must be 'diag' or 'fro', "
+            "online_stop_metric must be 'diag', 'inf', or 'fro', "
             f"got '{online_stop_metric}'"
         )
     stop_check_every = int(online_stop_check_every)
@@ -567,7 +576,7 @@ def inverse_solve_pe_quadratic_coupled(
     terminal_tail_steps: int = 1,
     online_stop_tol: Optional[float] = None,
     online_min_steps: int = 2,
-    online_stop_metric: str = "diag",
+    online_stop_metric: str = "inf",
     online_stop_check_every: int = 1,
     post_correction_steps: int = 0,
     post_correction_order: int = 2,
@@ -578,7 +587,7 @@ def inverse_solve_pe_quadratic_coupled(
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
     nonspd_safe_early_y_tol: Optional[float] = None,
-    nonspd_safe_early_metric: str = "diag",
+    nonspd_safe_early_metric: str = "inf",
     renorm_every: int = 0,
     renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
@@ -612,9 +621,9 @@ def inverse_solve_pe_quadratic_coupled(
     if online_min < 1:
         raise ValueError(f"online_min_steps must be >= 1, got {online_min_steps}")
     online_metric = str(online_stop_metric).strip().lower()
-    if online_metric not in ("diag", "fro"):
+    if online_metric not in ("diag", "inf", "fro"):
         raise ValueError(
-            "online_stop_metric must be 'diag' or 'fro', "
+            "online_stop_metric must be 'diag', 'inf', or 'fro', "
             f"got '{online_stop_metric}'"
         )
     stop_check_every = int(online_stop_check_every)
@@ -692,9 +701,9 @@ def inverse_solve_pe_quadratic_coupled(
             f"got {nonspd_safe_early_y_tol}"
         )
     nonspd_early_metric = str(nonspd_safe_early_metric).strip().lower()
-    if nonspd_early_metric not in ("diag", "fro"):
+    if nonspd_early_metric not in ("diag", "inf", "fro"):
         raise ValueError(
-            "nonspd_safe_early_metric must be 'diag' or 'fro', "
+            "nonspd_safe_early_metric must be 'diag', 'inf', or 'fro', "
             f"got '{nonspd_safe_early_metric}'"
         )
     if M_norm.shape[-2] != A_norm.shape[-1]:
@@ -763,6 +772,13 @@ def inverse_solve_pe_quadratic_coupled(
     def _p1_diag_proxy() -> float:
         diag = ws.Y.diagonal(dim1=-2, dim2=-1)
         return float(torch.max(torch.abs(diag - 1.0)).item())
+
+    def _p1_inf_proxy() -> float:
+        row_sum_abs = ws.Y.abs().sum(dim=-1)
+        diag_abs = ws.Y.diagonal(dim1=-2, dim2=-1).abs()
+        diag_err = (ws.Y.diagonal(dim1=-2, dim2=-1) - 1.0).abs()
+        inf_norm = (row_sum_abs - diag_abs + diag_err).max()
+        return float(inf_norm.item())
 
     def _p1_z_proxy() -> float:
         num = torch.linalg.matrix_norm(A_norm @ ws.Z - M_norm, ord="fro")
@@ -870,9 +886,11 @@ def inverse_solve_pe_quadratic_coupled(
 
             if safe_early_active and t == 0:
                 # Cheap early divergence proxy for non-SPD p=1:
-                # use Frobenius by default; diag is available for back-compat.
+                # use Inf-norm by default; diag/fro are available.
                 if nonspd_early_metric == "fro":
                     y_proxy = _p1_y_proxy()
+                elif nonspd_early_metric == "inf":
+                    y_proxy = _p1_inf_proxy()
                 else:
                     y_proxy = _p1_diag_proxy()
                 if y_proxy > float(nonspd_safe_early_y_tol):
