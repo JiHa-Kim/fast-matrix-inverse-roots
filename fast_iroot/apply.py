@@ -9,14 +9,12 @@ from .coupled import (
     inverse_solve_pe_quadratic_coupled,
 )
 from .precond import PrecondStats, precond_gram_dual_spd, precond_gram_spd
-from .nsrc import NSRCWorkspace, hybrid_pe_nsrc_solve
 
 
 @dataclass
 class InverseApplyAutoWorkspace:
     solve_ws: Optional[InverseSolveWorkspaceCoupled] = None
     root_ws: Optional[IrootWorkspaceCoupled] = None
-    nsrc_ws: Optional[NSRCWorkspace] = None
 
 
 @dataclass
@@ -278,20 +276,19 @@ def apply_inverse_root_auto(
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
     nonspd_safe_early_y_tol: Optional[float] = None,
-    k_threshold: float = 0.1,  # use hybrid-NSRC if k/n <= threshold
+    k_threshold: float = 0.1,
 ) -> Tuple[torch.Tensor, InverseApplyAutoWorkspace]:
     """Apply inverse p-th root with strategy selection for single-shot vs reuse.
 
     Strategies:
       - `auto` (default): branching based on k/n and expected_reuse.
       - `direct-solve`: always run coupled solve on RHS block.
-      - `hybrid-pe-nsrc`: use PE preconditioner + NSRC refinement (only for p=1).
       - `materialize-root`: compute root operator then multiply (`X @ M_norm`).
     """
-    if strategy not in ("auto", "direct-solve", "materialize-root", "hybrid-pe-nsrc"):
+    if strategy not in ("auto", "direct-solve", "materialize-root"):
         raise ValueError(
             "Unknown strategy: "
-            f"'{strategy}'. Supported strategies: 'auto', 'direct-solve', 'materialize-root', 'hybrid-pe-nsrc'."
+            f"'{strategy}'. Supported strategies: 'auto', 'direct-solve', 'materialize-root'."
         )
     reuse = int(expected_reuse)
     if reuse < 1:
@@ -322,24 +319,6 @@ def apply_inverse_root_auto(
         return Xn @ M_norm, ws
 
     # Solve Case (reuse=1 or explicit direct)
-    n, k = M_norm.shape[-2:]
-    use_hybrid = strategy == "hybrid-pe-nsrc" or (
-        strategy == "auto" and p_val == 1 and (k / n <= k_threshold)
-    )
-
-    if use_hybrid:
-        # p=1 hybrid solve: faster for small k
-        Zn, ws.nsrc_ws = hybrid_pe_nsrc_solve(
-            A_norm,
-            M_norm,
-            abc_t=abc_t,
-            pe_steps=2,
-            ref_steps=3,
-            tol=online_stop_tol,
-            ws=ws.nsrc_ws,
-        )
-        return Zn, ws
-
     Zn, ws.solve_ws = inverse_solve_pe_quadratic_coupled(
         A_norm=A_norm,
         M_norm=M_norm,

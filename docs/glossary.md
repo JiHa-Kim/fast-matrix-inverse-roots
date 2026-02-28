@@ -7,8 +7,11 @@ This page defines common terms, abbreviations, and mathematical concepts used th
 - **`fast_iroot`**: The name of the Python package. "iroot" is short for **Inverse Root** (e.g., $A^{-1/p}$).
 - **PE**: **Polynomial-Express**. The core iterative family used to compute inverse roots.
 - **PE-Quad**: **Quadratic Polynomial-Express**. A specific PE variant that uses quadratic polynomial updates ($B = aI + bY + cY^2$) for rapid convergence.
-- **NSRC**: **Neumann-Series Residual Correction**. An additive refinement method used primarily for linear solves ($p=1$). It refines a solution by iteratively adding terms of the Neumann series.
 - **Clenshaw**: Refers to the **Clenshaw Recurrence**, a numerically stable algorithm for evaluating a linear combination of Chebyshev polynomials.
+
+## Archived Terms
+
+- **NSRC**: **Neumann-Series Residual Correction**. An additive refinement method used primarily for linear solves ($p=1$). It refines a solution by iteratively adding terms of the Neumann series. Underperformed compared to PE-Quad and has been moved to the archive.
 
 ## Mathematical Abbreviations
 
