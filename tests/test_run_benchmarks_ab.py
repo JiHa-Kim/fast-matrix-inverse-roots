@@ -1,11 +1,7 @@
 import pytest
 
-from benchmarks.run_benchmarks import (
-    _parse_rows,
-    _row_from_dict,
-    _to_markdown,
-    _to_markdown_ab,
-)
+from benchmarks.solver_utils import parse_rows as _parse_rows, row_from_dict as _row_from_dict
+from benchmarks.solver_reporting import to_markdown as _to_markdown, to_markdown_ab as _to_markdown_ab
 
 
 def test_parse_rows_extracts_p_field():
@@ -254,7 +250,7 @@ def test_markdown_includes_assessment_leaders():
     ]
     md = _to_markdown(rows)
     assert "assessment score" in md
-    assert "## Assessment Leaders" in md
+    assert "### Detailed Assessment Leaders" in md
     assert "| spd | 2 | 128 | 1 | gaussian_spd | B |" in md
 
 
@@ -299,9 +295,10 @@ def test_markdown_ab_includes_run_config_when_provided():
         match_on_method=True,
         config={"trials": 10, "timing_reps": 10},
     )
-    assert "Run config:" in md
-    assert "`trials`: `10`" in md
-    assert "`timing_reps`: `10`" in md
+    assert "## Run Configuration" in md
+        
+    assert "- trials: `10`" in md
+    assert "- timing_reps: `10`" in md
 
 
 def test_row_from_dict_is_backward_compatible_with_v1_rows():
@@ -361,7 +358,7 @@ def test_assessment_leader_penalizes_fail_rate():
             0.7,
             1.0e-3,
             1.0e-3,
-            0.5,
+            0.6,
             4.0,
         ),
     ]

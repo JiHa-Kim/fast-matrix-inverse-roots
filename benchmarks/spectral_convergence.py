@@ -12,33 +12,25 @@ import argparse
 import os
 import sys
 from dataclasses import asdict
-from datetime import datetime
 from typing import Any, List, Tuple
 
+# Bootstrap to allow direct script execution
 try:
-    from .utils import (
-        get_git_metadata,
-        get_repro_context,
-        stable_json_sha256,
-        write_text_file,
-        write_json_file,
-        write_sha256_sidecar,
-        format_timestamp,
-        repo_relative,
-        write_repro_fingerprint_sidecar,
+    from .runner import (
+        ensure_repo_root_on_path,
+        setup_torch_device,
+        get_torch_dtype,
+        get_run_directory,
     )
 except ImportError:
-    from utils import (
-        get_git_metadata,
-        get_repro_context,
-        stable_json_sha256,
-        write_text_file,
-        write_json_file,
-        write_sha256_sidecar,
-        format_timestamp,
-        repo_relative,
-        write_repro_fingerprint_sidecar,
+    from runner import (
+        ensure_repo_root_on_path,
+        setup_torch_device,
+        get_torch_dtype,
+        get_run_directory,
     )
+
+REPO_ROOT = ensure_repo_root_on_path()
 
 import torch
 
@@ -48,21 +40,22 @@ from fast_iroot.diagnostics import (
     analyze_spectral_convergence,
     format_spectral_report,
 )
-
-try:
-    from benchmarks._bootstrap import ensure_repo_root_on_path
-except ModuleNotFoundError:
-    from _bootstrap import ensure_repo_root_on_path
-
-ensure_repo_root_on_path()
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-# Logic moved to utils.py
-
-
-# Moved to utils.py
+from benchmarks.utils import (
+    get_git_metadata,
+    get_repro_context,
+    stable_json_sha256,
+    write_text_file,
+    write_json_file,
+    write_sha256_sidecar,
+    format_timestamp,
+    repo_relative,
+    write_repro_fingerprint_sidecar,
+)
+from benchmarks.reporting import (
+    build_report_header,
+    build_reproducibility_section,
+    format_markdown_table,
+)
 
 
 def run_diagnostic_iteration(
@@ -123,51 +116,37 @@ def _build_markdown(
     coeffs: list[tuple[float, float, float]],
     worst_pe: list[SpectralStepStats],
     worst_ns: list[SpectralStepStats],
+    out_path: str,
+    json_path: str,
+    manifest_path: str,
 ) -> str:
-    lines: list[str] = []
-    lines.append("# Spectral Convergence Benchmark")
-    lines.append("")
-    lines.append(f"Generated: {format_timestamp()}")
-    lines.append("")
-    lines.append("## Run Configuration")
-    lines.append("")
-    lines.append(f"- n: `{int(args.n)}`")
-    lines.append(f"- p: `{int(args.p)}`")
-    lines.append(f"- trials: `{int(args.trials)}`")
-    lines.append(f"- l_target: `{float(args.l_target)}`")
-    lines.append(f"- dtype: `{str(args.dtype)}`")
-    lines.append(f"- device: `{str(device)}`")
-    lines.append(f"- seed: `{int(args.seed)}`")
-    lines.append(f"- coeff_mode: `{str(args.coeff_mode)}`")
-    lines.append(f"- coeff_seed: `{int(args.coeff_seed)}`")
-    lines.append(f"- coeff_safety: `{float(args.coeff_safety)}`")
-    lines.append(f"- coeff_no_final_safety: `{bool(args.coeff_no_final_safety)}`")
-    lines.append(f"- pe_steps: `{pe_steps}`")
-    lines.append("")
+    config = vars(args).copy()
+    config["device"] = str(device)
+    config["pe_steps"] = pe_steps
+
+    lines = build_report_header("Spectral Convergence Benchmark", config)
+
     lines.append("## Coefficients (PE-Quad)")
     lines.append("")
-    lines.append("| Step | a | b | c |")
-    lines.append("|---:|---:|---:|---:|")
-    for idx, (a, b, c) in enumerate(coeffs):
-        lines.append(f"| {idx} | {a:.9f} | {b:.9f} | {c:.9f} |")
+    coeff_headers = ["Step", "a", "b", "c"]
+    coeff_rows = [[i, a, b, c] for i, (a, b, c) in enumerate(coeffs)]
+    lines.append(format_markdown_table(coeff_headers, coeff_rows))
     lines.append("")
+
     lines.append("## PE-Quad (Worst Case Over Trials)")
     lines.append("")
     lines.append(format_spectral_report(worst_pe))
     lines.append("")
+
     lines.append("## Newton-Schulz (Worst Case Over Trials)")
     lines.append("")
     lines.append(format_spectral_report(worst_ns))
     lines.append("")
-    lines.append("## Reproducibility")
-    lines.append("")
-    lines.append("This report is paired with:")
-    lines.append("- `spectral_convergence.json` (raw per-step rows)")
-    lines.append(
-        "- `spectral_manifest.json` (run metadata + reproducibility fingerprint)"
+
+    lines.extend(
+        build_reproducibility_section(json_path, manifest_path, str(REPO_ROOT))
     )
-    lines.append("- `.sha256` sidecars for all output files")
-    lines.append("")
+
     return "\n".join(lines)
 
 
@@ -186,6 +165,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--coeff-no-final-safety", action="store_true")
     p.add_argument("--run-name", type=str, default="spectral_convergence")
     p.add_argument("--out", type=str, default="")
+    p.add_argument(
+        "--prod",
+        action="store_true",
+        help="Update production documentation by default.",
+    )
     p.add_argument("--json-out", type=str, default="")
     p.add_argument("--manifest-out", type=str, default="")
     p.add_argument(
@@ -204,30 +188,27 @@ def main() -> None:
     if int(args.trials) < 1:
         raise ValueError("--trials must be >= 1")
 
-    if str(args.device) == "auto":
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(str(args.device))
-    if device.type == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("Requested --device cuda but CUDA is unavailable")
-
-    dtype = torch.float64 if str(args.dtype) == "fp64" else torch.float32
+    device = setup_torch_device(str(args.device))
+    dtype = get_torch_dtype(str(args.dtype))
     g = torch.Generator(device=device).manual_seed(int(args.seed))
 
-    today = datetime.now().strftime("%Y_%m_%d")
-    now = datetime.now().strftime("%H%M%S")
-    run_name = str(args.run_name).strip() or "spectral_convergence"
-    run_dir_rel = os.path.join("benchmark_results", "runs", today, f"{now}_{run_name}")
-    run_dir_abs = os.path.join(REPO_ROOT, run_dir_rel)
+    rel_run_dir, abs_run_dir = get_run_directory(str(args.run_name), REPO_ROOT)
 
-    out_path = str(args.out).strip() or os.path.join(
-        run_dir_abs, "spectral_convergence.md"
-    )
+    # Determine output paths
+    if args.prod:
+        out_path = os.path.join(
+            REPO_ROOT, "docs", "benchmarks", "spectral_convergence_production.md"
+        )
+    else:
+        out_path = str(args.out).strip() or os.path.join(
+            abs_run_dir, "spectral_convergence.md"
+        )
+
     json_path = str(args.json_out).strip() or os.path.join(
-        run_dir_abs, "spectral_convergence.json"
+        abs_run_dir, "spectral_convergence.json"
     )
     manifest_path = str(args.manifest_out).strip() or os.path.join(
-        run_dir_abs, "spectral_manifest.json"
+        abs_run_dir, "spectral_manifest.json"
     )
 
     pe_sched, _ = build_pe_schedules(
@@ -279,17 +260,20 @@ def main() -> None:
         coeffs=abc_pe,
         worst_pe=worst_pe,
         worst_ns=worst_ns,
+        out_path=out_path,
+        json_path=json_path,
+        manifest_path=manifest_path,
     )
     write_text_file(out_path, report)
 
     raw_payload: dict[str, Any] = {
         "schema": "spectral_convergence.v1",
         "generated_at": format_timestamp(),
-        "run_dir": run_dir_rel.replace("\\", "/"),
+        "run_dir": rel_run_dir.replace("\\", "/"),
         "argv": list(sys.argv[1:]),
         "args": vars(args),
         "hash_algorithm": "sha256",
-        "git": get_git_metadata(REPO_ROOT),
+        "git": get_git_metadata(str(REPO_ROOT)),
         "pe_steps": len(abc_pe),
         "pe_coeffs": [{"a": a, "b": b, "c": c} for (a, b, c) in abc_pe],
         "worst_case": {
@@ -299,14 +283,14 @@ def main() -> None:
     }
     write_json_file(json_path, raw_payload)
 
-    repro_context = get_repro_context(REPO_ROOT, args)
+    repro_context = get_repro_context(str(REPO_ROOT), args)
     manifest: dict[str, Any] = {
         "schema": "spectral_manifest.v1",
         "generated_at": format_timestamp(),
-        "run_dir": run_dir_rel.replace("\\", "/"),
+        "run_dir": rel_run_dir.replace("\\", "/"),
         "outputs": {
-            "markdown": repo_relative(out_path, REPO_ROOT),
-            "json": repo_relative(json_path, REPO_ROOT),
+            "markdown": repo_relative(out_path, str(REPO_ROOT)),
+            "json": repo_relative(json_path, str(REPO_ROOT)),
         },
         "repro_context": repro_context,
         "repro_fingerprint_sha256": stable_json_sha256(repro_context),
@@ -323,14 +307,14 @@ def main() -> None:
         )
         checksum_paths.append(repro_sidecar)
 
-    print(f"Wrote report: {repo_relative(out_path, REPO_ROOT)}")
-    print(f"Wrote raw JSON: {repo_relative(json_path, REPO_ROOT)}")
-    print(f"Wrote manifest: {repo_relative(manifest_path, REPO_ROOT)}")
+    print(f"Wrote report: {repo_relative(out_path, str(REPO_ROOT))}")
+    print(f"Wrote raw JSON: {repo_relative(json_path, str(REPO_ROOT))}")
+    print(f"Wrote manifest: {repo_relative(manifest_path, str(REPO_ROOT))}")
     print(f"Repro fingerprint: {manifest['repro_fingerprint_sha256']}")
     if checksum_paths:
         print("Wrote checksum sidecars:")
         for pth in checksum_paths:
-            print(f"  - {repo_relative(pth, REPO_ROOT)}")
+            print(f"  - {repo_relative(pth, str(REPO_ROOT))}")
 
 
 if __name__ == "__main__":
