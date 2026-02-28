@@ -13,6 +13,7 @@ from .utils import (
     _check_square,
 )
 from .coeffs import _quad_coeffs_hot
+from .coeff_tuner import KappaMinimaxLUT, propagate_interval_express
 
 _AFFINE_C_EPS = 1e-15
 
@@ -365,6 +366,10 @@ def inverse_proot_pe_quadratic_coupled(
     assume_spd: bool = True,
     renorm_every: int = 0,
     renorm_eps: float = 1e-12,
+    use_express: bool = False,
+    m0: Optional[float] = None,
+    M0: Optional[float] = None,
+    diag_recenter_every: int = 0,
 ) -> Tuple[torch.Tensor, IrootWorkspaceCoupled]:
     """Coupled quadratic PE iteration for general p (inverse p-th root).
 
@@ -472,15 +477,38 @@ def inverse_proot_pe_quadratic_coupled(
     ws.X.zero_()
     ws.X.diagonal(dim1=-2, dim2=-1).fill_(1)
     ws.Y.copy_(A_norm)
-    coeffs = _quad_coeffs_hot(abc_t)
+    
+    if use_express:
+        if m0 is None or M0 is None:
+            raise ValueError("Express path requires m0 and M0 Gershgorin bounds")
+        # Clamp m0 to a safe positive floor for Express path (Muon-style)
+        lo, hi = max(float(m0), 0.01), max(float(M0), 0.02)
+        # Use a fixed number of steps based on input coefficients length
+        T_express = len(_quad_coeffs_hot(abc_t))
+        # Initial normalization: ensure center is near 1
+        mu0 = math.sqrt(lo * hi)
+        scale0 = mu0 ** (-1.0 / float(p_val))
+        ws.X.mul_(scale0)
+        ws.Y.mul_(1.0 / mu0)
+        lo, hi = lo / mu0, hi / mu0
+        coeffs = [] # Will be filled dynamically if needed, but we use T_express
+    else:
+        coeffs = _quad_coeffs_hot(abc_t)
+        T_express = len(coeffs)
 
-    T = len(coeffs)
+    T = T_express
     if not terminal_last_step:
         tail_steps = 0
     if tail_steps > T:
         tail_steps = T
     tail_start = T - tail_steps if tail_steps > 0 else T
-    for t, (a, b, c) in enumerate(coeffs):
+    
+    for t in range(T):
+        if use_express:
+            a, b, c = KappaMinimaxLUT.get_coeffs(p_val, lo, hi)
+        else:
+            a, b, c = coeffs[t]
+
         affine_step = abs(float(c)) <= _AFFINE_C_EPS
         if affine_step and p_val == 1:
             _apply_affine_right(ws.X, ws.Y, a=a, b=b, out=ws.Xbuf)
@@ -491,6 +519,9 @@ def inverse_proot_pe_quadratic_coupled(
 
         is_tail_frozen = bool(t >= tail_start)
         if is_tail_frozen:
+            # Still need to propagate scalar interval even if Y is frozen
+            if use_express:
+                lo, hi = propagate_interval_express((a, b, c), lo, hi, p_val)
             continue
 
         if affine_step and p_val == 1:
@@ -528,6 +559,26 @@ def inverse_proot_pe_quadratic_coupled(
             # ws.B2 is used as scratch here; contents destroyed.
             _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
+        
+        if use_express:
+            # Propagate scalar interval
+            lo_new, hi_new = propagate_interval_express((a, b, c), lo, hi, p_val)
+            # Ensure lo stays strictly positive
+            lo_new = max(lo_new, 1e-12)
+            hi_new = max(hi_new, lo_new * 1.0001)
+            
+            # Optional per-step recentering (diag proxy)
+            recenter_now = diag_recenter_every > 0 and (t + 1) % diag_recenter_every == 0
+            if recenter_now:
+                # Compute proxy center from mean of diagonal
+                mu_proxy = ws.Y.diagonal(dim1=-2, dim2=-1).mean(dim=-1)
+                mu_val = float(mu_proxy.mean().item())
+                if mu_val > 1e-6:
+                    _renorm_coupled_state_(ws.Y, ws.X, p_val=p_val, eps=renorm_eps_f)
+                    lo_new, hi_new = lo_new / mu_val, hi_new / mu_val
+            
+            lo, hi = lo_new, hi_new
+
         if renorm_period > 0 and ((t + 1) % renorm_period == 0):
             _renorm_coupled_state_(
                 ws.Y,
@@ -590,6 +641,10 @@ def inverse_solve_pe_quadratic_coupled(
     nonspd_safe_early_metric: str = "inf",
     renorm_every: int = 0,
     renorm_eps: float = 1e-12,
+    use_express: bool = False,
+    m0: Optional[float] = None,
+    M0: Optional[float] = None,
+    diag_recenter_every: int = 0,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """Coupled quadratic PE iteration for computing an inverse-like solve on M.
 
@@ -720,7 +775,25 @@ def inverse_solve_pe_quadratic_coupled(
 
     ws.Z.copy_(M_norm)
     ws.Y.copy_(A_norm)
-    coeffs = _quad_coeffs_hot(abc_t)
+    
+    if use_express:
+        if m0 is None or M0 is None:
+            raise ValueError("Express path requires m0 and M0 Gershgorin bounds")
+        # Clamp m0 to a safe positive floor for Express path (Muon-style)
+        lo, hi = max(float(m0), 0.01), max(float(M0), 0.02)
+        # Use a fixed number of steps based on input coefficients length
+        T_express = len(_quad_coeffs_hot(abc_t))
+        # Initial normalization: ensure center is near 1
+        mu0 = math.sqrt(lo * hi)
+        scale0 = mu0 ** (-1.0 / float(p_val))
+        ws.Z.mul_(scale0)
+        ws.Y.mul_(1.0 / mu0)
+        lo, hi = lo / mu0, hi / mu0
+        coeffs = []
+    else:
+        coeffs = _quad_coeffs_hot(abc_t)
+        T_express = len(coeffs)
+
     adaptive_active = bool(nonspd_adaptive) and (p_val == 1) and (not assume_spd)
     safe_early_active = (
         (p_val == 1)
@@ -816,16 +889,19 @@ def inverse_solve_pe_quadratic_coupled(
             _matmul_into(ws.B, ws.Y, ws.Ybuf)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
 
-    T = len(coeffs)
+    T = T_express
     if not terminal_last_step:
         tail_steps = 0
     if tail_steps > T:
         tail_steps = T
     tail_start = T - tail_steps if tail_steps > 0 else T
-    for t, (a_base, b_base, c_base) in enumerate(coeffs):
-        a = float(a_base)
-        b = float(b_base)
-        c = float(c_base)
+    for t in range(T):
+        if use_express:
+            a, b, c = KappaMinimaxLUT.get_coeffs(p_val, lo, hi)
+        else:
+            a_base, b_base, c_base = coeffs[t]
+            a, b, c = float(a_base), float(b_base), float(c_base)
+
         is_tail_frozen = bool(t >= tail_start)
 
         if p_val == 1:
@@ -941,6 +1017,8 @@ def inverse_solve_pe_quadratic_coupled(
             _build_step_polynomial(ws.Y, a=a, b=b, c=c, out=ws.B)
 
         if is_tail_frozen:
+            if use_express:
+                lo, hi = propagate_interval_express((a, b, c), lo, hi, p_val)
             continue
 
         if affine_step and p_val == 1:
@@ -984,6 +1062,25 @@ def inverse_solve_pe_quadratic_coupled(
             # ws.B2 is used as scratch here; contents destroyed.
             _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
+        
+        if use_express:
+            # Propagate scalar interval
+            lo_new, hi_new = propagate_interval_express((a, b, c), lo, hi, p_val)
+            # Ensure lo stays strictly positive
+            lo_new = max(lo_new, 1e-12)
+            hi_new = max(hi_new, lo_new * 1.0001)
+            
+            # Optional per-step recentering (diag proxy)
+            recenter_now = diag_recenter_every > 0 and (t + 1) % diag_recenter_every == 0
+            if recenter_now:
+                mu_proxy = ws.Y.diagonal(dim1=-2, dim2=-1).mean(dim=-1)
+                mu_val = float(mu_proxy.mean().item())
+                if mu_val > 1e-6:
+                    _renorm_coupled_state_(ws.Y, ws.Z, p_val=p_val, eps=renorm_eps_f)
+                    lo_new, hi_new = lo_new / mu_val, hi_new / mu_val
+            
+            lo, hi = lo_new, hi_new
+
         if renorm_period > 0 and ((t + 1) % renorm_period == 0):
             _renorm_coupled_state_(
                 ws.Y,

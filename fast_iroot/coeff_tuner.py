@@ -1454,3 +1454,65 @@ if __name__ == "__main__":
     for i, row in enumerate(quad, 1):
         a, b, c, lo, hi = row
         print(f"t={i} a={a:.10f} b={b:.10f} c={c:.10f} interval=[{lo:.6f},{hi:.6f}]")
+
+# ---------------------------------------------------------------------------
+# Kappa-Bin Minimax LUT (Express Path)
+# ---------------------------------------------------------------------------
+
+class KappaMinimaxLUT:
+    """Pre-tabulated minimax coefficients indexed by kappa bins.
+    
+    Coefficients for q(y) = a + b*y + c*y^2 optimized for 
+    min max_{y in [1/sqrt(k), sqrt(k)]} |1 - y q(y)^p|.
+    """
+    
+    # Bins for kappa = M/m. 
+    # Log-spaced from 1.1 to 1e6.
+    BINS = [1.1, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0, 10000.0, 50000.0, 100000.0, 1000000.0]
+    
+    # For now using stable placeholders that transition from Newton to identity
+    # for large kappa to ensure boundedness in initial tests.
+    TABLE = {
+        (1, 2): [[2.0, -1.0, 0.0] if b < 4.0 else [1.1, -0.1, 0.0] for b in BINS],
+        (2, 2): [[1.5, -0.5, 0.0] if b < 4.0 else [1.1, -0.1, 0.0] for b in BINS],
+        (4, 2): [[1.25, -0.25, 0.0] if b < 4.0 else [1.1, -0.1, 0.0] for b in BINS],
+    }
+
+    @classmethod
+    def get_coeffs(cls, p_val: int, lo: float, hi: float) -> Tuple[float, float, float]:
+        """Find best LUT entry for current interval [lo, hi]."""
+        kappa = hi / max(lo, 1e-15)
+        # Find index of first bin >= kappa
+        idx = len(cls.BINS) - 1
+        for i, b in enumerate(cls.BINS):
+            if b >= kappa:
+                idx = i
+                break
+            
+        entry = cls.TABLE.get((p_val, 2))
+        if entry is None:
+            # fallback to Newton for unsupported p
+            return inverse_newton_coeffs(p_val)
+            
+        abc_norm = entry[idx] # Optimized for y in [1/sqrt(k), sqrt(k)]
+        
+        # Rescale normalized coefficients to current interval [lo, hi].
+        # q(y) = gamma * q_norm(y/mu), where mu = sqrt(lo*hi) and gamma = mu^(-1/p).
+        mu = math.sqrt(max(lo * hi, 1e-12))
+        gamma = mu ** (-1.0 / p_val)
+        
+        a_n, b_n, c_n = abc_norm
+        a = gamma * a_n
+        b = gamma * b_n / mu
+        c = gamma * c_n / (mu * mu)
+        
+        return (float(a), float(b), float(c))
+
+def propagate_interval_express(
+    abc: Tuple[float, float, float], 
+    lo: float, 
+    hi: float, 
+    p_val: int
+) -> Tuple[float, float]:
+    """Model-based interval propagation for Express path."""
+    return interval_update_quadratic_exact(abc, lo, hi, p_val=p_val)
