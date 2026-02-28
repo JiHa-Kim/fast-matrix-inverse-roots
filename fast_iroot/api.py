@@ -84,6 +84,8 @@ def solve_spd(
     post_correction_order: int = 2,
     renorm_every: int = 0,
     renorm_eps: float = 1e-12,
+    use_express: bool = False,
+    diag_recenter_every: int = 0,
 ) -> Tuple[torch.Tensor, InverseApplyAutoWorkspace, PrecondStats, str]:
     """Solve/apply `Z ~= A^(-1/p) B` for SPD `A` using preconditioning + PE kernels."""
     pcfg = precond_config if precond_config is not None else PrecondConfig()
@@ -100,6 +102,28 @@ def solve_spd(
         lambda_max_safety=pcfg.lambda_max_safety,
     )
 
+    # Compute final unscaling factors
+    u = stats.inv_u_root  # Currently holds u itself
+    inv_u_root = torch.pow(u, -1.0 / float(p_val))
+    
+    # Update stats with actual root unscaling
+    stats = PrecondStats(
+        rho_proxy=stats.rho_proxy,
+        gersh_lo=stats.gersh_lo,
+        kappa_proxy=stats.kappa_proxy,
+        m0=stats.m0,
+        M0=stats.M0,
+        inv_scaling=stats.inv_scaling,
+        inv_u_root=inv_u_root,
+    )
+
+    # Scale B by the same diagonal scaling used for A: B_norm = D B
+    B_norm = B
+    if stats.inv_scaling is not None:
+        # stats.inv_scaling currently holds D^-1
+        d = stats.inv_scaling.reciprocal()
+        B_norm = d.unsqueeze(-1) * B
+
     if abc_t is None:
         abc_t, schedule_desc = build_schedule(
             A.device,
@@ -109,9 +133,9 @@ def solve_spd(
     else:
         schedule_desc = "user-provided"
 
-    Z, ws = apply_inverse_root_auto(
+    Z_norm, ws = apply_inverse_root_auto(
         A_norm=A_norm,
-        M_norm=B,
+        M_norm=B_norm,
         abc_t=abc_t,
         p_val=p_val,
         ws=workspace,
@@ -130,7 +154,19 @@ def solve_spd(
         assume_spd=True,
         renorm_every=renorm_every,
         renorm_eps=renorm_eps,
+        use_express=use_express,
+        m0=stats.m0,
+        M0=stats.M0,
+        diag_recenter_every=diag_recenter_every,
     )
+    
+    # Unscale Z: Z_actual = u^(-1/p) D^-1 Z_norm
+    Z = Z_norm
+    if stats.inv_scaling is not None:
+        Z = stats.inv_scaling.unsqueeze(-1) * Z
+    if stats.inv_u_root is not None:
+        Z = stats.inv_u_root.unsqueeze(-1).unsqueeze(-1) * Z
+        
     return Z, ws, stats, schedule_desc
 
 
@@ -253,6 +289,8 @@ def solve_gram_spd(
     online_stop_check_every: int = 1,
     post_correction_steps: int = 0,
     post_correction_order: int = 2,
+    use_express: bool = False,
+    diag_recenter_every: int = 0,
 ) -> Tuple[torch.Tensor, GramInverseApplyWorkspace, PrecondStats, str]:
     """Solve/apply `Z ~= (G^T G)^(-1/p) B` with cached Gram preconditioning."""
     if abc_t is None:
@@ -292,5 +330,7 @@ def solve_gram_spd(
         online_stop_check_every=online_stop_check_every,
         post_correction_steps=post_correction_steps,
         post_correction_order=post_correction_order,
+        use_express=use_express,
+        diag_recenter_every=diag_recenter_every,
     )
     return Z, ws, stats, schedule_desc
