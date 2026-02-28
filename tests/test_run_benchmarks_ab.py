@@ -238,3 +238,38 @@ def test_row_from_dict_is_backward_compatible_with_v1_rows():
     assert row[9] != row[9]  # NaN
     assert row[10] != row[10]  # NaN
     assert row[11] != row[11]  # NaN
+
+
+def test_assessment_leader_penalizes_fail_rate():
+    rows = [
+        (
+            "nonspd",
+            1,
+            128,
+            8,
+            "nonnormal_upper",
+            "stable",
+            1.4,
+            1.2,
+            2.0e-3,
+            2.2e-3,
+            0.0,
+            2.0,
+        ),
+        (
+            "nonspd",
+            1,
+            128,
+            8,
+            "nonnormal_upper",
+            "fast_but_unstable",
+            1.0,
+            0.7,
+            1.0e-3,
+            1.0e-3,
+            0.5,
+            4.0,
+        ),
+    ]
+    md = _to_markdown(rows)
+    assert "| nonspd | 1 | 128 | 8 | nonnormal_upper | stable |" in md
