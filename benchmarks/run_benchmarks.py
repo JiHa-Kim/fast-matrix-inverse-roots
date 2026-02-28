@@ -11,10 +11,23 @@ import argparse
 import json
 import os
 import shlex
-import sys
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable, List
+from typing import Iterable
+
+from benchmarks.utils import (
+    get_git_metadata,
+    write_text_file,
+    write_json_file,
+    write_sha256_sidecar,
+    format_timestamp,
+)
+from benchmarks.solver_utils import (
+    ParsedRow,
+    parse_rows,
+    row_from_dict,
+)
+from benchmarks.solver_reporting import to_markdown, to_markdown_ab
 
 # Bootstrap and Common Utils
 try:
@@ -23,28 +36,6 @@ except ImportError:
     from runner import ensure_repo_root_on_path, run_and_capture, get_run_directory
 
 REPO_ROOT = ensure_repo_root_on_path()
-
-from benchmarks.utils import (
-    get_git_metadata,
-    get_repro_context,
-    stable_json_sha256,
-    write_text_file,
-    write_json_file,
-    write_sha256_sidecar,
-    format_timestamp,
-    repo_relative,
-    sha256_file,
-    sha256_text,
-    write_repro_fingerprint_sidecar,
-)
-from benchmarks.solver_utils import (
-    ParsedRow,
-    parse_rows,
-    row_to_dict,
-    row_from_dict,
-    assessment_score,
-)
-from benchmarks.solver_reporting import to_markdown, to_markdown_ab
 
 
 @dataclass(frozen=True)

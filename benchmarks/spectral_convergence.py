@@ -14,24 +14,6 @@ import sys
 from dataclasses import asdict
 from typing import Any, List, Tuple
 
-# Bootstrap to allow direct script execution
-try:
-    from .runner import (
-        ensure_repo_root_on_path,
-        setup_torch_device,
-        get_torch_dtype,
-        get_run_directory,
-    )
-except ImportError:
-    from runner import (
-        ensure_repo_root_on_path,
-        setup_torch_device,
-        get_torch_dtype,
-        get_run_directory,
-    )
-
-REPO_ROOT = ensure_repo_root_on_path()
-
 import torch
 
 from fast_iroot.coeffs import _quad_coeffs, build_pe_schedules
@@ -56,6 +38,24 @@ from benchmarks.reporting import (
     build_reproducibility_section,
     format_markdown_table,
 )
+
+# Bootstrap to allow direct script execution
+try:
+    from .runner import (
+        ensure_repo_root_on_path,
+        setup_torch_device,
+        get_torch_dtype,
+        get_run_directory,
+    )
+except ImportError:
+    from runner import (
+        ensure_repo_root_on_path,
+        setup_torch_device,
+        get_torch_dtype,
+        get_run_directory,
+    )
+
+REPO_ROOT = ensure_repo_root_on_path()
 
 
 def run_diagnostic_iteration(

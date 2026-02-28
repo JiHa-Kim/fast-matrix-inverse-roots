@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import datetime
 from collections import defaultdict
 from typing import Any, Dict, List
 
-from .utils import clean_method_name, format_timestamp
+from .utils import clean_method_name
 from .solver_utils import ParsedRow, assessment_score
 from .reporting import build_report_header
 
