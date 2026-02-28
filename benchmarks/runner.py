@@ -75,10 +75,10 @@ def run_and_capture(cmd: list[str], cwd: str | Path) -> str:
     )
     t_out.start()
     t_err.start()
-    t_out.join()
-    t_err.join()
 
     returncode = result.wait()
+    t_out.join()
+    t_err.join()
     stdout_text = "".join(stdout_parts)
     stderr_text = "".join(stderr_parts)
 
