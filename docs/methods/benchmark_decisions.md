@@ -4,6 +4,7 @@ This document tracks architectural and policy decisions made based on empirical 
 
 ## Table of Contents
 
+- [2026-02-28: SPD `p=1` Torch baseline choice (`linalg.solve` vs `cholesky`)](#2026-02-28-spd-p1-torch-baseline-choice-linalgsolve-vs-cholesky)
 - [2026-02-28: Benchmark assessment overhaul (quality + stability + efficiency)](#2026-02-28-benchmark-assessment-overhaul-quality--stability--efficiency)
 - [2026-02-27: non-SPD `p=1` coupled renormalization policy (`renorm_every`)](#2026-02-27-non-spd-p1-coupled-renormalization-policy-renorm_every)
 - [2026-02-27: non-SPD `p=1` early safety metric policy (`diag` vs `fro`)](#2026-02-27-non-spd-p1-early-safety-metric-policy-diag-vs-fro)
@@ -33,6 +34,20 @@ This document tracks architectural and policy decisions made based on empirical 
 - [2026-02-27: Block-Jacobi preconditioning for p=1](#2026-02-27-block-jacobi-preconditioning-for-p1)
 - [2026-02-27: lambda_min power iteration estimation](#2026-02-27-lambda_min-power-iteration-estimation)
 - [2026-02-27: Matrix-Free Chebyshev Apply for Gram Matrices](#2026-02-27-matrix-free-chebyshev-apply-for-gram-matrices)
+
+---
+
+## 2026-02-28: SPD `p=1` Torch baseline choice (`linalg.solve` vs `cholesky`)
+
+Decision:
+- Standardize `Torch-Solve` for SPD `p=1` to use Cholesky decomposition (`torch.linalg.cholesky` + `torch.cholesky_solve`).
+- Use `torch.linalg.solve` only for non-SPD `p=1` benchmarks.
+
+Why:
+- Direct A/B testing on 2026-02-28 confirmed that Cholesky is significantly faster than the general `linalg.solve` for SPD matrices on the target hardware.
+- Performance win: `~2x` speedup at 1024x1024 (3.6ms vs 6.8ms).
+- Accuracy: Cholesky often showed lower relative error compared to the general LU-based solver in `bf16`.
+- To provide a "strong baseline" for iterative method comparison, we use the most efficient standard Torch path available for the matrix structure.
 
 ---
 
