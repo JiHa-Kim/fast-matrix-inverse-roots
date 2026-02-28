@@ -132,8 +132,8 @@ def _build_markdown(
         [
             "## Column Definitions",
             "",
-            "- **Min Î» / Max Î»**: Minimum and maximum eigenvalues of the current iterate.",
-            "- **Ï(I-Y)**: Spectral radius of the residual matrix, $\\rho(I - Y) = \\max_i |1 - \\lambda_i|$. Measures overall closeness to identity.",
+            "- **Min eig / Max eig**: Minimum and maximum eigenvalues of the current iterate.",
+            "- **rho(I-Y)**: Spectral radius of the residual matrix, $\\rho(I - Y) = \\max_i |1 - \\lambda_i|$. Measures overall closeness to identity.",
             "- **log(M/m)**: Log-width of the spectral interval, $\\log(\\lambda_{\\max}/\\lambda_{\\min})$. Primary indicator of iteration progress for coupled methods.",
             "- **C90% / C99%**: Fraction of eigenvalues clustered within 10% and 1% of identity (1.0).",
             "",

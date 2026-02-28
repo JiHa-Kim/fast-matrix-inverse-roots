@@ -85,7 +85,7 @@ def analyze_spectral_convergence(Y: torch.Tensor, step: int) -> SpectralStepStat
 def format_spectral_report(stats_list: List[SpectralStepStats]) -> str:
     """Format spectral stats into a markdown table."""
     lines = [
-        "| Step | Min λ | Max λ | ρ(I-Y) | log(M/m) | C90% | C99% |",
+        "| Step | Min eig | Max eig | rho(I-Y) | log(M/m) | C90% | C99% |",
         "|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for s in stats_list:
