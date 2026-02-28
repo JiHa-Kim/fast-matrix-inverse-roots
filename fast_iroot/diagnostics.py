@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List
 
 import torch
 
@@ -19,13 +19,11 @@ class SpectralStepStats:
 
 
 @torch.no_grad()
-def analyze_spectral_convergence(
-    Y: torch.Tensor, step: int
-) -> SpectralStepStats:
+def analyze_spectral_convergence(Y: torch.Tensor, step: int) -> SpectralStepStats:
     """Analyze the eigenvalues of the iteration matrix Y."""
     # Move to CPU and double for accurate eigenvalue decomposition
     Y_f64 = Y.detach().cpu().double()
-    
+
     # We assume Y is diagonalizable and ideally has real eigenvalues (for SPD A)
     # If Y is not symmetric (due to drift), we use eigvals()
     try:
@@ -35,16 +33,22 @@ def analyze_spectral_convergence(
     except RuntimeError:
         # Fallback for corner cases
         return SpectralStepStats(
-            step=step, min_eig=0, max_eig=0, mean_eig=0, std_eig=0,
-            rho_residual=1.0, clustering_90=0, clustering_99=0
+            step=step,
+            min_eig=0,
+            max_eig=0,
+            mean_eig=0,
+            std_eig=0,
+            rho_residual=1.0,
+            clustering_90=0,
+            clustering_99=0,
         )
 
     abs_diff = torch.abs(1.0 - eigs)
     rho = float(abs_diff.max().item())
-    
+
     c90 = float((abs_diff <= 0.1).float().mean().item())
     c99 = float((abs_diff <= 0.01).float().mean().item())
-    
+
     return SpectralStepStats(
         step=step,
         min_eig=float(eigs.min().item()),
