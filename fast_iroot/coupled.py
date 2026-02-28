@@ -578,7 +578,7 @@ def inverse_solve_pe_quadratic_coupled(
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
     nonspd_safe_early_y_tol: Optional[float] = None,
-    nonspd_safe_early_metric: str = "fro",
+    nonspd_safe_early_metric: str = "diag",
     renorm_every: int = 0,
     renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:

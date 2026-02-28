@@ -6,6 +6,7 @@ This document tracks architectural and policy decisions made based on empirical 
 
 - [2026-02-28: Benchmark assessment overhaul (quality + stability + efficiency)](#2026-02-28-benchmark-assessment-overhaul-quality--stability--efficiency)
 - [2026-02-27: non-SPD `p=1` coupled renormalization policy (`renorm_every`)](#2026-02-27-non-spd-p1-coupled-renormalization-policy-renorm_every)
+- [2026-02-27: non-SPD `p=1` early safety metric policy (`diag` vs `fro`)](#2026-02-27-non-spd-p1-early-safety-metric-policy-diag-vs-fro)
 - [2026-02-27: non-SPD `p=1` monotone residual damping safeguard](#2026-02-27-non-spd-p1-monotone-residual-damping-safeguard)
 - [2026-02-27: non-SPD `p=1` affine-only schedule policy](#2026-02-27-non-spd-p1-affine-only-schedule-policy)
 - [2026-02-27: non-SPD `p=1` freeze-then-refine (PE -> NSRC) policy](#2026-02-27-non-spd-p1-freeze-then-refine-pe---nsrc-policy)
@@ -84,6 +85,30 @@ Key results (`benchmark_results/runs/2026_02_27/225808_ab_nonspd_p1_renorm_step1
 Conclusion:
 - This is not a strict win and is rejected as default policy.
 - Default benchmark setting is reverted to `--renorm-every 0`; optional knob remains for future targeted experiments.
+
+---
+
+## 2026-02-27: non-SPD `p=1` early safety metric policy (`diag` vs `fro`)
+
+Decision:
+- Reject switching default early safety metric from `diag` to `fro`.
+- Keep `fro` available as an opt-in experiment knob.
+- Keep default as `diag`.
+
+Why tested:
+- We added configurable early fallback proxy metric for non-SPD `p=1` safety gate.
+- This run checks whether `fro` gives a strict win over `diag` on maintained cells.
+
+Benchmark arguments:
+- `uv run python benchmarks/run_benchmarks.py --only "non-SPD p=1 k<n" --trials 5 --timing-reps 5 --timing-warmup-reps 2 --ab-extra-args-a="--methods PE-Quad-Coupled-Apply --nonspd-safe-early-metric diag" --ab-extra-args-b="--methods PE-Quad-Coupled-Apply --nonspd-safe-early-metric fro" --ab-label-a early_diag --ab-label-b early_fro --run-name ab_nonspd_p1_earlymetric_step14 --ab-match-on-method --ab-interleave --integrity-checksums`
+
+Key results (`benchmark_results/runs/2026_02_27/230303_ab_nonspd_p1_earlymetric_step14/solver_benchmarks_ab.md`):
+- Speed: `early_fro` faster in `4/12` cells only (`B faster = 4/12`).
+- Quality/stability: parity in all matched rows (`relerr`, `relerr_p90`, `fail_rate` all equal in this run).
+- Composite assessment: `early_fro` improved score in `5/12` cells.
+
+Conclusion:
+- No strict win; keep default `diag` and retain `fro` as optional tuning mode.
 
 ---
 

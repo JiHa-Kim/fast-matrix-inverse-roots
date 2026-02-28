@@ -14,7 +14,6 @@
   - Outcome: rejected as default (`renorm_on` slower in all matched cells; mixed quality; better score in 1/12).
 
 ## Next
-- [ ] A/B `nonspd_safe_early_metric`: `diag` vs `fro` on maintained non-SPD `p=1 k<n`.
 - [ ] Add per-case assessment-score deltas to decision summaries.
 - [ ] Continue algorithm iteration on adaptive coefficient policies with fairness-controlled A/B.
 
@@ -24,3 +23,6 @@
 - [x] A/B interleaving support (`--ab-interleave`) for fairer comparisons.
 - [x] Coupled renorm knobs + safer non-SPD early gate metric wiring.
 - [x] Regression fix: `fro` early gate works when adaptive mode is disabled.
+- [x] Decision-grade A/B for early safety metric (`diag` vs `fro`) on maintained non-SPD `p=1` cells.
+  - Run: `benchmark_results/runs/2026_02_27/230303_ab_nonspd_p1_earlymetric_step14/`
+  - Outcome: no strict win for `fro`; keep default `diag`.

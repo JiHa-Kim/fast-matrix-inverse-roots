@@ -499,7 +499,7 @@ def main():
     p.add_argument(
         "--nonspd-safe-early-metric",
         type=str,
-        default="fro",
+        default="diag",
         choices=["diag", "fro"],
         help=(
             "Proxy metric for early non-SPD fallback gate: "
