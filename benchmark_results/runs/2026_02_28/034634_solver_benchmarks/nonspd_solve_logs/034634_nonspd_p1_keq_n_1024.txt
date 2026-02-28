@@ -1,0 +1,28 @@
+[coeff] using tuned(l_target=0.05, seed=0), safety=1.0, no_final_safety=False (PE steps = 4)
+
+== Non-SPD Size 1024x1024 | RHS 1024x1024 | dtype=torch.bfloat16 ==
+p=1 | precond=row-norm | precond_ruiz_iters=2 | compile=False | timing_reps=10 | timing_warmup_reps=2 | methods=PE-Quad-Coupled-Apply,Inverse-Newton-Coupled-Apply,Torch-Solve | adapt(resid_tol=1.0, growth_tol=1.02, check_every=1, safe_fallback_tol=0.01, safe_early_y_tol=0.8, safe_early_metric=diag, renorm_every=0)
+
+-- case gaussian_shifted --
+PE-Quad-Coupled-Apply           2.956 ms (pre 0.167 + iter 2.789) | mem   90MB | relerr vs solve: 5.497e-03 | resid 5.973e-03 | relerr_p90 5.540e-03 | fail_rate 0.0% | q_per_ms 8.104e-01 | bad 0
+Inverse-Newton-Coupled-Apply    1.907 ms (pre 0.167 + iter 1.740) | mem   92MB | relerr vs solve: 6.649e-01 | resid 6.280e-01 | relerr_p90 6.651e-01 | fail_rate 100.0% | q_per_ms 1.019e-01 | bad 10
+Torch-Solve                     6.209 ms (pre 0.167 + iter 6.042) | mem   96MB | relerr vs solve: 9.804e-05 | resid 1.018e-04 | relerr_p90 9.818e-05 | fail_rate 0.0% | q_per_ms 6.635e-01 | bad 0
+BEST finite: PE-Quad-Coupled-Apply @ 2.956 ms, relerr=5.497e-03
+
+-- case nonnormal_upper --
+PE-Quad-Coupled-Apply           2.582 ms (pre 0.176 + iter 2.405) | mem   90MB | relerr vs solve: 4.938e-03 | resid 5.175e-03 | relerr_p90 5.958e-03 | fail_rate 0.0% | q_per_ms 9.589e-01 | bad 0
+Inverse-Newton-Coupled-Apply    1.922 ms (pre 0.176 + iter 1.746) | mem   92MB | relerr vs solve: 6.530e-01 | resid 6.242e-01 | relerr_p90 6.535e-01 | fail_rate 100.0% | q_per_ms 1.060e-01 | bad 10
+Torch-Solve                     6.264 ms (pre 0.176 + iter 6.088) | mem   96MB | relerr vs solve: 9.095e-05 | resid 9.266e-05 | relerr_p90 9.259e-05 | fail_rate 0.0% | q_per_ms 6.638e-01 | bad 0
+BEST finite: PE-Quad-Coupled-Apply @ 2.582 ms, relerr=4.938e-03
+
+-- case similarity_posspec --
+PE-Quad-Coupled-Apply           5.927 ms (pre 0.193 + iter 5.735) | mem   98MB | relerr vs solve: 4.509e-03 | resid 5.765e-03 | relerr_p90 7.608e-03 | fail_rate 0.0% | q_per_ms 4.091e-01 | bad 0
+Inverse-Newton-Coupled-Apply    1.969 ms (pre 0.193 + iter 1.776) | mem   92MB | relerr vs solve: 7.459e-01 | resid 6.441e-01 | relerr_p90 7.463e-01 | fail_rate 100.0% | q_per_ms 7.170e-02 | bad 10
+Torch-Solve                     6.338 ms (pre 0.193 + iter 6.145) | mem   96MB | relerr vs solve: 1.212e-04 | resid 1.376e-04 | relerr_p90 1.213e-04 | fail_rate 0.0% | q_per_ms 6.373e-01 | bad 0
+BEST finite: PE-Quad-Coupled-Apply @ 5.927 ms, relerr=4.509e-03
+
+-- case similarity_posspec_hard --
+PE-Quad-Coupled-Apply           7.376 ms (pre 0.308 + iter 7.068) | mem  106MB | relerr vs solve: 1.186e-02 | resid 5.537e+00 | relerr_p90 1.276e-02 | fail_rate 100.0% | q_per_ms 2.725e-01 | bad 10
+Inverse-Newton-Coupled-Apply    2.074 ms (pre 0.308 + iter 1.766) | mem   92MB | relerr vs solve: 1.000e+00 | resid 1.099e+00 | relerr_p90 1.000e+00 | fail_rate 100.0% | q_per_ms 6.157e-07 | bad 10
+Torch-Solve                     6.473 ms (pre 0.308 + iter 6.165) | mem   96MB | relerr vs solve: 1.175e-02 | resid 1.331e+00 | relerr_p90 1.265e-02 | fail_rate 100.0% | q_per_ms 3.131e-01 | bad 10
+BEST finite: none
