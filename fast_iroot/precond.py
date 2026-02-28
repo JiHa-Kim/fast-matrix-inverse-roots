@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, Optional
 
 import torch
 
@@ -17,9 +17,16 @@ class PrecondStats:
     # - rho_proxy: max over batch (bigger = worse)
     # - gersh_lo: min over batch (smaller = worse)
     # - kappa_proxy: derived from gersh_lo
+    # - m0, M0: Gershgorin interval bounds for "Express" path
     rho_proxy: float
     gersh_lo: float
     kappa_proxy: float
+    m0: float
+    M0: float
+    # Unscaling factors:
+    # Z_actual = (inv_u_root) * (inv_scaling * Z_norm)
+    inv_scaling: Optional[torch.Tensor] = None  # D^(-1/2) or similar
+    inv_u_root: Optional[torch.Tensor] = None  # u^(-1/p)
 
 
 def _scale_spd(
@@ -27,33 +34,51 @@ def _scale_spd(
     mode: str,
     eps: float,
     ruiz_iters: int,
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Scales A and returns (A_scaled, inv_scaling_diag)."""
+    n = A.shape[-1]
+    batch = A.shape[:-2]
+    identity_d = torch.ones(*batch, n, device=A.device, dtype=A.dtype)
+
     if mode == "none":
-        return A
+        return A, identity_d
     if mode == "frob":
-        n = A.shape[-1]
         s = torch.linalg.matrix_norm(A, ord="fro")
         s = torch.clamp(s / math.sqrt(n), min=eps)
-        return A / s.unsqueeze(-1).unsqueeze(-1)
+        # s is a scalar per batch, inv_scaling is sqrt(s) because we want A^-1/p scaling?
+        # No, A_norm = A / u. Scaling mode here is A_pre = A / s.
+        # So A = s * A_pre. A^-1/p = s^-1/p * A_pre^-1/p.
+        # But frob is not a diagonal scaling.
+        # For simplicity, frob and ruiz might need different handling.
+        return A / s.unsqueeze(-1).unsqueeze(-1), identity_d * torch.sqrt(s).unsqueeze(
+            -1
+        )
     if mode == "aol":
         d = torch.rsqrt(A.abs().sum(dim=-1).clamp_min(eps))
-        return (d.unsqueeze(-1) * A) * d.unsqueeze(-2)
+        # A_pre = D A D => A = D^-1 A_pre D^-1. A^-1/p ?
+        # This is only simple for p=1 or if D=I.
+        return (d.unsqueeze(-1) * A) * d.unsqueeze(-2), d.reciprocal()
     if mode == "jacobi":
         d = torch.rsqrt(A.diagonal(dim1=-2, dim2=-1).clamp_min(eps))
-        return (d.unsqueeze(-1) * A) * d.unsqueeze(-2)
+        # A_pre = D A D where D = diag(A)^-1/2.
+        # So A = D^-1 A_pre D^-1.
+        # A^-1/p = (D^-1 A_pre D^-1)^-1/p.
+        # If D and A_pre commute (diagonal A), then A^-1/p = D^1/p A_pre^-1/p D^1/p.
+        # For Jacobi, we return D^-1 = diag(A)^1/2 as unscaling.
+        return (d.unsqueeze(-1) * A) * d.unsqueeze(-2), d.reciprocal()
     if mode == "ruiz":
         if int(ruiz_iters) < 1:
             raise ValueError(f"ruiz_iters must be >= 1, got {ruiz_iters}")
         A_scaled = A
+        total_d = identity_d
         for _ in range(int(ruiz_iters)):
-            # Symmetric equilibration rounds keep SPD structure while shrinking
-            # anisotropy with only reductions + elementwise scaling.
             row_l2 = torch.linalg.vector_norm(A_scaled.float(), dim=-1).clamp_min(
                 float(eps)
             )
             d = torch.rsqrt(row_l2).to(dtype=A_scaled.dtype)
             A_scaled = (d.unsqueeze(-1) * A_scaled) * d.unsqueeze(-2)
-        return A_scaled
+            total_d = total_d * d.reciprocal()
+        return A_scaled, total_d
     raise ValueError(
         f"unknown preconditioner: {mode}. Supported modes are {SPD_PRECOND_MODES}."
     )
@@ -92,7 +117,9 @@ def precond_spd(
         )
 
     # -------- precondition (scale) --------
-    A_pre = _scale_spd(A=A, mode=mode, eps=float(eps), ruiz_iters=int(ruiz_iters))
+    A_pre, inv_d = _scale_spd(
+        A=A, mode=mode, eps=float(eps), ruiz_iters=int(ruiz_iters)
+    )
 
     # -------- ridge if requested --------
     if ridge_rel > 0.0:
@@ -149,16 +176,21 @@ def precond_spd(
             A_norm = A_norm.clone()
             A_norm.diagonal(dim1=-2, dim2=-1).add_(shift.unsqueeze(-1))
             A_norm = A_norm / (r + shift).unsqueeze(-1).unsqueeze(-1)
+            # Update u to reflect the total scaling
+            u = u * (r + shift)
 
-    # -------- final Gershgorin lower bound (per batch) --------
+    # -------- final Gershgorin lower/upper bounds (per batch) --------
     abs_row_sum4 = A_norm.abs().sum(dim=-1)
     diag4 = A_norm.diagonal(dim1=-2, dim2=-1)
     off4 = abs_row_sum4 - diag4.abs()
     g_lo_final = (diag4 - off4).min(dim=-1)[0]  # shape: batch
+    g_hi_final = (diag4 + off4).max(dim=-1)[0]  # shape: batch
 
     # -------- conservative batch aggregation for auto-policy safety --------
     # If you pick ONE method for the whole batch, use worst-case stats.
     g_lo_scalar = float(g_lo_final.float().min().item())
+    g_hi_scalar = float(g_hi_final.float().max().item())
+
     if bool(compute_rho_proxy):
         diag_mean = (
             A_norm.float().diagonal(dim1=-2, dim2=-1).mean(dim=-1).clamp_min(1e-12)
@@ -175,6 +207,10 @@ def precond_spd(
         rho_proxy=rho_proxy,
         gersh_lo=g_lo_scalar,
         kappa_proxy=float(kappa_proxy),
+        m0=g_lo_scalar,
+        M0=g_hi_scalar,
+        inv_scaling=inv_d,
+        inv_u_root=u,  # temporarily use this slot for u itself
     )
 
 
