@@ -1,38 +1,44 @@
 # Spectral Convergence Benchmark
 
-Generated: 2026-02-28T00:41:49
+Generated: 2026-02-28T01:48:57
 
 ## Run Configuration
 
-- n: `128`
-- p: `2`
-- trials: `5`
-- l_target: `0.05`
-- dtype: `fp64`
-- device: `cuda`
-- seed: `1234`
 - coeff_mode: `precomputed`
-- coeff_seed: `0`
-- coeff_safety: `1.0`
 - coeff_no_final_safety: `False`
+- coeff_safety: `1.0`
+- coeff_seed: `0`
+- device: `cuda`
+- dtype: `fp64`
+- integrity_checksums: `True`
+- json_out: ``
+- l_target: `0.05`
+- manifest_out: ``
+- n: `1024`
+- out: ``
+- p: `2`
 - pe_steps: `4`
+- prod: `True`
+- run_name: `spectral_convergence`
+- seed: `1234`
+- trials: `10`
 
 ## Coefficients (PE-Quad)
 
 | Step | a | b | c |
-|---:|---:|---:|---:|
-| 0 | 3.902148485 | -7.590706825 | 4.860831261 |
-| 1 | 1.937780857 | -1.349293113 | 0.410987377 |
-| 2 | 1.875123501 | -1.250201106 | 0.375077546 |
-| 3 | 1.874953985 | -1.249907970 | 0.374954015 |
+| ---: | ---: | ---: | ---: |
+| 0 | 3.9021 | -7.5907 | 4.8608 |
+| 1 | 1.9378 | -1.3493 | 0.4110 |
+| 2 | 1.8751 | -1.2502 | 0.3751 |
+| 3 | 1.8750 | -1.2499 | 0.3750 |
 
 ## PE-Quad (Worst Case Over Trials)
 
 | Step | Min λ | Max λ | Mean λ | ρ(I-Y) | Cluster 90% | Cluster 99% |
 |---:|---:|---:|---:|---:|---:|---:|
-| 0 | 0.0500 | 1.0000 | 0.5250 | 9.50e-01 | 10.9% | 1.6% |
-| 1 | 0.6247 | 1.3742 | 0.9661 | 3.75e-01 | 18.8% | 1.6% |
-| 2 | 0.9843 | 1.0157 | 1.0000 | 1.57e-02 | 100.0% | 98.4% |
+| 0 | 0.0500 | 1.0000 | 0.5250 | 9.50e-01 | 10.5% | 1.1% |
+| 1 | 0.6247 | 1.3742 | 0.9659 | 3.75e-01 | 19.0% | 2.0% |
+| 2 | 0.9843 | 1.0157 | 1.0001 | 1.57e-02 | 100.0% | 99.2% |
 | 3 | 1.0000 | 1.0000 | 1.0000 | 1.06e-06 | 100.0% | 100.0% |
 | 4 | 1.0000 | 1.0000 | 1.0000 | 5.96e-08 | 100.0% | 100.0% |
 
@@ -40,15 +46,15 @@ Generated: 2026-02-28T00:41:49
 
 | Step | Min λ | Max λ | Mean λ | ρ(I-Y) | Cluster 90% | Cluster 99% |
 |---:|---:|---:|---:|---:|---:|---:|
-| 0 | 0.0500 | 1.0000 | 0.5250 | 9.50e-01 | 10.9% | 1.6% |
-| 1 | 0.1088 | 1.0000 | 0.7195 | 8.91e-01 | 36.7% | 12.5% |
-| 2 | 0.2273 | 1.0000 | 0.8650 | 7.73e-01 | 64.8% | 39.1% |
-| 3 | 0.4369 | 1.0000 | 0.9493 | 5.63e-01 | 84.4% | 66.4% |
-| 4 | 0.7176 | 1.0000 | 0.9870 | 2.82e-01 | 95.3% | 85.9% |
+| 0 | 0.0500 | 1.0000 | 0.5250 | 9.50e-01 | 10.5% | 1.1% |
+| 1 | 0.1088 | 1.0000 | 0.7206 | 8.91e-01 | 36.4% | 12.0% |
+| 2 | 0.2273 | 1.0000 | 0.8667 | 7.73e-01 | 65.0% | 38.7% |
+| 3 | 0.4369 | 1.0000 | 0.9509 | 5.63e-01 | 84.9% | 66.9% |
+| 4 | 0.7176 | 1.0000 | 0.9880 | 2.82e-01 | 95.6% | 85.8% |
 
 ## Reproducibility
 
 This report is paired with:
-- `spectral_convergence.json` (raw per-step rows)
-- `spectral_manifest.json` (run metadata + reproducibility fingerprint)
+- `benchmark_results/runs/2026_02_28/014747_spectral_convergence/spectral_convergence.json` (raw per-step rows)
+- `benchmark_results/runs/2026_02_28/014747_spectral_convergence/spectral_manifest.json` (run metadata + reproducibility fingerprint)
 - `.sha256` sidecars for all output files
