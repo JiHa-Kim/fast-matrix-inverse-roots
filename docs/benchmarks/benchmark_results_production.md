@@ -1,164 +1,571 @@
 # Solver Benchmark Report
 
-Generated: 2026-02-28T04:34:51
+Generated: 2026-02-28T07:24:54
 
 ## Run Configuration
 
-- ab_baseline_rows_in: ``
+- ab_baseline_latest: `False`
+- ab_baseline_rows_in: `benchmark_results/baseline/baseline_solver.json`
 - ab_extra_args_a: ``
 - ab_extra_args_b: ``
 - ab_interleave: `True`
-- ab_label_a: `A`
+- ab_label_a: `Baseline`
 - ab_label_b: `B`
 - ab_match_on_method: `True`
-- ab_out: `D:\GitHub\JiHa-Kim\fast-matrix-inverse-roots\benchmark_results\runs\2026_02_28\042732_solver_benchmarks\solver_benchmarks_ab.md`
+- ab_out: `benchmark_results/runs/2026_02_28/072454_solver_benchmarks/solver_benchmarks_ab.md`
+- baseline: `True`
+- baseline_dir: `benchmark_results/baseline`
 - baseline_rows_out: ``
 - dtype: `bf16`
 - extra_args: ``
+- from_baseline: `True`
 - integrity_checksums: `True`
-- manifest_out: `D:\GitHub\JiHa-Kim\fast-matrix-inverse-roots\benchmark_results\runs\2026_02_28\042732_solver_benchmarks\run_manifest.json`
+- kinds: ``
+- manifest_out: `benchmark_results/runs/2026_02_28/072454_solver_benchmarks/run_manifest.json`
 - markdown: `True`
+- methods: ``
 - only: ``
-- out: `D:\GitHub\JiHa-Kim\fast-matrix-inverse-roots\docs\benchmarks\benchmark_results_production.md`
+- out: `docs/benchmarks/benchmark_results_production.md`
+- p_vals: ``
 - prod: `True`
 - run_name: `solver_benchmarks`
+- sizes: ``
 - timing_reps: `10`
 - timing_warmup_reps: `2`
 - trials: `10`
-
-Assessment metrics:
-- `relerr`: median relative error across trials.
-- `relerr_p90`: 90th percentile relative error (tail quality).
-- `fail_rate`: fraction of failed/non-finite trials.
-- `q_per_ms`: `max(0, -log10(relerr)) / iter_ms`.
-- assessment score: `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`.
-
-## Non-Normal (p=1)
-
-| Problem Scenario | Fastest Method | Most Accurate | Overall Winner |
-|:---|:---|:---|:---|
-| **256** / **256**<br>`gaussian_shifted` | T-Linalg-Solve<br>(1.19ms) | T-Linalg-Solve<br>(3.4e-07) | **T-Linalg-Solve** |
-| **256** / **256**<br>`nonnormal_upper` | T-Linalg-Solve<br>(1.05ms) | T-Linalg-Solve<br>(8.4e-08) | **T-Linalg-Solve** |
-| **256** / **256**<br>`similarity_posspec` | T-Linalg-Solve<br>(1.15ms) | T-Linalg-Solve<br>(4.6e-07) | **T-Linalg-Solve** |
-| **256** / **256**<br>`similarity_posspec_hard` | T-Linalg-Solve<br>(1.23ms) | T-Linalg-Solve<br>(4.4e-05) | **T-Linalg-Solve** |
-| **512** / **512**<br>`gaussian_shifted` | Inverse-Newton-Coupled<br>(1.18ms) | T-Linalg-Solve<br>(7.5e-05) | **T-Linalg-Solve** |
-| **512** / **512**<br>`nonnormal_upper` | Inverse-Newton-Coupled<br>(1.14ms) | T-Linalg-Solve<br>(6.6e-05) | **T-Linalg-Solve** |
-| **512** / **512**<br>`similarity_posspec` | Inverse-Newton-Coupled<br>(1.12ms) | T-Linalg-Solve<br>(9.1e-05) | **T-Linalg-Solve** |
-| **512** / **512**<br>`similarity_posspec_hard` | Inverse-Newton-Coupled<br>(1.08ms) | T-Linalg-Solve<br>(4.4e-03) | **PE-Quad-Coupled** |
-| **1024** / **1024**<br>`gaussian_shifted` | Inverse-Newton-Coupled<br>(2.03ms) | T-Linalg-Solve<br>(9.8e-05) | **T-Linalg-Solve** |
-| **1024** / **1024**<br>`nonnormal_upper` | Inverse-Newton-Coupled<br>(2.10ms) | T-Linalg-Solve<br>(9.1e-05) | **T-Linalg-Solve** |
-| **1024** / **1024**<br>`similarity_posspec` | Inverse-Newton-Coupled<br>(2.02ms) | T-Linalg-Solve<br>(1.2e-04) | **T-Linalg-Solve** |
-| **1024** / **1024**<br>`similarity_posspec_hard` | Inverse-Newton-Coupled<br>(2.07ms) | T-Linalg-Solve<br>(1.2e-02) | **PE-Quad-Coupled** |
-
-## SPD (p=1)
-
-| Problem Scenario | Fastest Method | Most Accurate | Overall Winner |
-|:---|:---|:---|:---|
-| **256** / **256**<br>`gaussian_spd` | T-Cholesky-Solve-R<br>(2.64ms) | T-Cholesky-Solve<br>(1.6e-07) | **T-Cholesky-Solve-R** |
-| **256** / **256**<br>`illcond_1e6` | T-Cholesky-Solve-R<br>(2.20ms) | T-Cholesky-Solve<br>(1.6e-07) | **T-Cholesky-Solve-R** |
-| **512** / **512**<br>`gaussian_spd` | T-Cholesky-Solve-R<br>(2.52ms) | T-Cholesky-Solve<br>(1.7e-07) | **T-Cholesky-Solve-R** |
-| **512** / **512**<br>`illcond_1e6` | T-Cholesky-Solve-R<br>(2.31ms) | T-Cholesky-Solve<br>(1.6e-07) | **T-Cholesky-Solve-R** |
-| **1024** / **1**<br>`gaussian_spd` | T-Cholesky-Solve-R<br>(1.84ms) | T-Cholesky-Solve<br>(3.5e-07) | **T-Cholesky-Solve-R** |
-| **1024** / **1**<br>`illcond_1e6` | T-Cholesky-Solve-R<br>(1.64ms) | T-Cholesky-Solve<br>(3.6e-07) | **T-Cholesky-Solve-R** |
-| **1024** / **16**<br>`gaussian_spd` | T-Cholesky-Solve-R<br>(2.07ms) | T-Cholesky-Solve<br>(1.7e-07) | **T-Cholesky-Solve-R** |
-| **1024** / **16**<br>`illcond_1e6` | T-Cholesky-Solve-R<br>(2.16ms) | T-Cholesky-Solve<br>(1.7e-07) | **T-Cholesky-Solve-R** |
-| **1024** / **64**<br>`gaussian_spd` | T-Cholesky-Solve-R<br>(2.67ms) | T-Cholesky-Solve<br>(1.7e-07) | **T-Cholesky-Solve-R** |
-| **1024** / **64**<br>`illcond_1e6` | T-Cholesky-Solve-R<br>(2.69ms) | T-Cholesky-Solve<br>(1.7e-07) | **T-Cholesky-Solve-R** |
-| **1024** / **1024**<br>`gaussian_spd` | Inverse-Newton-Coupled<br>(3.78ms) | T-Cholesky-Solve<br>(1.9e-07) | **T-Cholesky-Solve-R** |
-| **1024** / **1024**<br>`illcond_1e6` | PE-Quad-Coupled<br>(4.07ms) | T-Cholesky-Solve<br>(1.9e-07) | **T-Cholesky-Solve-R** |
-
-## SPD (p=2)
-
-| Problem Scenario | Fastest Method | Most Accurate | Overall Winner |
-|:---|:---|:---|:---|
-| **256** / **256**<br>`gaussian_spd` | Chebyshev<br>(2.39ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **256** / **256**<br>`illcond_1e6` | Chebyshev<br>(2.49ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **512** / **512**<br>`gaussian_spd` | PE-Quad-Coupled<br>(2.81ms) | T-Linalg-Solve<br>(3.8e-04) | **PE-Quad-Coupled** |
-| **512** / **512**<br>`illcond_1e6` | PE-Quad-Coupled<br>(3.07ms) | T-Linalg-Solve<br>(3.9e-04) | **PE-Quad-Coupled** |
-| **1024** / **1**<br>`gaussian_spd` | Chebyshev<br>(2.19ms) | T-Linalg-Solve<br>(1.7e-06) | **Chebyshev** |
-| **1024** / **1**<br>`illcond_1e6` | Chebyshev<br>(2.27ms) | T-Linalg-Solve<br>(1.4e-06) | **Chebyshev** |
-| **1024** / **16**<br>`gaussian_spd` | Chebyshev<br>(2.27ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **1024** / **16**<br>`illcond_1e6` | Chebyshev<br>(2.31ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **1024** / **64**<br>`gaussian_spd` | Chebyshev<br>(2.38ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **1024** / **64**<br>`illcond_1e6` | Chebyshev<br>(2.42ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **1024** / **1024**<br>`gaussian_spd` | PE-Quad-Coupled<br>(4.37ms) | T-Linalg-Solve<br>(3.6e-04) | **PE-Quad-Coupled** |
-| **1024** / **1024**<br>`illcond_1e6` | Inverse-Newton-Coupled<br>(4.52ms) | T-Linalg-Solve<br>(3.6e-04) | **PE-Quad-Coupled** |
-
-## SPD (p=4)
-
-| Problem Scenario | Fastest Method | Most Accurate | Overall Winner |
-|:---|:---|:---|:---|
-| **256** / **256**<br>`gaussian_spd` | Chebyshev<br>(3.00ms) | T-Linalg-Solve<br>(3.7e-04) | **Chebyshev** |
-| **256** / **256**<br>`illcond_1e6` | Chebyshev<br>(2.46ms) | T-Linalg-Solve<br>(3.7e-04) | **Chebyshev** |
-| **512** / **512**<br>`gaussian_spd` | PE-Quad-Coupled<br>(3.19ms) | T-Linalg-Solve<br>(4.0e-04) | **Chebyshev** |
-| **512** / **512**<br>`illcond_1e6` | PE-Quad-Coupled<br>(2.82ms) | T-Linalg-Solve<br>(4.2e-04) | **Chebyshev** |
-| **1024** / **1**<br>`gaussian_spd` | Chebyshev<br>(2.33ms) | T-Linalg-Solve<br>(1.7e-06) | **Chebyshev** |
-| **1024** / **1**<br>`illcond_1e6` | Chebyshev<br>(2.16ms) | T-Linalg-Solve<br>(1.4e-06) | **Chebyshev** |
-| **1024** / **16**<br>`gaussian_spd` | Chebyshev<br>(2.45ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **1024** / **16**<br>`illcond_1e6` | Chebyshev<br>(2.45ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **1024** / **64**<br>`gaussian_spd` | Chebyshev<br>(2.67ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **1024** / **64**<br>`illcond_1e6` | Chebyshev<br>(2.60ms) | T-Linalg-Solve<br>(3.6e-04) | **Chebyshev** |
-| **1024** / **1024**<br>`gaussian_spd` | PE-Quad-Coupled<br>(5.35ms) | T-Linalg-Solve<br>(3.6e-04) | **PE-Quad-Coupled** |
-| **1024** / **1024**<br>`illcond_1e6` | PE-Quad-Coupled<br>(5.17ms) | T-Linalg-Solve<br>(3.6e-04) | **PE-Quad-Coupled** |
-
-## Legend
-
-- **Scenario**: Matrix size (n) / RHS dimension (k) / Problem case.
-- **Fastest**: Method with lowest execution time.
-- **Most Accurate**: Method with lowest median relative error.
-- **Overall Winner**: Optimal balance of speed and quality (highest assessment score).
+- update_baseline: `False`
 
 ---
 
-### Detailed Assessment Leaders
+### Legend
+- **Bold values** indicate the best performer for that metric in the scenario.
+- `total_ms`: Total execution time including preprocessing.
+- `iter_ms`: Time spent in iterations.
+- `relerr`: Median relative error vs ground truth (for SPD) or reference solver (for Non-SPD).
+- `relerr_p90`: 90th percentile relative error (tail quality).
+- `resid`: Median residual error (||Ax - b|| / ||b||).
+- `resid_p90`: 90th percentile residual error.
+- `fail_rate`: Fraction of trials that were non-finite or failed quality checks.
+- `q_per_ms`: Quality (digits of precision, i.e., -log10(relerr)) per millisecond of compute.
 
-| kind | p | n | k | case | best_method | score | total_ms | relerr | resid | nf_rate | qf_rate | q_per_ms |
-|---|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
-| nonspd | 1 | 256 | 256 | gaussian_shifted | Torch-Linalg-Solve | 6.481e+00 | 1.188 | 3.407e-07 | 3.426e-07 | 0.0% | 0.0% | 6.822e+00 |
-| nonspd | 1 | 256 | 256 | nonnormal_upper | Torch-Linalg-Solve | 8.577e+00 | 1.049 | 8.427e-08 | 8.606e-08 | 0.0% | 0.0% | 8.622e+00 |
-| nonspd | 1 | 256 | 256 | similarity_posspec | Torch-Linalg-Solve | 6.491e+00 | 1.149 | 4.613e-07 | 4.653e-07 | 0.0% | 0.0% | 6.715e+00 |
-| nonspd | 1 | 256 | 256 | similarity_posspec_hard | Torch-Linalg-Solve | 2.309e+00 | 1.232 | 4.431e-05 | 3.721e-04 | 0.0% | 10.0% | 4.249e+00 |
-| nonspd | 1 | 512 | 512 | gaussian_shifted | Torch-Linalg-Solve | 1.440e+00 | 3.060 | 7.499e-05 | 7.819e-05 | 0.0% | 0.0% | 1.442e+00 |
-| nonspd | 1 | 512 | 512 | nonnormal_upper | Torch-Linalg-Solve | 1.445e+00 | 3.066 | 6.601e-05 | 6.773e-05 | 0.0% | 0.0% | 1.456e+00 |
-| nonspd | 1 | 512 | 512 | similarity_posspec | Torch-Linalg-Solve | 1.427e+00 | 2.978 | 9.087e-05 | 1.037e-04 | 0.0% | 0.0% | 1.431e+00 |
-| nonspd | 1 | 512 | 512 | similarity_posspec_hard | PE-Quad-Coupled-Apply | 0.000e+00 | 3.921 | 4.714e-03 | 4.179e+00 | 0.0% | 100.0% | 6.243e-01 |
-| nonspd | 1 | 1024 | 1024 | gaussian_shifted | Torch-Linalg-Solve | 6.516e-01 | 6.346 | 9.804e-05 | 1.018e-04 | 0.0% | 0.0% | 6.525e-01 |
-| nonspd | 1 | 1024 | 1024 | nonnormal_upper | Torch-Linalg-Solve | 6.460e-01 | 6.358 | 9.095e-05 | 9.266e-05 | 0.0% | 0.0% | 6.576e-01 |
-| nonspd | 1 | 1024 | 1024 | similarity_posspec | Torch-Linalg-Solve | 6.334e-01 | 6.353 | 1.212e-04 | 1.376e-04 | 0.0% | 0.0% | 6.339e-01 |
-| nonspd | 1 | 1024 | 1024 | similarity_posspec_hard | PE-Quad-Coupled-Apply | 0.000e+00 | 7.357 | 1.186e-02 | 5.537e+00 | 0.0% | 100.0% | 2.707e-01 |
-| spd | 1 | 256 | 256 | gaussian_spd | Torch-Cholesky-Solve-ReuseFactor | 3.043e+01 | 2.640 | 1.642e-07 | 1.201e-04 | 0.0% | 0.0% | 3.151e+01 |
-| spd | 1 | 256 | 256 | illcond_1e6 | Torch-Cholesky-Solve-ReuseFactor | 3.367e+01 | 2.199 | 1.647e-07 | 1.559e-04 | 0.0% | 0.0% | 3.506e+01 |
-| spd | 1 | 512 | 512 | gaussian_spd | Torch-Cholesky-Solve-ReuseFactor | 1.080e+01 | 2.523 | 1.663e-07 | 7.764e-05 | 0.0% | 0.0% | 1.124e+01 |
-| spd | 1 | 512 | 512 | illcond_1e6 | Torch-Cholesky-Solve-ReuseFactor | 1.162e+01 | 2.315 | 1.635e-07 | 1.156e-04 | 0.0% | 0.0% | 1.183e+01 |
-| spd | 1 | 1024 | 1 | gaussian_spd | Torch-Cholesky-Solve-ReuseFactor | 3.328e+01 | 1.837 | 3.513e-07 | 4.312e-05 | 0.0% | 0.0% | 3.445e+01 |
-| spd | 1 | 1024 | 1 | illcond_1e6 | Torch-Cholesky-Solve-ReuseFactor | 3.357e+01 | 1.639 | 3.573e-07 | 8.167e-05 | 0.0% | 0.0% | 3.439e+01 |
-| spd | 1 | 1024 | 16 | gaussian_spd | Torch-Cholesky-Solve-ReuseFactor | 1.211e+01 | 2.066 | 1.676e-07 | 4.333e-05 | 0.0% | 0.0% | 1.245e+01 |
-| spd | 1 | 1024 | 16 | illcond_1e6 | Torch-Cholesky-Solve-ReuseFactor | 1.222e+01 | 2.162 | 1.679e-07 | 8.223e-05 | 0.0% | 0.0% | 1.250e+01 |
-| spd | 1 | 1024 | 64 | gaussian_spd | Torch-Cholesky-Solve-ReuseFactor | 1.143e+01 | 2.667 | 1.677e-07 | 4.339e-05 | 0.0% | 0.0% | 1.166e+01 |
-| spd | 1 | 1024 | 64 | illcond_1e6 | Torch-Cholesky-Solve-ReuseFactor | 1.154e+01 | 2.686 | 1.681e-07 | 8.176e-05 | 0.0% | 0.0% | 1.176e+01 |
-| spd | 1 | 1024 | 1024 | gaussian_spd | Torch-Cholesky-Solve-ReuseFactor | 3.222e+00 | 3.872 | 1.891e-07 | 4.285e-05 | 0.0% | 0.0% | 3.261e+00 |
-| spd | 1 | 1024 | 1024 | illcond_1e6 | Torch-Cholesky-Solve-ReuseFactor | 3.200e+00 | 4.401 | 1.870e-07 | 8.165e-05 | 0.0% | 0.0% | 3.248e+00 |
-| spd | 2 | 256 | 256 | gaussian_spd | Chebyshev-Apply | 4.465e+00 | 2.389 | 2.828e-03 | 2.834e-03 | 0.0% | 0.0% | 4.632e+00 |
-| spd | 2 | 256 | 256 | illcond_1e6 | Chebyshev-Apply | 6.297e+00 | 2.490 | 2.682e-03 | 2.686e-03 | 0.0% | 0.0% | 6.379e+00 |
-| spd | 2 | 512 | 512 | gaussian_spd | PE-Quad-Coupled-Apply | 2.716e+00 | 2.810 | 2.936e-03 | 2.942e-03 | 0.0% | 0.0% | 2.727e+00 |
-| spd | 2 | 512 | 512 | illcond_1e6 | PE-Quad-Coupled-Apply | 2.096e+00 | 3.074 | 2.878e-03 | 2.881e-03 | 0.0% | 0.0% | 2.300e+00 |
-| spd | 2 | 1024 | 1 | gaussian_spd | Chebyshev-Apply | 5.497e+00 | 2.185 | 2.657e-03 | 2.659e-03 | 0.0% | 0.0% | 5.838e+00 |
-| spd | 2 | 1024 | 1 | illcond_1e6 | Chebyshev-Apply | 5.504e+00 | 2.275 | 2.712e-03 | 2.714e-03 | 0.0% | 0.0% | 5.800e+00 |
-| spd | 2 | 1024 | 16 | gaussian_spd | Chebyshev-Apply | 4.619e+00 | 2.269 | 2.660e-03 | 2.662e-03 | 0.0% | 0.0% | 5.202e+00 |
-| spd | 2 | 1024 | 16 | illcond_1e6 | Chebyshev-Apply | 5.134e+00 | 2.311 | 2.674e-03 | 2.675e-03 | 0.0% | 0.0% | 5.194e+00 |
-| spd | 2 | 1024 | 64 | gaussian_spd | Chebyshev-Apply | 4.318e+00 | 2.383 | 2.714e-03 | 2.715e-03 | 0.0% | 0.0% | 4.730e+00 |
-| spd | 2 | 1024 | 64 | illcond_1e6 | Chebyshev-Apply | 4.290e+00 | 2.423 | 2.654e-03 | 2.655e-03 | 0.0% | 0.0% | 4.767e+00 |
-| spd | 2 | 1024 | 1024 | gaussian_spd | PE-Quad-Coupled-Apply | 7.289e-01 | 4.369 | 4.551e-03 | 4.557e-03 | 0.0% | 0.0% | 1.002e+00 |
-| spd | 2 | 1024 | 1024 | illcond_1e6 | PE-Quad-Coupled-Apply | 6.368e-01 | 5.169 | 7.075e-03 | 7.079e-03 | 0.0% | 0.0% | 6.372e-01 |
-| spd | 4 | 256 | 256 | gaussian_spd | Chebyshev-Apply | 4.928e+00 | 3.001 | 1.901e-03 | 1.902e-03 | 0.0% | 0.0% | 4.944e+00 |
-| spd | 4 | 256 | 256 | illcond_1e6 | Chebyshev-Apply | 6.705e+00 | 2.455 | 1.901e-03 | 1.901e-03 | 0.0% | 0.0% | 6.761e+00 |
-| spd | 4 | 512 | 512 | gaussian_spd | Chebyshev-Apply | 2.347e+00 | 3.475 | 1.896e-03 | 1.897e-03 | 0.0% | 0.0% | 2.357e+00 |
-| spd | 4 | 512 | 512 | illcond_1e6 | Chebyshev-Apply | 2.404e+00 | 2.859 | 1.896e-03 | 1.896e-03 | 0.0% | 0.0% | 2.409e+00 |
-| spd | 4 | 1024 | 1 | gaussian_spd | Chebyshev-Apply | 5.889e+00 | 2.335 | 1.856e-03 | 1.856e-03 | 0.0% | 0.0% | 6.184e+00 |
-| spd | 4 | 1024 | 1 | illcond_1e6 | Chebyshev-Apply | 5.936e+00 | 2.163 | 1.907e-03 | 1.908e-03 | 0.0% | 0.0% | 6.110e+00 |
-| spd | 4 | 1024 | 16 | gaussian_spd | Chebyshev-Apply | 5.496e+00 | 2.451 | 1.900e-03 | 1.900e-03 | 0.0% | 0.0% | 5.510e+00 |
-| spd | 4 | 1024 | 16 | illcond_1e6 | Chebyshev-Apply | 5.440e+00 | 2.449 | 1.908e-03 | 1.909e-03 | 0.0% | 0.0% | 5.463e+00 |
-| spd | 4 | 1024 | 64 | gaussian_spd | Chebyshev-Apply | 4.938e+00 | 2.675 | 1.904e-03 | 1.904e-03 | 0.0% | 0.0% | 4.974e+00 |
-| spd | 4 | 1024 | 64 | illcond_1e6 | Chebyshev-Apply | 4.785e+00 | 2.597 | 1.904e-03 | 1.904e-03 | 0.0% | 0.0% | 4.820e+00 |
-| spd | 4 | 1024 | 1024 | gaussian_spd | PE-Quad-Coupled-Apply | 1.002e+00 | 5.348 | 3.649e-03 | 3.651e-03 | 0.0% | 0.0% | 1.026e+00 |
-| spd | 4 | 1024 | 1024 | illcond_1e6 | PE-Quad-Coupled-Apply | 7.062e-01 | 5.173 | 3.796e-03 | 3.801e-03 | 0.0% | 0.0% | 7.075e-01 |
+# Non-Normal
+
+## p = 1
+
+### Size 256x256 | RHS 256x256
+
+#### Case: `gaussian_shifted`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **0.948** | **0.771** | 4.48e-01 | 4.50e-01 | 4.01e-01 | 4.03e-01 | 100.0% | 4.524e-01 |
+| T-Linalg-Solve | 1.170 | 0.993 | **3.34e-07** | **3.55e-07** | **3.34e-07** | **3.57e-07** | **0.0%** | **6.522e+00** |
+| PE-Quad-Coupled | 2.041 | 1.863 | 1.65e-03 | 1.67e-03 | 1.87e-03 | 1.88e-03 | **0.0%** | 1.493e+00 |
+
+#### Case: `nonnormal_upper`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **1.037** | **0.802** | 4.29e-01 | 4.30e-01 | 3.93e-01 | 3.95e-01 | 100.0% | 4.583e-01 |
+| T-Linalg-Solve | 1.285 | 1.050 | **8.36e-08** | **8.40e-08** | **8.54e-08** | **8.61e-08** | **0.0%** | **6.741e+00** |
+| PE-Quad-Coupled | 2.145 | 1.910 | 1.66e-03 | 1.67e-03 | 1.83e-03 | 1.84e-03 | **0.0%** | 1.455e+00 |
+
+#### Case: `similarity_posspec`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **1.054** | **0.884** | 5.74e-01 | 5.75e-01 | 4.38e-01 | 4.40e-01 | 100.0% | 2.731e-01 |
+| T-Linalg-Solve | 1.161 | 0.991 | **4.59e-07** | **4.79e-07** | **4.68e-07** | **4.86e-07** | **0.0%** | **6.396e+00** |
+| PE-Quad-Coupled | 1.931 | 1.761 | 1.66e-03 | 1.67e-03 | 2.41e-03 | 2.41e-03 | **0.0%** | 1.578e+00 |
+
+#### Case: `similarity_posspec_hard`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Linalg-Solve | **1.140** | **0.961** | **4.23e-05** | **1.13e-04** | **2.15e-04** | **5.73e-04** | **0.0%** | **4.553e+00** |
+| Inverse-Newton-Coupled | 1.263 | 1.084 | 1.00e+00 | 1.00e+00 | 1.34e+00 | 1.37e+00 | 100.0% | 0.000e+00 |
+| PE-Quad-Coupled | 2.086 | 1.906 | 1.66e-03 | 1.67e-03 | 2.31e+00 | 3.92e+00 | 100.0% | 1.459e+00 |
+
+### Size 512x512 | RHS 512x512
+
+#### Case: `gaussian_shifted`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **1.072** | **0.866** | 5.64e-01 | 5.64e-01 | 5.21e-01 | 5.21e-01 | 100.0% | 2.873e-01 |
+| T-Linalg-Solve | 3.113 | 2.906 | **7.49e-05** | **7.51e-05** | **7.81e-05** | **7.84e-05** | **0.0%** | **1.420e+00** |
+| PE-Quad-Coupled | 4.629 | 4.423 | 1.66e-03 | 1.67e-03 | 1.88e-03 | 1.89e-03 | **0.0%** | 6.283e-01 |
+
+#### Case: `nonnormal_upper`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **1.168** | **0.986** | 5.48e-01 | 5.49e-01 | 5.15e-01 | 5.15e-01 | 100.0% | 2.651e-01 |
+| T-Linalg-Solve | 3.042 | 2.860 | **6.57e-05** | **6.58e-05** | **6.73e-05** | **6.75e-05** | **0.0%** | **1.463e+00** |
+| PE-Quad-Coupled | 3.840 | 3.658 | 1.66e-03 | 1.66e-03 | 1.83e-03 | 1.84e-03 | **0.0%** | 7.599e-01 |
+
+#### Case: `similarity_posspec`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **1.069** | **0.864** | 6.67e-01 | 6.67e-01 | 5.46e-01 | 5.46e-01 | 100.0% | 2.037e-01 |
+| T-Linalg-Solve | 2.977 | 2.772 | **9.11e-05** | **9.11e-05** | **1.04e-04** | **1.04e-04** | **0.0%** | **1.458e+00** |
+| PE-Quad-Coupled | 4.189 | 3.984 | 1.66e-03 | 1.66e-03 | 2.40e-03 | 2.40e-03 | **0.0%** | 6.978e-01 |
+
+#### Case: `similarity_posspec_hard`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **1.228** | **0.940** | 1.00e+00 | 1.00e+00 | 1.19e+00 | **1.21e+00** | 100.0% | 4.966e-06 |
+| T-Linalg-Solve | 3.111 | 2.823 | **4.32e-03** | **5.17e-03** | **4.47e-01** | 2.02e+00 | 100.0% | **8.375e-01** |
+| PE-Quad-Coupled | 3.907 | 3.620 | 4.62e-03 | 5.44e-03 | 4.03e+00 | 1.64e+01 | 100.0% | 6.451e-01 |
+
+### Size 1024x1024 | RHS 1024x1024
+
+#### Case: `gaussian_shifted`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **2.505** | **2.102** | 6.65e-01 | 6.65e-01 | 6.28e-01 | 6.28e-01 | 100.0% | 8.428e-02 |
+| T-Linalg-Solve | 6.520 | 6.118 | **9.80e-05** | **9.82e-05** | **1.02e-04** | **1.02e-04** | **0.0%** | **6.553e-01** |
+| PE-Quad-Coupled | 9.712 | 9.309 | 1.66e-03 | 1.66e-03 | 1.88e-03 | 1.88e-03 | **0.0%** | 2.986e-01 |
+
+#### Case: `nonnormal_upper`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **2.273** | **1.997** | 6.53e-01 | 6.53e-01 | 6.24e-01 | 6.24e-01 | 100.0% | 9.260e-02 |
+| T-Linalg-Solve | 6.363 | 6.087 | **9.09e-05** | **9.25e-05** | **9.25e-05** | **9.42e-05** | **0.0%** | **6.639e-01** |
+| PE-Quad-Coupled | 7.661 | 7.385 | 1.66e-03 | 1.66e-03 | 1.83e-03 | 1.83e-03 | **0.0%** | 3.764e-01 |
+
+#### Case: `similarity_posspec`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **2.048** | **1.806** | 7.46e-01 | 7.47e-01 | 6.44e-01 | 6.45e-01 | 100.0% | 7.046e-02 |
+| T-Linalg-Solve | 6.433 | 6.191 | **1.21e-04** | **1.21e-04** | **1.38e-04** | **1.38e-04** | **0.0%** | **6.327e-01** |
+| PE-Quad-Coupled | 7.462 | 7.220 | 1.67e-03 | 1.67e-03 | 2.40e-03 | 2.41e-03 | **0.0%** | 3.848e-01 |
+
+#### Case: `similarity_posspec_hard`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Inverse-Newton-Coupled | **2.087** | **1.913** | 1.00e+00 | 1.00e+00 | **1.09e+00** | **1.11e+00** | 100.0% | 3.039e-06 |
+| T-Linalg-Solve | 6.298 | 6.124 | **1.10e-02** | **1.17e-02** | 1.39e+00 | 3.79e+00 | 100.0% | **3.195e-01** |
+| PE-Quad-Coupled | 7.421 | 7.247 | 1.12e-02 | 1.18e-02 | 4.54e+00 | 1.36e+01 | 100.0% | 2.694e-01 |
+
+# SPD
+
+## p = 1
+
+### Size 256x256 | RHS 256x256
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **1.892** | **0.170** | **1.60e-07** | **1.72e-07** | 1.19e-04 | 1.22e-04 | **0.0%** | **3.989e+01** |
+| T-Cholesky-Solve | 2.223 | 0.501 | **1.60e-07** | **1.72e-07** | 1.19e-04 | 1.22e-04 | **0.0%** | 1.358e+01 |
+| PE-Quad-Coupled | 2.561 | 0.839 | 4.39e-03 | 5.17e-03 | 4.40e-03 | 5.16e-03 | **0.0%** | 2.808e+00 |
+| Inverse-Newton-Coupled | 2.666 | 0.944 | 3.60e-01 | 3.61e-01 | 3.57e-01 | 3.58e-01 | 100.0% | 4.706e-01 |
+| T-Linalg-Solve | 2.723 | 1.001 | 1.19e-04 | 1.22e-04 | **3.87e-07** | **4.09e-07** | **0.0%** | 3.920e+00 |
+| T-EVD-Solve | 9.598 | 7.876 | 3.58e-04 | 3.60e-04 | 3.78e-04 | 3.80e-04 | **0.0%** | 4.375e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **2.193** | **0.322** | **1.68e-07** | **1.78e-07** | 1.56e-04 | 1.59e-04 | **0.0%** | **2.103e+01** |
+| T-Cholesky-Solve | 2.321 | 0.451 | **1.68e-07** | **1.78e-07** | 1.56e-04 | 1.59e-04 | **0.0%** | 1.504e+01 |
+| T-Linalg-Solve | 2.611 | 0.740 | 1.56e-04 | 1.59e-04 | **3.78e-07** | **3.95e-07** | **0.0%** | 5.144e+00 |
+| PE-Quad-Coupled | 2.687 | 0.816 | 5.55e-03 | 5.68e-03 | 5.53e-03 | 5.66e-03 | **0.0%** | 2.763e+00 |
+| Inverse-Newton-Coupled | 2.723 | 0.853 | 3.59e-01 | 3.59e-01 | 3.57e-01 | 3.57e-01 | 100.0% | 5.222e-01 |
+| T-EVD-Solve | 10.682 | 8.811 | 3.61e-04 | 3.63e-04 | 3.93e-04 | 3.97e-04 | **0.0%** | 3.907e-01 |
+
+### Size 512x512 | RHS 512x512
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **2.452** | **0.588** | **1.65e-07** | **1.75e-07** | 7.80e-05 | 8.11e-05 | **0.0%** | **1.155e+01** |
+| PE-Quad-Coupled | 2.606 | 0.741 | 5.47e-03 | 5.48e-03 | 5.44e-03 | 5.46e-03 | **0.0%** | 3.052e+00 |
+| Inverse-Newton-Coupled | 2.734 | 0.870 | 4.88e-01 | 4.88e-01 | 4.87e-01 | 4.87e-01 | 100.0% | 3.582e-01 |
+| T-Cholesky-Solve | 3.046 | 1.182 | **1.65e-07** | **1.75e-07** | 7.80e-05 | 8.11e-05 | **0.0%** | 5.740e+00 |
+| T-Linalg-Solve | 5.613 | 3.749 | 7.85e-05 | 8.16e-05 | **9.42e-06** | **9.44e-06** | **0.0%** | 1.095e+00 |
+| T-EVD-Solve | 23.733 | 21.869 | 3.59e-04 | 3.60e-04 | 3.68e-04 | 3.69e-04 | **0.0%** | 1.575e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **2.274** | **0.596** | **1.68e-07** | **1.72e-07** | 1.18e-04 | 1.21e-04 | **0.0%** | **1.136e+01** |
+| PE-Quad-Coupled | 2.412 | 0.734 | 4.27e-03 | 6.19e-03 | 4.26e-03 | 6.17e-03 | **0.0%** | 3.229e+00 |
+| Inverse-Newton-Coupled | 2.537 | 0.859 | 4.87e-01 | 4.87e-01 | 4.86e-01 | 4.86e-01 | 100.0% | 3.642e-01 |
+| T-Cholesky-Solve | 2.674 | 0.996 | **1.68e-07** | **1.72e-07** | 1.18e-04 | 1.21e-04 | **0.0%** | 6.805e+00 |
+| T-Linalg-Solve | 4.531 | 2.853 | 1.19e-04 | 1.21e-04 | **8.92e-06** | **8.99e-06** | **0.0%** | 1.376e+00 |
+| T-EVD-Solve | 28.357 | 26.679 | 3.59e-04 | 3.60e-04 | 3.79e-04 | 3.80e-04 | **0.0%** | 1.291e-01 |
+
+### Size 1024x1024 | RHS 1024x1
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **1.807** | **0.204** | **3.69e-07** | **3.90e-07** | 4.21e-05 | 4.48e-05 | **0.0%** | **3.160e+01** |
+| PE-Quad-Coupled | 2.410 | 0.807 | 6.40e-03 | 6.68e-03 | 6.42e-03 | 6.72e-03 | **0.0%** | 2.720e+00 |
+| T-Cholesky-Solve | 2.666 | 1.063 | **3.69e-07** | **3.90e-07** | 4.21e-05 | 4.48e-05 | **0.0%** | 6.052e+00 |
+| Inverse-Newton-Coupled | 2.931 | 1.328 | 6.02e-01 | 6.04e-01 | 6.02e-01 | 6.03e-01 | 100.0% | 1.659e-01 |
+| T-Linalg-Solve | 6.086 | 4.483 | 4.21e-05 | 4.47e-05 | **6.05e-07** | **6.47e-07** | **0.0%** | 9.760e-01 |
+| T-EVD-Solve | 28.569 | 26.966 | 1.78e-06 | 1.81e-06 | 4.21e-05 | 4.48e-05 | **0.0%** | 2.132e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **1.754** | **0.203** | **3.51e-07** | **3.78e-07** | 8.08e-05 | 8.64e-05 | **0.0%** | **3.184e+01** |
+| PE-Quad-Coupled | 2.239 | 0.688 | 6.90e-03 | 7.05e-03 | 6.91e-03 | 7.07e-03 | **0.0%** | 3.143e+00 |
+| T-Cholesky-Solve | 2.597 | 1.046 | **3.51e-07** | **3.78e-07** | 8.08e-05 | 8.64e-05 | **0.0%** | 6.172e+00 |
+| Inverse-Newton-Coupled | 2.624 | 1.072 | 6.02e-01 | 6.03e-01 | 6.02e-01 | 6.03e-01 | 100.0% | 2.054e-01 |
+| T-Linalg-Solve | 5.759 | 4.208 | 8.05e-05 | 8.60e-05 | **6.08e-07** | **6.72e-07** | **0.0%** | 9.730e-01 |
+| T-EVD-Solve | 27.990 | 26.438 | 1.71e-06 | 1.73e-06 | 8.08e-05 | 8.63e-05 | **0.0%** | 2.182e-01 |
+
+### Size 1024x1024 | RHS 1024x16
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **2.414** | **0.568** | **1.69e-07** | **1.71e-07** | 4.22e-05 | 4.36e-05 | **0.0%** | **1.192e+01** |
+| PE-Quad-Coupled | 2.543 | 0.698 | 6.33e-03 | 9.33e-03 | 6.35e-03 | 9.36e-03 | **0.0%** | 3.150e+00 |
+| Inverse-Newton-Coupled | 3.103 | 1.257 | 6.02e-01 | 6.03e-01 | 6.02e-01 | 6.03e-01 | 100.0% | 1.751e-01 |
+| T-Cholesky-Solve | 3.238 | 1.393 | **1.69e-07** | **1.71e-07** | 4.22e-05 | 4.36e-05 | **0.0%** | 4.863e+00 |
+| T-Linalg-Solve | 6.382 | 4.537 | 4.27e-05 | 4.41e-05 | **6.81e-06** | **6.94e-06** | **0.0%** | 9.631e-01 |
+| T-EVD-Solve | 29.559 | 27.714 | 3.61e-04 | 3.61e-04 | 3.63e-04 | 3.64e-04 | **0.0%** | 1.242e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **2.367** | **0.581** | **1.68e-07** | **1.74e-07** | 8.11e-05 | 8.26e-05 | **0.0%** | **1.166e+01** |
+| PE-Quad-Coupled | 2.471 | 0.685 | 6.88e-03 | 6.92e-03 | 6.89e-03 | 6.94e-03 | **0.0%** | 3.157e+00 |
+| Inverse-Newton-Coupled | 2.899 | 1.113 | 6.02e-01 | 6.02e-01 | 6.02e-01 | 6.02e-01 | 100.0% | 1.978e-01 |
+| T-Cholesky-Solve | 3.180 | 1.394 | **1.68e-07** | **1.74e-07** | 8.11e-05 | 8.26e-05 | **0.0%** | 4.858e+00 |
+| T-Linalg-Solve | 6.351 | 4.565 | 8.13e-05 | 8.28e-05 | **6.58e-06** | **6.70e-06** | **0.0%** | 8.958e-01 |
+| T-EVD-Solve | 29.298 | 27.512 | 3.59e-04 | 3.60e-04 | 3.68e-04 | 3.69e-04 | **0.0%** | 1.252e-01 |
+
+### Size 1024x1024 | RHS 1024x64
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **2.468** | **0.609** | **1.70e-07** | **1.72e-07** | 4.30e-05 | 4.37e-05 | **0.0%** | **1.111e+01** |
+| PE-Quad-Coupled | 2.591 | 0.732 | 6.40e-03 | 1.00e-02 | 6.42e-03 | 1.01e-02 | **0.0%** | 2.997e+00 |
+| Inverse-Newton-Coupled | 2.957 | 1.098 | 6.02e-01 | 6.03e-01 | 6.02e-01 | 6.03e-01 | 100.0% | 2.006e-01 |
+| T-Cholesky-Solve | 3.336 | 1.477 | **1.70e-07** | **1.72e-07** | 4.30e-05 | 4.37e-05 | **0.0%** | 4.582e+00 |
+| T-Linalg-Solve | 6.441 | 4.583 | 4.38e-05 | 4.45e-05 | **8.35e-06** | **8.45e-06** | **0.0%** | 9.512e-01 |
+| T-EVD-Solve | 30.094 | 28.236 | 3.60e-04 | 3.61e-04 | 3.62e-04 | 3.63e-04 | **0.0%** | 1.220e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **2.131** | **0.599** | **1.67e-07** | **1.74e-07** | 8.16e-05 | 8.25e-05 | **0.0%** | **1.132e+01** |
+| PE-Quad-Coupled | 2.206 | 0.675 | 1.03e-02 | 1.04e-02 | 1.03e-02 | 1.04e-02 | **0.0%** | 2.947e+00 |
+| Inverse-Newton-Coupled | 2.692 | 1.160 | 6.02e-01 | 6.02e-01 | 6.02e-01 | 6.02e-01 | 100.0% | 1.899e-01 |
+| T-Cholesky-Solve | 2.991 | 1.460 | **1.67e-07** | **1.74e-07** | 8.16e-05 | 8.25e-05 | **0.0%** | 4.644e+00 |
+| T-Linalg-Solve | 6.104 | 4.572 | 8.20e-05 | 8.28e-05 | **8.01e-06** | **8.13e-06** | **0.0%** | 8.937e-01 |
+| T-EVD-Solve | 29.034 | 27.502 | 3.59e-04 | 3.59e-04 | 3.68e-04 | 3.69e-04 | **0.0%** | 1.253e-01 |
+
+### Size 1024x1024 | RHS 1024x1024
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T-Cholesky-Solve-R | **4.189** | **2.032** | **1.90e-07** | **1.91e-07** | 4.28e-05 | 4.39e-05 | **0.0%** | **3.307e+00** |
+| PE-Quad-Coupled | 4.308 | 2.151 | 3.80e-03 | 4.65e-03 | 3.81e-03 | 4.65e-03 | **0.0%** | 1.125e+00 |
+| Inverse-Newton-Coupled | 4.372 | 2.215 | 6.02e-01 | 6.03e-01 | 6.02e-01 | 6.03e-01 | 100.0% | 9.944e-02 |
+| T-Cholesky-Solve | 5.074 | 2.917 | **1.90e-07** | **1.91e-07** | 4.28e-05 | 4.39e-05 | **0.0%** | 2.304e+00 |
+| T-Linalg-Solve | 9.941 | 7.784 | 4.37e-05 | 4.48e-05 | **8.85e-06** | **8.91e-06** | **0.0%** | 5.601e-01 |
+| T-EVD-Solve | 30.946 | 28.789 | 3.60e-04 | 3.60e-04 | 3.62e-04 | 3.63e-04 | **0.0%** | 1.196e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| PE-Quad-Coupled | **3.735** | **1.668** | 5.10e-03 | 5.14e-03 | 5.09e-03 | 5.13e-03 | **0.0%** | 1.375e+00 |
+| Inverse-Newton-Coupled | 3.887 | 1.820 | 6.02e-01 | 6.02e-01 | 6.02e-01 | 6.02e-01 | 100.0% | 1.210e-01 |
+| T-Cholesky-Solve-R | 4.102 | 2.035 | **1.87e-07** | **1.89e-07** | 8.25e-05 | 8.29e-05 | **0.0%** | **3.307e+00** |
+| T-Cholesky-Solve | 5.011 | 2.944 | **1.87e-07** | **1.89e-07** | 8.25e-05 | 8.29e-05 | **0.0%** | 2.285e+00 |
+| T-Linalg-Solve | 8.156 | 6.089 | 8.28e-05 | 8.33e-05 | **8.50e-06** | **8.62e-06** | **0.0%** | 6.703e-01 |
+| T-EVD-Solve | 30.522 | 28.455 | 3.60e-04 | 3.60e-04 | 3.69e-04 | 3.69e-04 | **0.0%** | 1.210e-01 |
+
+## p = 2
+
+### Size 256x256 | RHS 256x256
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.768** | **0.549** | 2.92e-03 | 2.95e-03 | 2.92e-03 | 2.96e-03 | **0.0%** | **4.620e+00** |
+| PE-Quad-Coupled | 3.157 | 0.937 | 3.39e-03 | 3.58e-03 | 3.40e-03 | 3.59e-03 | **0.0%** | 2.635e+00 |
+| Inverse-Newton-Coupled | 3.368 | 1.149 | 1.12e-01 | 1.13e-01 | 1.12e-01 | 1.12e-01 | 100.0% | 8.261e-01 |
+| T-EVD-Solve | 9.618 | 7.399 | **3.62e-04** | **3.63e-04** | **3.62e-04** | **3.63e-04** | **0.0%** | 4.652e-01 |
+| T-Linalg-Solve | 9.980 | 7.761 | **3.62e-04** | **3.63e-04** | **3.62e-04** | **3.63e-04** | **0.0%** | 4.435e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.124** | **0.404** | 2.67e-03 | 2.69e-03 | 2.67e-03 | 2.70e-03 | **0.0%** | **6.364e+00** |
+| PE-Quad-Coupled | 2.735 | 1.015 | 2.90e-03 | 2.96e-03 | 2.91e-03 | 2.96e-03 | **0.0%** | 2.500e+00 |
+| Inverse-Newton-Coupled | 2.893 | 1.174 | 1.12e-01 | 1.12e-01 | 1.12e-01 | 1.12e-01 | 100.0% | 8.104e-01 |
+| T-Linalg-Solve | 10.408 | 8.688 | **3.64e-04** | **3.67e-04** | **3.64e-04** | **3.67e-04** | **0.0%** | 3.959e-01 |
+| T-EVD-Solve | 10.657 | 8.937 | **3.64e-04** | **3.67e-04** | **3.64e-04** | **3.67e-04** | **0.0%** | 3.848e-01 |
+
+### Size 512x512 | RHS 512x512
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| PE-Quad-Coupled | **3.138** | **0.937** | 2.81e-03 | 2.94e-03 | 2.81e-03 | 2.95e-03 | **0.0%** | **2.724e+00** |
+| Chebyshev | 3.640 | 1.438 | 2.64e-03 | 2.94e-03 | 2.65e-03 | 2.95e-03 | **0.0%** | 1.792e+00 |
+| Inverse-Newton-Coupled | 3.668 | 1.466 | 1.82e-01 | 1.82e-01 | 1.82e-01 | 1.82e-01 | 100.0% | 5.046e-01 |
+| T-EVD-Solve | 24.148 | 21.947 | **3.78e-04** | **3.78e-04** | **3.78e-04** | **3.79e-04** | **0.0%** | 1.559e-01 |
+| T-Linalg-Solve | 24.961 | 22.759 | **3.78e-04** | **3.78e-04** | **3.78e-04** | **3.79e-04** | **0.0%** | 1.504e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| PE-Quad-Coupled | **2.950** | **0.914** | 3.13e-03 | 3.15e-03 | 3.14e-03 | 3.16e-03 | **0.0%** | **2.740e+00** |
+| Chebyshev | 3.153 | 1.117 | 2.94e-03 | 2.95e-03 | 2.94e-03 | 2.96e-03 | **0.0%** | 2.266e+00 |
+| Inverse-Newton-Coupled | 3.631 | 1.595 | 1.81e-01 | 1.82e-01 | 1.81e-01 | 1.81e-01 | 100.0% | 4.654e-01 |
+| T-Linalg-Solve | 28.220 | 26.184 | **3.88e-04** | **3.88e-04** | **3.88e-04** | **3.88e-04** | **0.0%** | 1.303e-01 |
+| T-EVD-Solve | 28.991 | 26.955 | **3.88e-04** | **3.88e-04** | **3.88e-04** | **3.88e-04** | **0.0%** | 1.265e-01 |
+
+### Size 1024x1024 | RHS 1024x1
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.271** | **0.500** | 2.66e-03 | 2.74e-03 | 2.66e-03 | 2.75e-03 | **0.0%** | **5.150e+00** |
+| PE-Quad-Coupled | 3.360 | 1.589 | 3.35e-03 | 4.24e-03 | 3.35e-03 | 4.25e-03 | **0.0%** | 1.557e+00 |
+| Inverse-Newton-Coupled | 4.189 | 2.418 | 2.60e-01 | 2.62e-01 | 2.60e-01 | 2.61e-01 | 100.0% | 2.418e-01 |
+| T-Linalg-Solve | 28.825 | 27.054 | **1.68e-06** | **1.70e-06** | **1.68e-06** | **1.70e-06** | **0.0%** | 2.134e-01 |
+| T-EVD-Solve | 28.887 | 27.116 | **1.68e-06** | **1.70e-06** | **1.68e-06** | **1.70e-06** | **0.0%** | 2.129e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.130** | **0.451** | 2.58e-03 | 2.69e-03 | 2.58e-03 | 2.70e-03 | **0.0%** | **5.737e+00** |
+| PE-Quad-Coupled | 3.051 | 1.372 | 4.71e-03 | 4.78e-03 | 4.72e-03 | 4.78e-03 | **0.0%** | 1.696e+00 |
+| Inverse-Newton-Coupled | 3.888 | 2.209 | 2.61e-01 | 2.62e-01 | 2.61e-01 | 2.61e-01 | 100.0% | 2.643e-01 |
+| T-EVD-Solve | 28.478 | 26.799 | **1.42e-06** | **1.45e-06** | **1.42e-06** | **1.45e-06** | **0.0%** | 2.182e-01 |
+| T-Linalg-Solve | 28.561 | 26.882 | **1.42e-06** | **1.45e-06** | **1.42e-06** | **1.45e-06** | **0.0%** | 2.175e-01 |
+
+### Size 1024x1024 | RHS 1024x16
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.245** | **0.503** | 2.65e-03 | 2.94e-03 | 2.65e-03 | 2.94e-03 | **0.0%** | **5.127e+00** |
+| PE-Quad-Coupled | 3.086 | 1.343 | 3.59e-03 | 4.20e-03 | 3.60e-03 | 4.20e-03 | **0.0%** | 1.820e+00 |
+| Inverse-Newton-Coupled | 3.866 | 2.123 | 2.60e-01 | 2.61e-01 | 2.60e-01 | 2.61e-01 | 100.0% | 2.752e-01 |
+| T-EVD-Solve | 29.904 | 28.161 | **3.56e-04** | **3.61e-04** | **3.56e-04** | **3.61e-04** | **0.0%** | 1.225e-01 |
+| T-Linalg-Solve | 30.118 | 28.376 | **3.56e-04** | **3.61e-04** | **3.56e-04** | **3.61e-04** | **0.0%** | 1.215e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.574** | **0.495** | 2.67e-03 | 2.69e-03 | 2.67e-03 | 2.70e-03 | **0.0%** | **5.196e+00** |
+| PE-Quad-Coupled | 3.446 | 1.367 | 4.66e-03 | 4.69e-03 | 4.66e-03 | 4.70e-03 | **0.0%** | 1.706e+00 |
+| Inverse-Newton-Coupled | 4.407 | 2.329 | 2.61e-01 | 2.61e-01 | 2.60e-01 | 2.60e-01 | 100.0% | 2.509e-01 |
+| T-EVD-Solve | 29.827 | 27.748 | **3.60e-04** | **3.61e-04** | **3.60e-04** | **3.61e-04** | **0.0%** | 1.241e-01 |
+| T-Linalg-Solve | 29.895 | 27.816 | **3.60e-04** | **3.61e-04** | **3.60e-04** | **3.61e-04** | **0.0%** | 1.238e-01 |
+
+### Size 1024x1024 | RHS 1024x64
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.248** | **0.545** | 2.68e-03 | 2.98e-03 | 2.68e-03 | 2.98e-03 | **0.0%** | **4.716e+00** |
+| PE-Quad-Coupled | 3.015 | 1.313 | 3.54e-03 | 4.67e-03 | 3.55e-03 | 4.67e-03 | **0.0%** | 1.867e+00 |
+| Inverse-Newton-Coupled | 3.965 | 2.263 | 2.60e-01 | 2.61e-01 | 2.60e-01 | 2.61e-01 | 100.0% | 2.583e-01 |
+| T-EVD-Solve | 30.033 | 28.331 | **3.59e-04** | **3.60e-04** | **3.59e-04** | **3.60e-04** | **0.0%** | 1.216e-01 |
+| T-Linalg-Solve | 30.137 | 28.435 | **3.59e-04** | **3.60e-04** | **3.59e-04** | **3.60e-04** | **0.0%** | 1.211e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.228** | **0.544** | 2.97e-03 | 2.98e-03 | 2.97e-03 | 2.98e-03 | **0.0%** | **4.649e+00** |
+| PE-Quad-Coupled | 2.987 | 1.302 | 4.68e-03 | 4.70e-03 | 4.68e-03 | 4.70e-03 | **0.0%** | 1.790e+00 |
+| Inverse-Newton-Coupled | 3.873 | 2.188 | 2.60e-01 | 2.61e-01 | 2.60e-01 | 2.60e-01 | 100.0% | 2.671e-01 |
+| T-Linalg-Solve | 29.402 | 27.717 | **3.60e-04** | **3.61e-04** | **3.60e-04** | **3.61e-04** | **0.0%** | 1.243e-01 |
+| T-EVD-Solve | 29.522 | 27.837 | **3.60e-04** | **3.61e-04** | **3.60e-04** | **3.61e-04** | **0.0%** | 1.237e-01 |
+
+### Size 1024x1024 | RHS 1024x1024
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| PE-Quad-Coupled | **4.469** | **2.361** | 4.32e-03 | 6.25e-03 | 4.32e-03 | 6.26e-03 | **0.0%** | **1.002e+00** |
+| Inverse-Newton-Coupled | 5.364 | 3.257 | 2.60e-01 | 2.61e-01 | 2.60e-01 | 2.61e-01 | 100.0% | 1.794e-01 |
+| Chebyshev | 11.725 | 9.617 | 2.69e-03 | 2.80e-03 | 2.69e-03 | 2.80e-03 | **0.0%** | 2.672e-01 |
+| T-Linalg-Solve | 31.012 | 28.904 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.192e-01 |
+| T-EVD-Solve | 31.110 | 29.003 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.188e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| PE-Quad-Coupled | **3.789** | **1.904** | 7.07e-03 | 7.09e-03 | 7.07e-03 | 7.09e-03 | **0.0%** | **1.130e+00** |
+| Inverse-Newton-Coupled | 4.564 | 2.679 | 2.61e-01 | 2.61e-01 | 2.60e-01 | 2.60e-01 | 100.0% | 2.181e-01 |
+| Chebyshev | 11.708 | 9.823 | 2.74e-03 | 2.75e-03 | 2.74e-03 | 2.75e-03 | **0.0%** | 2.608e-01 |
+| T-EVD-Solve | 30.356 | 28.472 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.210e-01 |
+| T-Linalg-Solve | 30.446 | 28.561 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.206e-01 |
+
+## p = 4
+
+### Size 256x256 | RHS 256x256
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.554** | **0.550** | 1.90e-03 | 1.92e-03 | 1.90e-03 | 1.92e-03 | **0.0%** | **4.946e+00** |
+| PE-Quad-Coupled | 3.176 | 1.172 | 3.27e-03 | 3.74e-03 | 3.27e-03 | 3.74e-03 | **0.0%** | 2.120e+00 |
+| Inverse-Newton-Coupled | 3.220 | 1.215 | 3.63e-02 | 3.69e-02 | 3.62e-02 | 3.68e-02 | **0.0%** | 1.185e+00 |
+| T-EVD-Solve | 9.290 | 7.286 | **3.66e-04** | **3.67e-04** | **3.66e-04** | **3.67e-04** | **0.0%** | 4.716e-01 |
+| T-Linalg-Solve | 9.761 | 7.757 | **3.66e-04** | **3.67e-04** | **3.66e-04** | **3.67e-04** | **0.0%** | 4.430e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.356** | **0.407** | 1.89e-03 | 1.90e-03 | 1.89e-03 | 1.90e-03 | **0.0%** | **6.687e+00** |
+| PE-Quad-Coupled | 3.169 | 1.220 | 3.75e-03 | 3.77e-03 | 3.75e-03 | 3.77e-03 | **0.0%** | 1.989e+00 |
+| Inverse-Newton-Coupled | 3.591 | 1.642 | 3.61e-02 | 3.62e-02 | 3.60e-02 | 3.61e-02 | **0.0%** | 8.785e-01 |
+| T-Linalg-Solve | 10.860 | 8.911 | **3.70e-04** | **3.72e-04** | **3.70e-04** | **3.72e-04** | **0.0%** | 3.851e-01 |
+| T-EVD-Solve | 11.126 | 9.176 | **3.70e-04** | **3.72e-04** | **3.70e-04** | **3.72e-04** | **0.0%** | 3.740e-01 |
+
+### Size 512x512 | RHS 512x512
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| PE-Quad-Coupled | **2.900** | **0.862** | 3.64e-03 | 3.65e-03 | 3.64e-03 | 3.65e-03 | **0.0%** | **2.831e+00** |
+| Inverse-Newton-Coupled | 3.288 | 1.250 | 6.16e-02 | 6.17e-02 | 6.15e-02 | 6.16e-02 | **0.0%** | 9.682e-01 |
+| Chebyshev | 3.478 | 1.440 | 1.90e-03 | 1.91e-03 | 1.90e-03 | 1.91e-03 | **0.0%** | 1.891e+00 |
+| T-EVD-Solve | 24.094 | 22.056 | **4.00e-04** | **4.01e-04** | **4.00e-04** | **4.01e-04** | **0.0%** | 1.540e-01 |
+| T-Linalg-Solve | 24.534 | 22.496 | **4.00e-04** | **4.01e-04** | **4.00e-04** | **4.01e-04** | **0.0%** | 1.510e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **3.095** | **1.121** | 1.90e-03 | 1.91e-03 | 1.90e-03 | 1.91e-03 | **0.0%** | **2.429e+00** |
+| PE-Quad-Coupled | 3.145 | 1.170 | 2.93e-03 | 3.57e-03 | 2.93e-03 | 3.56e-03 | **0.0%** | 2.164e+00 |
+| Inverse-Newton-Coupled | 3.652 | 1.678 | 6.09e-02 | 6.13e-02 | 6.09e-02 | 6.12e-02 | **0.0%** | 7.241e-01 |
+| T-EVD-Solve | 28.545 | 26.571 | **4.20e-04** | **4.22e-04** | **4.19e-04** | **4.22e-04** | **0.0%** | 1.271e-01 |
+| T-Linalg-Solve | 28.893 | 26.919 | **4.20e-04** | **4.22e-04** | **4.19e-04** | **4.22e-04** | **0.0%** | 1.255e-01 |
+
+### Size 1024x1024 | RHS 1024x1
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.390** | **0.453** | 1.83e-03 | 1.87e-03 | 1.83e-03 | 1.87e-03 | **0.0%** | **6.051e+00** |
+| PE-Quad-Coupled | 3.920 | 1.983 | 3.17e-03 | 3.51e-03 | 3.17e-03 | 3.51e-03 | **0.0%** | 1.260e+00 |
+| Inverse-Newton-Coupled | 4.837 | 2.899 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 100.0% | 3.389e-01 |
+| T-EVD-Solve | 29.263 | 27.325 | **1.66e-06** | **1.70e-06** | **1.65e-06** | **1.70e-06** | **0.0%** | 2.116e-01 |
+| T-Linalg-Solve | 29.288 | 27.351 | **1.66e-06** | **1.70e-06** | **1.65e-06** | **1.70e-06** | **0.0%** | 2.114e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.540** | **0.450** | 1.89e-03 | 1.96e-03 | 1.89e-03 | 1.96e-03 | **0.0%** | **6.046e+00** |
+| PE-Quad-Coupled | 3.779 | 1.690 | 2.94e-03 | 3.17e-03 | 2.94e-03 | 3.17e-03 | **0.0%** | 1.498e+00 |
+| Inverse-Newton-Coupled | 4.820 | 2.731 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 100.0% | 3.605e-01 |
+| T-EVD-Solve | 28.833 | 26.744 | **1.34e-06** | **1.36e-06** | **1.34e-06** | **1.36e-06** | **0.0%** | 2.196e-01 |
+| T-Linalg-Solve | 29.408 | 27.319 | **1.34e-06** | **1.36e-06** | **1.34e-06** | **1.36e-06** | **0.0%** | 2.150e-01 |
+
+### Size 1024x1024 | RHS 1024x16
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.472** | **0.502** | 1.90e-03 | 1.93e-03 | 1.90e-03 | 1.93e-03 | **0.0%** | **5.425e+00** |
+| PE-Quad-Coupled | 3.662 | 1.692 | 3.22e-03 | 3.23e-03 | 3.22e-03 | 3.23e-03 | **0.0%** | 1.473e+00 |
+| Inverse-Newton-Coupled | 4.693 | 2.723 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 100.0% | 3.609e-01 |
+| T-EVD-Solve | 30.471 | 28.501 | **3.60e-04** | **3.62e-04** | **3.60e-04** | **3.62e-04** | **0.0%** | 1.208e-01 |
+| T-Linalg-Solve | 30.506 | 28.536 | **3.60e-04** | **3.62e-04** | **3.60e-04** | **3.62e-04** | **0.0%** | 1.207e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.246** | **0.498** | 1.91e-03 | 1.93e-03 | 1.91e-03 | 1.93e-03 | **0.0%** | **5.453e+00** |
+| PE-Quad-Coupled | 3.421 | 1.673 | 3.02e-03 | 3.03e-03 | 3.02e-03 | 3.04e-03 | **0.0%** | 1.507e+00 |
+| Inverse-Newton-Coupled | 4.487 | 2.739 | 1.04e-01 | 1.04e-01 | 1.03e-01 | 1.04e-01 | 100.0% | 3.595e-01 |
+| T-EVD-Solve | 29.641 | 27.894 | **3.62e-04** | **3.62e-04** | **3.62e-04** | **3.62e-04** | **0.0%** | 1.234e-01 |
+| T-Linalg-Solve | 29.648 | 27.900 | **3.62e-04** | **3.62e-04** | **3.62e-04** | **3.62e-04** | **0.0%** | 1.234e-01 |
+
+### Size 1024x1024 | RHS 1024x64
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.191** | **0.545** | 1.90e-03 | 1.92e-03 | 1.90e-03 | 1.92e-03 | **0.0%** | **4.991e+00** |
+| PE-Quad-Coupled | 3.334 | 1.688 | 3.25e-03 | 3.29e-03 | 3.25e-03 | 3.29e-03 | **0.0%** | 1.474e+00 |
+| Inverse-Newton-Coupled | 4.324 | 2.678 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 100.0% | 3.672e-01 |
+| T-EVD-Solve | 30.283 | 28.638 | **3.60e-04** | **3.62e-04** | **3.60e-04** | **3.62e-04** | **0.0%** | 1.202e-01 |
+| T-Linalg-Solve | 30.315 | 28.670 | **3.60e-04** | **3.62e-04** | **3.60e-04** | **3.62e-04** | **0.0%** | 1.201e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Chebyshev | **2.477** | **0.547** | 1.89e-03 | 1.90e-03 | 1.89e-03 | 1.90e-03 | **0.0%** | **4.978e+00** |
+| PE-Quad-Coupled | 3.610 | 1.681 | 3.00e-03 | 3.01e-03 | 3.00e-03 | 3.01e-03 | **0.0%** | 1.501e+00 |
+| Inverse-Newton-Coupled | 4.552 | 2.623 | 1.03e-01 | 1.03e-01 | 1.03e-01 | 1.03e-01 | 100.0% | 3.756e-01 |
+| T-EVD-Solve | 29.841 | 27.912 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.234e-01 |
+| T-Linalg-Solve | 29.924 | 27.995 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.230e-01 |
+
+### Size 1024x1024 | RHS 1024x1024
+
+#### Case: `gaussian_spd`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| PE-Quad-Coupled | **4.889** | **2.740** | 3.63e-03 | 3.74e-03 | 3.63e-03 | 3.74e-03 | **0.0%** | **8.904e-01** |
+| Inverse-Newton-Coupled | 5.955 | 3.806 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 1.04e-01 | 100.0% | 2.581e-01 |
+| Chebyshev | 11.746 | 9.597 | 1.95e-03 | 1.96e-03 | 1.95e-03 | 1.96e-03 | **0.0%** | 2.824e-01 |
+| T-Linalg-Solve | 31.202 | 29.053 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.185e-01 |
+| T-EVD-Solve | 31.272 | 29.123 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.183e-01 |
+
+#### Case: `illcond_1e6`
+
+| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|
+| PE-Quad-Coupled | **4.141** | **2.244** | 3.80e-03 | 3.80e-03 | 3.80e-03 | 3.80e-03 | **0.0%** | **1.079e+00** |
+| Inverse-Newton-Coupled | 5.366 | 3.468 | 1.03e-01 | 1.04e-01 | 1.03e-01 | 1.03e-01 | 100.0% | 2.840e-01 |
+| Chebyshev | 11.712 | 9.814 | 1.95e-03 | 1.95e-03 | 1.95e-03 | 1.96e-03 | **0.0%** | 2.761e-01 |
+| T-Linalg-Solve | 30.294 | 28.396 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.213e-01 |
+| T-EVD-Solve | 30.339 | 28.441 | **3.60e-04** | **3.60e-04** | **3.60e-04** | **3.60e-04** | **0.0%** | 1.211e-01 |

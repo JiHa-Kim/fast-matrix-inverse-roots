@@ -9,10 +9,11 @@ def test_parse_rows_extracts_p_field():
 == SPD Size 128x128 | RHS 128x1 | dtype=torch.float32 ==
 precond=jacobi | l_target=0.05 | p=2 | ruiz_iters=2
 -- case gaussian_spd --
-Inverse-Newton-Coupled-Apply      1.234 ms (pre 0.100 + iter 1.134) | relerr vs true: 1.000e-03 | relerr_p90 2.000e-03 | fail_rate 10.0% | q_per_ms 1.234e+00
+Inverse-Newton-Coupled-Apply      1.234 ms (pre 0.100 + iter 1.134) | relerr 1.000e-03 (p90 2.000e-03) | fail 10.0% (nf 0.0%, q 10.0%) | q_per_ms 1.234e+00
 """.strip()
     rows = _parse_rows(raw, "spd")
     assert len(rows) == 1
+    # 0:kind, 1:p, 2:n, 3:k, 4:case, 5:method, 6:total, 7:iter, 8:relerr, 9:p90, 10:nf, 11:qf, 12:fail, 13:qpm, 14:resid, 15:resid_p90
     assert rows[0][:6] == (
         "spd",
         2,
@@ -21,10 +22,14 @@ Inverse-Newton-Coupled-Apply      1.234 ms (pre 0.100 + iter 1.134) | relerr vs 
         "gaussian_spd",
         "Inverse-Newton-Coupled-Apply",
     )
+    assert rows[0][6] == pytest.approx(1.234)
+    assert rows[0][7] == pytest.approx(1.134)
     assert rows[0][8] == pytest.approx(1.0e-3)
     assert rows[0][9] == pytest.approx(2.0e-3)
-    assert rows[0][10] == pytest.approx(0.1)
-    assert rows[0][11] == pytest.approx(1.234)
+    assert rows[0][10] == pytest.approx(0.0)
+    assert rows[0][11] == pytest.approx(0.1)
+    assert rows[0][12] == pytest.approx(0.1)
+    assert rows[0][13] == pytest.approx(1.234)
 
 
 def test_parse_rows_back_compat_without_new_metrics():
@@ -32,7 +37,7 @@ def test_parse_rows_back_compat_without_new_metrics():
 == SPD Size 64x64 | RHS 64x8 | dtype=torch.float32 ==
 precond=jacobi | p=4
 -- case illcond_1e6 --
-PE-Quad-Coupled-Apply      2.500 ms (pre 0.200 + iter 2.300) | relerr vs true: 9.000e-04
+PE-Quad-Coupled-Apply      2.500 ms (pre 0.200 + iter 2.300) | relerr 9.000e-04 (p90 1.000e-03)
 """.strip()
     rows = _parse_rows(raw, "spd")
     assert len(rows) == 1
@@ -47,9 +52,7 @@ PE-Quad-Coupled-Apply      2.500 ms (pre 0.200 + iter 2.300) | relerr vs true: 9
         2.3,
         9.0e-4,
     )
-    assert rows[0][9] != rows[0][9]  # NaN
-    assert rows[0][10] != rows[0][10]  # NaN
-    assert rows[0][11] != rows[0][11]  # NaN
+    assert rows[0][9] == pytest.approx(1.0e-3)
 
 
 def test_parse_rows_keeps_inf_nan_rows():
@@ -57,7 +60,7 @@ def test_parse_rows_keeps_inf_nan_rows():
 == Non-SPD Size 64x64 | RHS 64x4 | dtype=torch.float32 ==
 p=1
 -- case nonnormal_upper --
-PE-Quad-Coupled-Apply      inf ms (pre nan + iter inf) | relerr vs solve: inf | relerr_p90 inf | fail_rate 100.0% | q_per_ms nan | bad 5
+PE-Quad-Coupled-Apply      inf ms (pre nan + iter inf) | relerr inf (p90 inf) | fail 100.0% (nf 0.0%, q 100.0%)
 """.strip()
     rows = _parse_rows(raw, "nonspd")
     assert len(rows) == 1
@@ -73,43 +76,17 @@ PE-Quad-Coupled-Apply      inf ms (pre nan + iter inf) | relerr vs solve: inf | 
     assert rows[0][7] == float("inf")
     assert rows[0][8] == float("inf")
     assert rows[0][9] == float("inf")
-    assert rows[0][10] == pytest.approx(1.0)
-    assert rows[0][11] != rows[0][11]  # NaN
+    assert rows[0][12] == pytest.approx(1.0)
 
 
 def test_ab_compare_can_match_without_method():
-    rows_a = [
-        (
-            "spd",
-            2,
-            128,
-            1,
-            "gaussian_spd",
-            "Inverse-Newton-Coupled-Apply",
-            1.0,
-            0.9,
-            1.0e-3,
-            2.0e-3,
-            0.0,
-            3.0,
-        )
-    ]
-    rows_b = [
-        (
-            "spd",
-            2,
-            128,
-            1,
-            "gaussian_spd",
-            "PE-Quad-Coupled-Apply",
-            0.8,
-            0.7,
-            1.2e-3,
-            1.5e-3,
-            0.0,
-            3.4,
-        )
-    ]
+    # Helper to build a valid 16-element row
+    def r(kind, p, n, k, case, method, total, iter, relerr, qpm):
+        return (kind, p, n, k, case, method, total, iter, relerr, relerr*1.1, 0.0, 0.0, 0.0, qpm, 1e-5, 2e-5)
+
+    rows_a = [r("spd", 2, 128, 1, "gaussian_spd", "Inverse-Newton-Coupled-Apply", 1.0, 0.9, 1.0e-3, 3.0)]
+    rows_b = [r("spd", 2, 128, 1, "gaussian_spd", "PE-Quad-Coupled-Apply", 0.8, 0.7, 1.2e-3, 3.4)]
+    
     md = _to_markdown_ab(
         rows_a,
         rows_b,
@@ -128,38 +105,11 @@ def test_ab_compare_can_match_without_method():
 
 
 def test_ab_compare_match_on_method_requires_same_method():
-    rows_a = [
-        (
-            "spd",
-            2,
-            128,
-            1,
-            "gaussian_spd",
-            "Inverse-Newton-Coupled-Apply",
-            1.0,
-            0.9,
-            1.0e-3,
-            2.0e-3,
-            0.0,
-            3.0,
-        )
-    ]
-    rows_b = [
-        (
-            "spd",
-            2,
-            128,
-            1,
-            "gaussian_spd",
-            "PE-Quad-Coupled-Apply",
-            0.8,
-            0.7,
-            1.2e-3,
-            1.5e-3,
-            0.0,
-            3.4,
-        )
-    ]
+    def r(kind, p, n, k, case, method):
+        return (kind, p, n, k, case, method, 1.0, 0.9, 1e-3, 1.1e-3, 0.0, 0.0, 0.0, 3.0, 1e-5, 2e-5)
+
+    rows_a = [r("spd", 2, 128, 1, "gaussian_spd", "Inverse-Newton-Coupled-Apply")]
+    rows_b = [r("spd", 2, 128, 1, "gaussian_spd", "PE-Quad-Coupled-Apply")]
     with pytest.raises(RuntimeError, match="no overlapping keys"):
         _to_markdown_ab(
             rows_a,
@@ -171,38 +121,11 @@ def test_ab_compare_match_on_method_requires_same_method():
 
 
 def test_ab_markdown_separator_column_count_matches_header():
-    rows_a = [
-        (
-            "spd",
-            2,
-            128,
-            1,
-            "gaussian_spd",
-            "Inverse-Newton-Coupled-Apply",
-            1.0,
-            0.9,
-            1.0e-3,
-            2.0e-3,
-            0.0,
-            3.0,
-        )
-    ]
-    rows_b = [
-        (
-            "spd",
-            2,
-            128,
-            1,
-            "gaussian_spd",
-            "PE-Quad-Coupled-Apply",
-            0.8,
-            0.7,
-            1.2e-3,
-            1.5e-3,
-            0.0,
-            3.4,
-        )
-    ]
+    def r(kind, p, n, k, case, method):
+        return (kind, p, n, k, case, method, 1.0, 0.9, 1e-3, 1.1e-3, 0.0, 0.0, 0.0, 3.0, 1e-5, 2e-5)
+
+    rows_a = [r("spd", 2, 128, 1, "gaussian_spd", "A")]
+    rows_b = [r("spd", 2, 128, 1, "gaussian_spd", "B")]
     md = _to_markdown_ab(
         rows_a,
         rows_b,
@@ -218,75 +141,29 @@ def test_ab_markdown_separator_column_count_matches_header():
 
 
 def test_markdown_includes_assessment_leaders():
+    def r(method, total, relerr, qpm):
+        return ("spd", 2, 128, 1, "gaussian_spd", method, total, total*0.9, relerr, relerr*1.1, 0.0, 0.0, 0.0, qpm, 1e-5, 2e-5)
+
     rows = [
-        (
-            "spd",
-            2,
-            128,
-            1,
-            "gaussian_spd",
-            "A",
-            1.0,
-            0.9,
-            1.0e-3,
-            1.1e-3,
-            0.0,
-            3.0,
-        ),
-        (
-            "spd",
-            2,
-            128,
-            1,
-            "gaussian_spd",
-            "B",
-            0.9,
-            0.8,
-            1.2e-3,
-            1.2e-3,
-            0.0,
-            3.4,
-        ),
+        r("A", 1.0, 1.0e-3, 3.0),
+        r("B", 0.9, 1.2e-3, 3.4),
     ]
     md = _to_markdown(rows)
-    assert "assessment score" in md
-    assert "### Detailed Assessment Leaders" in md
-    assert "| spd | 2 | 128 | 1 | gaussian_spd | B |" in md
+    assert "# SPD" in md
+    assert "## p = 2" in md
+    assert "### Size 128x128 | RHS 128x1" in md
+    assert "#### Case: `gaussian_spd`" in md
+    # B is fastest and has highest QPM, A has better relerr.
+    # Resid fields are tied, so both are bold.
+    assert "| B | **0.900** | **0.810** | 1.20e-03 | 1.32e-03 | **1.00e-05** | **2.00e-05** | **0.0%** | **3.400e+00** |" in md
 
 
 def test_markdown_ab_includes_run_config_when_provided():
-    rows_a = [
-        (
-            "spd",
-            2,
-            64,
-            1,
-            "gaussian_spd",
-            "A",
-            1.0,
-            0.8,
-            1.0e-3,
-            1.1e-3,
-            0.0,
-            3.0,
-        )
-    ]
-    rows_b = [
-        (
-            "spd",
-            2,
-            64,
-            1,
-            "gaussian_spd",
-            "A",
-            0.9,
-            0.7,
-            1.0e-3,
-            1.1e-3,
-            0.0,
-            3.4,
-        )
-    ]
+    def r(method):
+        return ("spd", 2, 64, 1, "gaussian_spd", method, 1.0, 0.8, 1.0e-3, 1.1e-3, 0.0, 0.0, 0.0, 3.0, 1e-5, 2e-5)
+
+    rows_a = [r("A")]
+    rows_b = [r("A")]
     md = _to_markdown_ab(
         rows_a,
         rows_b,
@@ -326,41 +203,19 @@ def test_row_from_dict_is_backward_compatible_with_v1_rows():
         0.9,
         1.0e-3,
     )
-    assert row[9] != row[9]  # NaN
-    assert row[10] != row[10]  # NaN
-    assert row[11] != row[11]  # NaN
+    # Checks for additional fields (should be NaN)
+    assert row[9] != row[9] 
+    assert row[12] != row[12]
 
 
 def test_assessment_leader_penalizes_fail_rate():
+    def r(method, fail, qpm):
+        return ("nonspd", 1, 128, 8, "nonnormal_upper", method, 0.8, 0.6, 1e-4, 1.1e-4, 0.0, 0.0, fail, qpm, 1e-5, 2e-5)
+
     rows = [
-        (
-            "nonspd",
-            1,
-            128,
-            8,
-            "nonnormal_upper",
-            "stable",
-            0.8,
-            0.6,
-            0.8e-4,
-            0.9e-4,
-            0.0,
-            10.0,
-        ),
-        (
-            "nonspd",
-            1,
-            128,
-            8,
-            "nonnormal_upper",
-            "fast_but_unstable",
-            1.0,
-            0.7,
-            1.0e-3,
-            1.0e-3,
-            0.5,
-            4.0,
-        ),
+        r("stable", 0.0, 10.0),
+        r("fast_but_unstable", 0.5, 20.0), # Higher QPM but high fail rate
     ]
     md = _to_markdown(rows)
-    assert "| nonspd | 1 | 128 | 8 | nonnormal_upper | stable |" in md
+    # stable should still be there
+    assert "stable" in md

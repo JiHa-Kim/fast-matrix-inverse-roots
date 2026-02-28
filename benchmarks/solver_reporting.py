@@ -2,12 +2,39 @@
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from typing import Any, Dict, List
 
 from .utils import clean_method_name
 from .solver_utils import ParsedRow, assessment_score
 from .reporting import build_report_header
+
+
+def _build_legend(ab_mode: bool = False) -> list[str]:
+    """Build a standardized legend for benchmark reports."""
+    res = [
+        "---",
+        "",
+        "### Legend",
+        "- **Bold values** indicate the best performer for that metric in the scenario." if not ab_mode else "- Metrics are compared between Side A and Side B.",
+        "- `total_ms`: Total execution time including preprocessing.",
+        "- `iter_ms`: Time spent in iterations.",
+        "- `relerr`: Median relative error vs ground truth (for SPD) or reference solver (for Non-SPD).",
+        "- `relerr_p90`: 90th percentile relative error (tail quality).",
+        "- `resid`: Median residual error (||Ax - b|| / ||b||).",
+        "- `resid_p90`: 90th percentile residual error.",
+        "- `fail_rate`: Fraction of trials that were non-finite or failed quality checks.",
+        "- `q_per_ms`: Quality (digits of precision, i.e., -log10(relerr)) per millisecond of compute.",
+    ]
+    if ab_mode:
+        res.extend([
+            "- `delta_ms`: Change in total milliseconds (B - A).",
+            "- `delta_pct`: Percentage change in total milliseconds relative to A.",
+            "- `ratio(B/A)`: Ratio of B's metric to A's metric. < 1.0 means B is smaller/better for errors/time.",
+        ])
+    res.append("")
+    return res
 
 
 def to_markdown(
@@ -21,88 +48,84 @@ def to_markdown(
         return clean_method_name(n).replace("-Reuse", "-R")
 
     out: list[str] = build_report_header("Solver Benchmark Report", config or {})
+    out.extend(_build_legend(ab_mode=False))
 
-    out.extend(
-        [
-            "Assessment metrics:",
-            "- `relerr`: median relative error across trials.",
-            "- `relerr_p90`: 90th percentile relative error (tail quality).",
-            "- `fail_rate`: fraction of failed/non-finite trials.",
-            "- `q_per_ms`: `max(0, -log10(relerr)) / iter_ms`.",
-            "- assessment score: `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`.",
-            "",
-        ]
-    )
-
-    # Group by (kind, p) -> (n, k, case) -> list of rows
-    groups = defaultdict(list)
+    # Hierarchy: Kind -> p -> (n, k) -> case -> Methods
+    kind_groups = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
     for row in all_rows:
         kind, p, n, k, case = row[0], row[1], row[2], row[3], row[4]
-        groups[(kind, p)].append(row)
+        kind_groups[kind][p][(n, k)][case].append(row)
 
-    for kind, p in sorted(groups.keys()):
+    for kind in sorted(kind_groups.keys()):
         kind_label = "SPD" if kind == "spd" else "Non-Normal"
-        out.append(f"## {kind_label} (p={p})")
-        out.append("")
-        out.append(
-            "| Problem Scenario | Fastest Method | Most Accurate | Overall Winner |"
-        )
-        out.append("|:---|:---|:---|:---|")
-
-        # Group rows by scenario within this section
-        scenario_rows = defaultdict(list)
-        for row in groups[(kind, p)]:
-            n, k, case = row[2], row[3], row[4]
-            scenario_rows[(n, k, case)].append(row)
-
-        for n, k, case in sorted(scenario_rows.keys()):
-            rows = scenario_rows[(n, k, case)]
-            # Find winners
-            fastest = min(rows, key=lambda r: r[6])  # total_ms
-            accurate = min(rows, key=lambda r: r[8])  # relerr
-            best = max(rows, key=assessment_score)  # score
-
-            scenario_label = f"**{n}** / **{k}**<br>`{case}`"
-            f_str = f"{internal_clean(fastest[5])}<br>({fastest[6]:.2f}ms)"
-            a_str = f"{internal_clean(accurate[5])}<br>({accurate[8]:.1e})"
-            w_str = f"**{internal_clean(best[5])}**"
-
-            out.append(f"| {scenario_label} | {f_str} | {a_str} | {w_str} |")
+        out.append(f"# {kind_label}")
         out.append("")
 
-    out.append("## Legend")
-    out.append("")
-    out.append("- **Scenario**: Matrix size (n) / RHS dimension (k) / Problem case.")
-    out.append("- **Fastest**: Method with lowest execution time.")
-    out.append("- **Most Accurate**: Method with lowest median relative error.")
-    out.append(
-        "- **Overall Winner**: Optimal balance of speed and quality (highest assessment score)."
-    )
-    out.append("")
-    out.append("---")
-    out.append("")
-    out.append("### Detailed Assessment Leaders")
-    out.append("")
-    out.append(
-        "| kind | p | n | k | case | best_method | score | total_ms | relerr | resid | nf_rate | qf_rate | q_per_ms |"
-    )
-    out.append("|---|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|")
+        for p in sorted(kind_groups[kind].keys()):
+            out.append(f"## p = {p}")
+            out.append("")
 
-    by_case: dict[tuple[str, int, int, int, str], list[ParsedRow]] = {}
-    for row in all_rows:
-        key = (row[0], row[1], row[2], row[3], row[4])
-        by_case.setdefault(key, []).append(row)
+            for (n, k) in sorted(kind_groups[kind][p].keys()):
+                out.append(f"### Size {n}x{n} | RHS {n}x{k}")
+                out.append("")
 
-    for key in sorted(by_case.keys()):
-        candidates = by_case[key]
-        best = max(candidates, key=assessment_score)
-        score = assessment_score(best)
-        out.append(
-            f"| {key[0]} | {key[1]} | {key[2]} | {key[3]} | {key[4]} | {best[5]} | "
-            f"{score:.3e} | {best[6]:.3f} | {best[8]:.3e} | {best[14]:.3e} | "
-            f"{100.0 * best[10]:.1f}% | {100.0 * best[11]:.1f}% | {best[13]:.3e} |"
-        )
-    out.append("")
+                for case in sorted(kind_groups[kind][p][(n, k)].keys()):
+                    out.append(f"#### Case: `{case}`")
+                    out.append("")
+                    out.append(
+                        "| method | total_ms | iter_ms | relerr | relerr_p90 | resid | resid_p90 | fail_rate | q_per_ms |"
+                    )
+                    out.append("|:---|---:|---:|---:|---:|---:|---:|---:|---:|")
+
+                    rows = kind_groups[kind][p][(n, k)][case]
+
+                    # Find bests for this block
+                    best_total = min(r[6] for r in rows)
+                    best_iter = min(r[7] for r in rows)
+                    best_relerr = min(r[8] for r in rows)
+                    best_relerr_p90 = min(r[9] for r in rows)
+                    best_fail = min(r[12] for r in rows)
+                    best_qpm = max(r[13] for r in rows)
+                    # residuals might be nan if not spd or not requested
+                    resids = [r[14] for r in rows if not math.isnan(r[14])]
+                    best_resid = min(resids) if resids else float("nan")
+                    resids_p90 = [r[15] for r in rows if not math.isnan(r[15])]
+                    best_resid_p90 = min(resids_p90) if resids_p90 else float("nan")
+
+                    def fmt(val, best, s, is_max=False, is_fail=False):
+                        if is_fail and val >= 1.0:
+                            return s
+                        is_best = (val <= best) if not is_max else (val >= best)
+                        if is_best and not math.isnan(val):
+                            return f"**{s}**"
+                        return s
+
+                    for row in sorted(rows, key=lambda r: r[6]):
+                        method = internal_clean(row[5])
+                        total_ms = row[6]
+                        iter_ms = row[7]
+                        relerr = row[8]
+                        relerr_p90 = row[9]
+                        fail_rate = row[12]
+                        qpm = row[13]
+                        resid = row[14]
+                        resid_p90 = row[15]
+
+                        s_total = fmt(total_ms, best_total, f"{total_ms:.3f}")
+                        s_iter = fmt(iter_ms, best_iter, f"{iter_ms:.3f}")
+                        s_rel = fmt(relerr, best_relerr, f"{relerr:.2e}")
+                        s_rel_p90 = fmt(relerr_p90, best_relerr_p90, f"{relerr_p90:.2e}")
+                        s_fail = fmt(fail_rate, best_fail, f"{100.0*fail_rate:.1f}%", is_fail=True)
+                        s_qpm = fmt(qpm, best_qpm, f"{qpm:.3e}", is_max=True)
+                        s_resid = fmt(resid, best_resid, f"{resid:.2e}")
+                        s_resid_p90 = fmt(resid_p90, best_resid_p90, f"{resid_p90:.2e}")
+
+                        out.append(
+                            f"| {method} | {s_total} | {s_iter} | {s_rel} | {s_rel_p90} | "
+                            f"{s_resid} | {s_resid_p90} | {s_fail} | {s_qpm} |"
+                        )
+                    out.append("")
+    
     return "\n".join(out)
 
 
@@ -148,16 +171,10 @@ def to_markdown_ab(
         )
 
     out: list[str] = build_report_header("Solver Benchmark A/B Report", config or {})
+    out.extend(_build_legend(ab_mode=True))
 
     out.extend(
         [
-            "Assessment metrics:",
-            "- `relerr`: median relative error across trials.",
-            "- `relerr_p90`: 90th percentile relative error (tail quality).",
-            "- `fail_rate`: fraction of failed/non-finite trials.",
-            "- `q_per_ms`: `max(0, -log10(relerr)) / iter_ms`.",
-            "- assessment score: `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`.",
-            "",
             f"A: {label_a}",
             f"B: {label_b}",
             "",
