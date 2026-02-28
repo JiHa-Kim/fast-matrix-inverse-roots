@@ -1,6 +1,11 @@
 import pytest
 
-from benchmarks.run_benchmarks import _parse_rows, _to_markdown_ab
+from benchmarks.run_benchmarks import (
+    _parse_rows,
+    _row_from_dict,
+    _to_markdown,
+    _to_markdown_ab,
+)
 
 
 def test_parse_rows_extracts_p_field():
@@ -51,6 +56,31 @@ PE-Quad-Coupled-Apply      2.500 ms (pre 0.200 + iter 2.300) | relerr vs true: 9
     assert rows[0][11] != rows[0][11]  # NaN
 
 
+def test_parse_rows_keeps_inf_nan_rows():
+    raw = """
+== Non-SPD Size 64x64 | RHS 64x4 | dtype=torch.float32 ==
+p=1
+-- case nonnormal_upper --
+PE-Quad-Coupled-Apply      inf ms (pre nan + iter inf) | relerr vs solve: inf | relerr_p90 inf | fail_rate 100.0% | q_per_ms nan | bad 5
+""".strip()
+    rows = _parse_rows(raw, "nonspd")
+    assert len(rows) == 1
+    assert rows[0][:6] == (
+        "nonspd",
+        1,
+        64,
+        4,
+        "nonnormal_upper",
+        "PE-Quad-Coupled-Apply",
+    )
+    assert rows[0][6] == float("inf")
+    assert rows[0][7] == float("inf")
+    assert rows[0][8] == float("inf")
+    assert rows[0][9] == float("inf")
+    assert rows[0][10] == pytest.approx(1.0)
+    assert rows[0][11] != rows[0][11]  # NaN
+
+
 def test_ab_compare_can_match_without_method():
     rows_a = [
         (
@@ -95,6 +125,8 @@ def test_ab_compare_can_match_without_method():
     assert "candidate_method" in md
     assert "baseline_q_per_ms" in md
     assert "candidate_q_per_ms" in md
+    assert "## A/B Summary" in md
+    assert "B better assessment score" in md
     assert "Inverse-Newton-Coupled-Apply" in md
     assert "PE-Quad-Coupled-Apply" in md
 
@@ -140,3 +172,69 @@ def test_ab_compare_match_on_method_requires_same_method():
             label_b="candidate",
             match_on_method=True,
         )
+
+
+def test_markdown_includes_assessment_leaders():
+    rows = [
+        (
+            "spd",
+            2,
+            128,
+            1,
+            "gaussian_spd",
+            "A",
+            1.0,
+            0.9,
+            1.0e-3,
+            1.1e-3,
+            0.0,
+            3.0,
+        ),
+        (
+            "spd",
+            2,
+            128,
+            1,
+            "gaussian_spd",
+            "B",
+            0.9,
+            0.8,
+            1.2e-3,
+            1.2e-3,
+            0.0,
+            3.4,
+        ),
+    ]
+    md = _to_markdown(rows)
+    assert "## Assessment Leaders" in md
+    assert "| spd | 2 | 128 | 1 | gaussian_spd | B |" in md
+
+
+def test_row_from_dict_is_backward_compatible_with_v1_rows():
+    row = _row_from_dict(
+        {
+            "kind": "spd",
+            "p": 2,
+            "n": 128,
+            "k": 1,
+            "case": "gaussian_spd",
+            "method": "PE-Quad-Coupled-Apply",
+            "total_ms": 1.1,
+            "iter_ms": 0.9,
+            "relerr": 1.0e-3,
+        }
+    )
+    assert row[:9] == (
+        "spd",
+        2,
+        128,
+        1,
+        "gaussian_spd",
+        "PE-Quad-Coupled-Apply",
+        1.1,
+        0.9,
+        1.0e-3,
+    )
+    assert row[9] != row[9]  # NaN
+    assert row[10] != row[10]  # NaN
+    assert row[11] != row[11]  # NaN

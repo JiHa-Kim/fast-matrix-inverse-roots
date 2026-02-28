@@ -74,7 +74,7 @@ For detailed information on the API, mathematical methods, and benchmarked decis
 
 - **SPD Roots**: Chebyshev and PE-Quad paths are up to **10-15x faster** than dense EVD for inverse-root applies.
 - **Gram Matrices**: Specialized dual-paths provide a **>2x speedup** over primal approaches.
-- **Accuracy**: Our kernels maintain high fidelity ($relerr \approx 10^{-3}$) where naive iterative methods often fail.
+- **Quality Assessment**: Reports track median/tail error (`relerr`, `relerr_p90`), failure rate, and quality-per-ms (`q_per_ms`) so method selection is not based on latency alone.
 
 See the [Latest Production Benchmark Report](docs/methods/benchmark_results_production.md) for full details.
 

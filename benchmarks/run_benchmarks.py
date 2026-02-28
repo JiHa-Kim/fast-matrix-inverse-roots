@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import platform
 import re
@@ -41,6 +42,26 @@ class RunSpec:
 ParsedRow = tuple[
     str, int, int, int, str, str, float, float, float, float, float, float
 ]
+
+
+def _assessment_score(row: ParsedRow) -> float:
+    rel = float(row[8])
+    rel_p90 = float(row[9])
+    fail = float(row[10])
+    qpm = float(row[11])
+    fail_clamped = min(1.0, max(0.0, fail)) if math.isfinite(fail) else 1.0
+    if math.isfinite(qpm) and qpm > 0.0:
+        base = qpm
+    else:
+        iter_ms = float(row[7])
+        if rel > 0.0 and math.isfinite(rel) and iter_ms > 0.0:
+            base = max(0.0, -math.log10(rel)) / iter_ms
+        else:
+            return float("-inf")
+    tail_penalty = 1.0
+    if rel > 0.0 and math.isfinite(rel) and math.isfinite(rel_p90) and rel_p90 > 0.0:
+        tail_penalty = max(1.0, rel_p90 / rel)
+    return (base / tail_penalty) * (1.0 - fail_clamped)
 
 
 def _run_and_capture(cmd: list[str]) -> str:
@@ -580,13 +601,15 @@ def _parse_rows(raw: str, kind: str) -> list[ParsedRow]:
     hdr_re = re.compile(r"==\s+(?:SPD|Non-SPD)\s+Size\s+(\d+)x\1\s+\|\s+RHS\s+\1x(\d+)")
     p_re = re.compile(r"\bp\s*=\s*(\d+)\b")
     case_re = re.compile(r"^--\s+case\s+([^\s]+)\s+--")
+    num = r"(?:[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|inf|nan)"
     line_re = re.compile(
-        r"^(.*?)\s+(\d+\.\d+)\s+ms\s+\(pre\s+(\d+\.\d+)\s+\+\s+iter\s+(\d+\.\d+)\).*?"
-        r"relerr\s+vs\s+(?:true|solve):\s+([0-9.eE+-]+)"
+        rf"^(.*?)\s+({num})\s+ms\s+\(pre\s+({num})\s+\+\s+iter\s+({num})\).*?"
+        rf"relerr\s+vs\s+(?:true|solve):\s+({num})",
+        flags=re.IGNORECASE,
     )
-    relerr_p90_re = re.compile(r"\brelerr_p90\s+([0-9.eE+-]+)")
-    fail_rate_re = re.compile(r"\bfail_rate\s+([0-9.eE+-]+)%")
-    q_per_ms_re = re.compile(r"\bq_per_ms\s+([0-9.eE+-]+)")
+    relerr_p90_re = re.compile(rf"\brelerr_p90\s+({num})", flags=re.IGNORECASE)
+    fail_rate_re = re.compile(rf"\bfail_rate\s+({num})%", flags=re.IGNORECASE)
+    q_per_ms_re = re.compile(rf"\bq_per_ms\s+({num})", flags=re.IGNORECASE)
 
     for raw_line in raw.splitlines():
         line = raw_line.strip()
@@ -644,6 +667,26 @@ def _to_markdown(all_rows: list[ParsedRow]) -> str:
     out.append("# Solver Benchmark Report")
     out.append("")
     out.append(f"Generated: {datetime.now().isoformat(timespec='seconds')}")
+    out.append("")
+    out.append("## Assessment Leaders")
+    out.append("")
+    out.append(
+        "| kind | p | n | k | case | best_method | score | total_ms | relerr | relerr_p90 | fail_rate | q_per_ms |"
+    )
+    out.append("|---|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|")
+    by_case: dict[tuple[str, int, int, int, str], list[ParsedRow]] = {}
+    for row in all_rows:
+        key = (row[0], row[1], row[2], row[3], row[4])
+        by_case.setdefault(key, []).append(row)
+    for key in sorted(by_case.keys()):
+        candidates = by_case[key]
+        best = max(candidates, key=_assessment_score)
+        score = _assessment_score(best)
+        out.append(
+            f"| {key[0]} | {key[1]} | {key[2]} | {key[3]} | {key[4]} | {best[5]} | "
+            f"{score:.3e} | {best[6]:.3f} | {best[8]:.3e} | {best[9]:.3e} | "
+            f"{100.0 * best[10]:.1f}% | {best[11]:.3e} |"
+        )
     out.append("")
     out.append(
         "| kind | p | n | k | case | method | total_ms | iter_ms | relerr | "
@@ -776,6 +819,38 @@ def _to_markdown_ab(
                 f"{a_rel_p90:.3e} | {b_rel_p90:.3e} | {100.0 * a_fail:.1f}% | {100.0 * b_fail:.1f}% | "
                 f"{a_qpm:.3e} | {b_qpm:.3e} | {qpm_ratio:.3f} |"
             )
+    b_faster = 0
+    b_better_quality = 0
+    b_better_score = 0
+    total = len(keys)
+    for key in keys:
+        ra = map_a[key]
+        rb = map_b[key]
+        if rb[6] < ra[6]:
+            b_faster += 1
+        if rb[8] <= ra[8] and rb[9] <= ra[9] and rb[10] <= ra[10]:
+            b_better_quality += 1
+        if _assessment_score(rb) > _assessment_score(ra):
+            b_better_score += 1
+
+    out.append("")
+    out.append("## A/B Summary")
+    out.append("")
+    out.append("| metric | count | share |")
+    out.append("|---|---:|---:|")
+    out.append(
+        f"| B faster (total_ms) | {b_faster} / {total} | "
+        f"{(100.0 * b_faster / total) if total > 0 else float('nan'):.1f}% |"
+    )
+    out.append(
+        f"| B better-or-equal quality (`relerr`,`relerr_p90`,`fail_rate`) | "
+        f"{b_better_quality} / {total} | "
+        f"{(100.0 * b_better_quality / total) if total > 0 else float('nan'):.1f}% |"
+    )
+    out.append(
+        f"| B better assessment score | {b_better_score} / {total} | "
+        f"{(100.0 * b_better_score / total) if total > 0 else float('nan'):.1f}% |"
+    )
     out.append("")
     return "\n".join(out)
 

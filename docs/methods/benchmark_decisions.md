@@ -4,6 +4,7 @@ This document tracks architectural and policy decisions made based on empirical 
 
 ## Table of Contents
 
+- [2026-02-28: Benchmark assessment overhaul (quality + stability + efficiency)](#2026-02-28-benchmark-assessment-overhaul-quality--stability--efficiency)
 - [2026-02-27: non-SPD `p=1` monotone residual damping safeguard](#2026-02-27-non-spd-p1-monotone-residual-damping-safeguard)
 - [2026-02-27: non-SPD `p=1` affine-only schedule policy](#2026-02-27-non-spd-p1-affine-only-schedule-policy)
 - [2026-02-27: non-SPD `p=1` freeze-then-refine (PE -> NSRC) policy](#2026-02-27-non-spd-p1-freeze-then-refine-pe---nsrc-policy)
@@ -30,6 +31,33 @@ This document tracks architectural and policy decisions made based on empirical 
 - [2026-02-27: Block-Jacobi preconditioning for p=1](#2026-02-27-block-jacobi-preconditioning-for-p1)
 - [2026-02-27: lambda_min power iteration estimation](#2026-02-27-lambda_min-power-iteration-estimation)
 - [2026-02-27: Matrix-Free Chebyshev Apply for Gram Matrices](#2026-02-27-matrix-free-chebyshev-apply-for-gram-matrices)
+
+---
+
+## 2026-02-28: Benchmark assessment overhaul (quality + stability + efficiency)
+
+Decision:
+- Keep and adopt the new benchmark assessment schema and reporting policy.
+- Continue using compatibility parsing for historical logs/rows.
+
+What changed:
+- Solver rows now include:
+  - `relerr` (median relative error),
+  - `relerr_p90` (tail error),
+  - `fail_rate` (non-finite output rate),
+  - `q_per_ms` (`max(0, -log10(relerr)) / iter_ms`).
+- A/B markdown now reports deltas/ratios for these quality and stability fields, not only runtime and median error.
+- Standard markdown now includes an `Assessment Leaders` table per scenario (`kind,p,n,k,case`) with score:
+  - score = `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`.
+- Parser now preserves rows where values are `inf`/`nan` (instead of dropping failed cells).
+
+Why:
+- Prior benchmark policy over-indexed on `total_ms` and median `relerr`, which can hide tail risk and silent instability in non-SPD or low-precision regimes.
+- The new schema makes benchmark-driven decisions more robust by explicitly incorporating failure behavior and tail quality.
+
+Compatibility:
+- Older logs without new fields are still parsed (missing metrics default to `NaN`).
+- Existing rows caches remain readable; new caches are written as `solver_benchmark_rows.v2`.
 
 ---
 
