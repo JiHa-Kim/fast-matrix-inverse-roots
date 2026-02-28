@@ -9,11 +9,7 @@ against vanilla Newton-Schulz updates on SPD inputs.
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import os
-import platform
-import subprocess
 import sys
 from dataclasses import asdict
 from datetime import datetime
@@ -21,8 +17,6 @@ from typing import Any, List, Tuple
 
 try:
     from .utils import (
-        clean_method_name,
-        format_scientific,
         get_git_metadata,
         get_repro_context,
         stable_json_sha256,
@@ -31,14 +25,10 @@ try:
         write_sha256_sidecar,
         format_timestamp,
         repo_relative,
-        sha256_file,
-        sha256_text,
         write_repro_fingerprint_sidecar,
     )
 except ImportError:
     from utils import (
-        clean_method_name,
-        format_scientific,
         get_git_metadata,
         get_repro_context,
         stable_json_sha256,
@@ -47,19 +37,10 @@ except ImportError:
         write_sha256_sidecar,
         format_timestamp,
         repo_relative,
-        sha256_file,
-        sha256_text,
         write_repro_fingerprint_sidecar,
     )
 
 import torch
-
-try:
-    from benchmarks._bootstrap import ensure_repo_root_on_path
-except ModuleNotFoundError:
-    from _bootstrap import ensure_repo_root_on_path
-
-ensure_repo_root_on_path()
 
 from fast_iroot.coeffs import _quad_coeffs, build_pe_schedules
 from fast_iroot.diagnostics import (
@@ -67,6 +48,13 @@ from fast_iroot.diagnostics import (
     analyze_spectral_convergence,
     format_spectral_report,
 )
+
+try:
+    from benchmarks._bootstrap import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
