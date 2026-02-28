@@ -1,38 +1,38 @@
 # PE-Quad (Quadratic Polynomial-Express)
 
-Primary inverse-root family used in this repo.
+PE-Quad is the primary iterative family used in this project for computing inverse $p$-th roots of SPD matrices. It uses quadratic polynomial updates for rapid convergence.
 
-## Form
+## Mathematical Form
 
-At step `t`:
+At each step $t$, we build a quadratic polynomial:
 
 $$
-B_t = a_t I + b_t Y_t + c_t Y_t^2.
+B_t = a_t I + b_t Y_t + c_t Y_t^2
 $$
 
-Then:
+The state is then updated based on the mode:
 
-- Uncoupled: `Y_t = X_t^p A`, `X_{t+1} = X_t B_t`.
-- Coupled: `X_{t+1} = X_t B_t`, `Y_{t+1} = B_t^p Y_t` (commuting-model update).
+- **Uncoupled**: Tracks only $X_t \approx A^{-1/p}$.
+  - $Y_t = X_t^p A$
+  - $X_{t+1} = X_t B_t$
+- **Coupled**: Tracks $X_t$ and $Y_t$, maintaining the invariant $Y_t \approx X_t^p A$.
+  - $X_{t+1} = X_t B_t$
+  - $Y_{t+1} = B_t^p Y_t$ (updated using the commuting polynomial model)
 
 ## Implementations
 
-- `inverse_proot_pe_quadratic_uncoupled`
-- `inverse_proot_pe_quadratic_coupled`
-- `inverse_solve_pe_quadratic_coupled` (apply variant for `Z = A^{-1/p}B`)
+- `inverse_proot_pe_quadratic_uncoupled`: Standard iterative root.
+- `inverse_proot_pe_quadratic_coupled`: Stability-enhanced root tracking.
+- `solve_spd`: High-level entrypoint that utilizes these kernels with automated preconditioning.
 
-## Current Optimized Paths
+## Optimized Paths
 
-- `p=2` coupled specialization (`inverse_sqrt_pe_quadratic`).
-- `p=3` coupled odd-`p` specialization avoiding extra copy overhead.
-- terminal last-step skip in all coupled variants.
-- configurable `symmetrize_every` cadence.
+- **Specializations**: Specialized kernels for $p=2$ (inverse sqrt) and $p=4$ minimize operation counts.
+- **Terminal Step**: When only the result $Z = A^{-1/p} B$ is needed, the final $Y$ update is skipped to save one large **GEMM (General Matrix Multiply)**.
+- **Symmetry**: Configurable symmetry guards (`symmetrize_Y`) maintain **SPD (Symmetric Positive Definite)** invariants in finite precision.
 
-## Practical Guidance (from latest benchmarks)
+## Performance Profile
 
-- `p=1`: `Inverse-Newton` often dominates both speed and residual.
-- `p=2`: performance split is workload-dependent; coupled often fastest, uncoupled often best residual.
-- `p=3`: coupled commonly fastest, uncoupled commonly best residual/relerr.
-- `p>=4`: coupled usually fastest; uncoupled can still win accuracy for harder exponents (notably `p=8`).
-
-See `benchmark_results/` and `reports/latest/` for current solver benchmark outputs.
+- **$p=1$**: Inverse-Newton updates often dominate in both speed and accuracy.
+- **$p=2, 4$**: The coupled path is typically the fastest for production workloads, while the uncoupled path can provide better residual accuracy in some ill-conditioned cases.
+- **$p > 4$**: Coupled methods remain the default choice for throughput.

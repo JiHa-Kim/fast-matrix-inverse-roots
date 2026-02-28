@@ -1,33 +1,24 @@
-# Method Documentation
+# Mathematical Methods & Architecture
 
-This section documents active methods used by the solver/apply workflow.
+This section documents the core mathematical foundations and architectural choices of the `fast-matrix-inverse-roots` project.
 
-## Active Methods
+## Core Concepts
 
-- `docs/methods/shared_tricks.md`
-  - Shared math model, preconditioning pipeline, stability tricks
-- `docs/methods/pe2.md`
-  - Quadratic PE iteration (PE-Quad) — the primary method
-- `docs/methods/uncoupled_p_root.md`
-  - Uncoupled formulation for general p-th roots
-- `docs/methods/chebyshev.md`
-  - Direct Clenshaw evaluation for $X = A^{-1/p} B$ without dense inversions
-- `docs/implementation_status.md`
-  - Snapshot of implemented vs missing ideas to try
+- **[Shared Implementation Notes](shared_tricks.md)**: Details on the preconditioning pipeline, symmetry controls, and low-level performance optimizations used across all methods.
+- **[PE-Quad (Quadratic PE)](pe2.md)**: The primary method for SPD matrices, using quadratic polynomial expansions for fast convergence.
+- **[Chebyshev Clenshaw Evaluation](chebyshev.md)**: Direct evaluation of $A^{-1/p} B$ using minimax polynomials, ideal for wide Gram matrices or large-scale applies.
+- **[Uncoupled p-Root](uncoupled_p_root.md)**: Foundation for general $p$-th roots when coupled tracking is not used.
 
-## Archived (Deprecated)
+## Architecture Overview
 
-Affine/NS methods have been archived to `archive/` as they consistently
-underperform quadratic methods:
-- `archive/ns.md` — Newton-Schulz (NS3, NS4)
-- `archive/pe_ns3.md` — Affine PE schedule (PE-NS3)
-- `archive/auto.md` — AUTO selection policy
-- `archive/affine_iterations.py` — All affine iteration code
+The library is designed for high-performance ML workloads, focusing on:
+1. **GEMM Efficiency**: Minimizing kernel launches and maximizing hardware utilization.
+2. **Numerical Stability**: Using preconditioning and symmetry guards to ensure robust results in finite precision.
+3. **API Ergonomics**: Providing high-level solvers that encapsulate complex scheduling and preconditioning decisions.
 
-## Source of Truth
+## Archived Methods
 
-- Core kernels: `fast_iroot/`
-- Benchmark harnesses: `benchmarks/run_benchmarks.py`, `benchmarks/solve/matrix_solve.py`, `benchmarks/solve/matrix_solve_nonspd.py`
-- Benchmark cores: `benchmarks/solve/bench_solve_core.py`
-- Quality metrics: `fast_iroot/metrics.py`
-
+Historical or underperforming methods are maintained in the `archive/` directory for reference:
+- `archive/ns.md`: Newton-Schulz iterations.
+- `archive/pe_ns3.md`: Affine PE scheduling.
+- `archive/auto.md`: Early automated selection policies.

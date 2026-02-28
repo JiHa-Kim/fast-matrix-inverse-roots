@@ -1,5 +1,38 @@
 # Benchmark Decisions
 
+This document tracks architectural and policy decisions made based on empirical benchmark results. It serves as an Architecture Decision Record (ADR) for the performance-critical paths of the project.
+
+## Table of Contents
+
+- [2026-02-27: non-SPD `p=1` monotone residual damping safeguard](#2026-02-27-non-spd-p1-monotone-residual-damping-safeguard)
+- [2026-02-27: non-SPD `p=1` affine-only schedule policy](#2026-02-27-non-spd-p1-affine-only-schedule-policy)
+- [2026-02-27: non-SPD `p=1` freeze-then-refine (PE -> NSRC) policy](#2026-02-27-non-spd-p1-freeze-then-refine-pe---nsrc-policy)
+- [2026-02-27: non-SPD `p=1` preconditioner policy (row-norm vs ruiz)](#2026-02-27-non-spd-p1-preconditioner-policy-row-norm-vs-ruiz)
+- [2026-02-27: non-SPD `p=1` main-path adaptive toggle](#2026-02-27-non-spd-p1-main-path-adaptive-toggle)
+- [2026-02-27: SPD `p=1` Chebyshev method exposure in benchmark suite](#2026-02-27-spd-p1-chebyshev-method-exposure-in-benchmark-suite)
+- [2026-02-27: SPD `p=1` Chebyshev mode (fixed vs minimax-auto)](#2026-02-27-spd-p1-chebyshev-mode-fixed-vs-minimax-auto)
+- [2026-02-27: SPD `p=1` Chebyshev k<n degree cap (24 vs 16)](#2026-02-27-spd-p1-chebyshev-kltn-degree-cap-24-vs-16)
+- [2026-02-27: SPD `p=1` Chebyshev CUDA graph replay (off vs on)](#2026-02-27-spd-p1-chebyshev-cuda-graph-replay-off-vs-on)
+- [2026-02-27: SPD `p=1` policy compare (PE-Quad vs Chebyshev+graph)](#2026-02-27-spd-p1-policy-compare-pe-quad-vs-chebyshevgraph)
+- [2026-02-27: non-SPD `p=1` safety guards (on vs off)](#2026-02-27-non-spd-p1-safety-guards-on-vs-off)
+- [2026-02-27: non-SPD `p=1` final safety check diagonal gate](#2026-02-27-non-spd-p1-final-safety-check-diagonal-gate)
+- [2026-02-27: Dual Gram-RHS apply path](#2026-02-27-dual-gram-rhs-apply-path-apply_inverse_root_gram_rhs_spd)
+- [2026-02-27: Gram precondition cache reuse validation sweep](#2026-02-27-gram-precondition-cache-reuse-reuse_precondtrue-validation-sweep)
+- [2026-02-26: Kappa-bin minimax lookup candidate](#2026-02-26-kappa-bin-minimax-lookup-candidate-klt-only-wiring)
+- [2026-02-26: Staged minimax+Newton-tail schedule candidate](#2026-02-26-staged-minimaxnewton-tail-schedule-candidate-p24)
+- [2026-02-26: Chebyshev CUDA graph on default path](#2026-02-26-chebyshev-cuda-graph-on-default-path-p24)
+- [2026-02-26: Global CUDA graph default](#2026-02-26-global-cuda-graph-default-off-vs-on-for-p24)
+- [2026-02-26: Chebyshev mode fixed vs minimax-auto for p=2,4](#2026-02-26-chebyshev-mode-fixed-vs-minimax-auto-for-p24)
+- [2026-02-26: SPD p=1 Torch-Solve backend](#2026-02-26-spd-p1-torch-solve-backend)
+- [2026-02-26: SPD p=2/p=4 schedule-trim A/B (target_err=0.01)](#2026-02-26-spd-p2p4-schedule-trim-ab-target_err001)
+- [2026-02-27: non-SPD `p=1` smooth damping prototype](#2026-02-27-non-spd-p1-smooth-damping-prototype-branch-light-stability)
+- [2026-02-27: fused-addmm implementation optimizations](#2026-02-27-fused-addmm-implementation-optimizations-clenshaw-and-rhs-terminal)
+- [2026-02-27: Block-Jacobi preconditioning for p=1](#2026-02-27-block-jacobi-preconditioning-for-p1)
+- [2026-02-27: lambda_min power iteration estimation](#2026-02-27-lambda_min-power-iteration-estimation)
+- [2026-02-27: Matrix-Free Chebyshev Apply for Gram Matrices](#2026-02-27-matrix-free-chebyshev-apply-for-gram-matrices)
+
+---
+
 ## 2026-02-27: non-SPD `p=1` monotone residual damping safeguard
 
 Decision:
@@ -255,21 +288,6 @@ Key results:
   - Geometric-mean speedup across sweep: `2.384x`
   - Output parity: all sweep cells reported relative diff `0.000e+00`
 
-## 2026-02-27: Gram precondition cache reuse (`reuse_precond=True`)
-
-Decision:
-- Keep `apply_inverse_root_gram_spd(..., reuse_precond=True)` as the preferred path for repeated solves with fixed `G`.
-- The cache-reuse path is materially faster with identical outputs in the measured run.
-
-Benchmark arguments:
-- `uv run python -m benchmarks.solve.matrix_solve_gram --p 2 --m 2048 --n 512 --k 64 --trials 12 --timing-reps 3 --warmup-reps 1 --dtype fp32 --gram-mode col-norm --precond-mode jacobi --markdown --out benchmark_results/runs/2026_02_27/gram_reuse_precond_p2_cpu/report.md`
-
-Key results:
-- `reuse_precond=False`: `3.543 ms`
-- `reuse_precond=True`: `1.202 ms`
-- Speedup: `2.947x`
-- Output parity: relative diff `0.000e+00`
-
 ## 2026-02-26: Kappa-bin minimax lookup candidate (k<n-only wiring)
 
 Decision:
@@ -290,7 +308,7 @@ Key results (`PE-Quad-Coupled-Apply`):
 ## 2026-02-26: Staged minimax+Newton-tail schedule candidate (`p=2,4`)
 
 Decision:
-- Reject staged candidate (`greedy-minimax` early + forced inverse-Newton tail).
+- Reject staged candidate (`greedy-minimax" early + forced inverse-Newton tail).
 - Keep `greedy-affine-opt` as default coupled schedule mode.
 
 Benchmark arguments:
@@ -352,24 +370,6 @@ Benchmark arguments:
 Key results (`Chebyshev-Apply`):
 - `p=2`: near-neutral aggregate (`-0.08%`), but `k<n` regressed (`+1.57%`); relerr unchanged.
 - `p=4`: aggregate regression (`+2.05%`), with regressions for both `k<n` (`+5.66%`) and `k=n` (`+0.57%`); relerr unchanged.
-
-## 2026-02-26: Chebyshev CUDA graph replay for `p=2,4`
-
-Decision:
-- Enable CUDA graph replay for `Chebyshev-Apply` when `--cuda-graph` is enabled (default on via `--cheb-cuda-graph`).
-
-Benchmark arguments:
-- `p=2`:
-  - `uv run python benchmarks/run_benchmarks.py --only "SPD p=2 k<n,SPD p=2 k=n=256,SPD p=2 k=n=512,SPD p=2 k=n=1024,SPD p=2 k=n=2048" --extra-args=--cuda-graph --ab-extra-args-a=--no-cheb-cuda-graph --ab-extra-args-b=--cheb-cuda-graph --ab-label-a cheb_graph_off --ab-label-b cheb_graph_on --ab-out benchmark_results/runs/2026_02_26/ab_onechange_cheb_cuda_graph_p2/report.md --manifest-out benchmark_results/runs/2026_02_26/ab_onechange_cheb_cuda_graph_p2/manifest.json`
-- `p=4`:
-  - `uv run python benchmarks/run_benchmarks.py --only "SPD p=4 k<n,SPD p=4 k=n=256,SPD p=4 k=n=512,SPD p=4 k=n=1024,SPD p=4 k=n=2048" --extra-args=--cuda-graph --ab-extra-args-a=--no-cheb-cuda-graph --ab-extra-args-b=--cheb-cuda-graph --ab-label-a cheb_graph_off --ab-label-b cheb_graph_on --ab-out benchmark_results/runs/2026_02_26/ab_onechange_cheb_cuda_graph_p4/report.md --manifest-out benchmark_results/runs/2026_02_26/ab_onechange_cheb_cuda_graph_p4/manifest.json`
-- Note: this A/B was split by `p` to avoid key collisions in combined reports.
-
-Key results (`Chebyshev-Apply`, `k<n` and `k=n` included):
-- `p=2`: `19/20` cells faster, `-13.39%` aggregate total ms, relerr unchanged.
-  - `k<n`: `-31.16%`; `k=n`: `-6.37%`.
-- `p=4`: `17/20` cells faster, `-16.35%` aggregate total ms, relerr unchanged.
-  - `k<n`: `-40.22%`; `k=n`: `-6.36%`.
 
 ## 2026-02-26: SPD p=1 Torch-Solve backend
 

@@ -64,57 +64,16 @@ from fast_iroot.precond import precond_spd
 from fast_iroot.apply import apply_inverse_root_auto
 ```
 
-## Public API
+## Documentation
 
-Primary production entrypoints:
-
-- `solve_spd`
-- `solve_nonspd`
-- `solve_gram_spd`
-- `build_schedule`
-- `ScheduleConfig`
-- `PrecondConfig`
-
-Detailed function-level reference: `docs/api.md`.
-
-Note:
-
-- `solve_nonspd` is currently `p=1` only.
-
-## Validation
-
-```bash
-uv run python -m pytest -q
-uv run python -m pytest tests/test_verify_iroot.py -q
-uv run python -m ruff check .
-```
-
-## Benchmarks
-
-Run the maintained benchmark matrix:
-
-```bash
-uv run python benchmarks/run_benchmarks.py
-```
-
-Generate a consolidated markdown report in a per-run folder:
-
-```bash
-uv run python benchmarks/run_benchmarks.py --markdown --out benchmark_results/runs/2026_02_26/full_matrix/report.md --manifest-out benchmark_results/runs/2026_02_26/full_matrix/manifest.json
-```
-
-Focused A/B compare:
-
-```bash
-uv run python benchmarks/run_benchmarks.py --only "SPD p=2 k<n" --ab-extra-args-a "--online-coeff-target-interval-err 0.0" --ab-extra-args-b "--online-coeff-target-interval-err 0.01" --ab-out benchmark_results/runs/2026_02_26/ab_spd_p2_klt_n/report.md --manifest-out benchmark_results/runs/2026_02_26/ab_spd_p2_klt_n/manifest.json
-```
+For detailed information on the API, mathematical methods, and benchmarked decisions, see the [Documentation Index](docs/index.md).
 
 ## Project Layout
 
 - `fast_iroot/`: kernels, apply paths, preconditioners, diagnostics.
 - `benchmarks/`: benchmark drivers and solve suites.
 - `tests/`: pytest suite.
-- `docs/`: method and implementation documentation.
+- `docs/`: method and implementation documentation. See [docs/index.md](docs/index.md).
 - `benchmark_results/`: run artifacts, reports, and manifests.
 
 ## License

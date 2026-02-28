@@ -1,113 +1,124 @@
 # API Reference
 
-This package exposes a lean root API plus explicit low-level modules.
+This page documents the high-level production API of `fast_iroot`. For low-level kernel details, see the [Methods](methods/README.md) section.
 
-- Root package `fast_iroot`: production entrypoints only.
-- Submodules `fast_iroot.*`: low-level kernels/workspaces.
+## Configuration Objects
 
-## High-Level API
+### `ScheduleConfig`
 
-## `ScheduleConfig`
+Configuration for building a quadratic **Polynomial-Express (PE)** coefficient schedule.
 
-Quadratic PE coefficient schedule settings.
+```python
+@dataclass(frozen=True)
+class ScheduleConfig:
+    l_target: float = 0.05
+    coeff_mode: str = "auto"
+    coeff_seed: int = 0
+    coeff_safety: float = 1.0
+    coeff_no_final_safety: bool = False
+```
 
-Fields:
+- **`l_target`**: Lower spectral bound target for the schedule (e.g., $0.05$ assumes eigenvalues in $[0.05, 1]$).
+- **`coeff_mode`**: Strategy for selecting coefficients (`"auto"`, `"greedy-newton"`, `"greedy-minimax"`, etc.).
+- **`coeff_safety`**: Global multiplier for the contraction interval.
 
-- `l_target: float = 0.05`
-- `coeff_mode: str = "auto"`
-- `coeff_seed: int = 0`
-- `coeff_safety: float = 1.0`
-- `coeff_no_final_safety: bool = False`
+### `PrecondConfig`
 
-## `PrecondConfig`
+Configuration for **Symmetric Positive Definite (SPD)** preconditioning used by `solve_spd`.
 
-SPD (symmetric positive-definite) preconditioner settings used by `solve_spd`.
+```python
+@dataclass(frozen=True)
+class PrecondConfig:
+    mode: str = "none"
+    eps: float = 1e-12
+    ruiz_iters: int = 2
+    ridge_rel: float = 0.0
+    l_target: float = 0.05
+    lambda_max_est: str = "row_sum"
+    lambda_max_power_iters: int = 8
+    lambda_max_safety: float = 1.02
+```
 
-Fields:
+- **`mode`**: Preconditioning mode (`"none"`, `"jacobi"`, `"ruiz"`, `"aol"`, `"frob"`).
+- **`l_target`**: Target lower bound for the spectral interval after preconditioning.
+- **`lambda_max_est`**: Strategy for estimating $\lambda_{max}$ (`"row_sum"`, `"power"`).
 
-- `mode: str = "none"`
-- `eps: float = 1e-12`
-- `ruiz_iters: int = 2`
-- `ridge_rel: float = 0.0`
-- `l_target: float = 0.05`
-- `lambda_max_est: str = "row_sum"`
-- `lambda_max_power_iters: int = 8`
-- `lambda_max_safety: float = 1.02`
+---
 
-## `build_schedule(device, *, p_val=2, config=None)`
+## High-Level Solvers
 
-Builds a quadratic PE schedule.
+### `solve_spd`
 
-Returns:
+Primary entrypoint for solving $Z \approx A^{-1/p} B$ where $A$ is **Symmetric Positive Definite (SPD)**.
 
-- `abc_t: torch.Tensor`
-- `schedule_desc: str`
+```python
+def solve_spd(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    *,
+    p_val: int = 2,
+    abc_t: Optional[torch.Tensor] = None,
+    schedule_config: Optional[ScheduleConfig] = None,
+    precond_config: Optional[PrecondConfig] = None,
+    workspace: Optional[InverseApplyAutoWorkspace] = None,
+    **kwargs
+) -> Tuple[torch.Tensor, InverseApplyAutoWorkspace, PrecondStats, str]:
+```
 
-## `solve_spd(A, B, *, ...)`
+- **Returns**: `(Z, workspace, stats, schedule_desc)`.
+- **Note**: Supports $p=2$ (inverse sqrt), $p=4$, and general $p$ via uncoupled kernels.
 
-Primary SPD entrypoint for:
+### `solve_nonspd`
 
-`Z ~= A^(-1/p) B`
+Entrypoint for solving $Z \approx A^{-1} B$ where $A$ is a general non-SPD matrix.
 
-Pipeline:
+```python
+def solve_nonspd(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    *,
+    p_val: int = 1,
+    schedule_config: Optional[ScheduleConfig] = None,
+    nonspd_precond_mode: str = "row-norm",
+    **kwargs
+) -> Tuple[torch.Tensor, InverseApplyAutoWorkspace, str]:
+```
 
-1. `precond_spd(A, ...)`
-2. `apply_inverse_root_auto(A_norm, B, ...)`
+- **Note**: Currently restricted to $p=1$ (standard linear solve). Use `solve_spd` for $p > 1$ if the matrix is SPD.
 
-Returns:
+### `solve_gram_spd`
 
-- `Z: torch.Tensor`
-- `workspace: InverseApplyAutoWorkspace`
-- `stats: PrecondStats`
-- `schedule_desc: str`
+Specialized entrypoint for Gram-matrix solve $Z \approx (G^T G)^{-1/p} B$.
 
-## `solve_nonspd(A, B, *, ...)`
+```python
+def solve_gram_spd(
+    G: torch.Tensor,
+    B: torch.Tensor,
+    *,
+    p_val: int = 2,
+    reuse_precond: bool = True,
+    **kwargs
+) -> Tuple[torch.Tensor, GramInverseApplyWorkspace, PrecondStats, str]:
+```
 
-Primary non-SPD entrypoint for:
+- **Efficiency**: Avoids explicit formation of $G^T G$ if $k \ll n$ or if using matrix-free Chebyshev paths.
+- **`reuse_precond`**: If `True`, caches the preconditioner (e.g., column norms) for subsequent calls with the same `G`.
 
-`Z ~= A^(-1/p) B`
+---
 
-Current scope:
+## Utility Functions
 
-- `p_val=1` only (`Z ~= A^(-1) B`).
+### `build_schedule`
 
-Pipeline:
+Builds a PE-Quadratic coefficient schedule.
 
-1. `precond_nonspd(A, ...)`
-2. `apply_inverse_root_auto(..., assume_spd=False)`
+```python
+def build_schedule(
+    device: torch.device,
+    *,
+    p_val: int = 2,
+    config: Optional[ScheduleConfig] = None,
+) -> Tuple[torch.Tensor, str]:
+```
 
-Returns:
-
-- `Z: torch.Tensor`
-- `workspace: InverseApplyAutoWorkspace`
-- `schedule_desc: str`
-
-## `solve_gram_spd(G, B, *, ...)`
-
-Primary Gram-SPD entrypoint for:
-
-`Z ~= (G^T G)^(-1/p) B`
-
-Pipeline:
-
-1. Cached Gram preconditioning in `apply_inverse_root_gram_spd`
-2. Auto strategy selection (`direct-solve`, `materialize-root`, hybrid for p=1)
-
-Returns:
-
-- `Z: torch.Tensor`
-- `workspace: GramInverseApplyWorkspace`
-- `stats: PrecondStats`
-- `schedule_desc: str`
-
-## Low-Level Modules
-
-Import low-level operations from explicit modules:
-
-- `fast_iroot.coeffs`
-- `fast_iroot.precond`
-- `fast_iroot.apply`
-- `fast_iroot.coupled`
-- `fast_iroot.uncoupled`
-- `fast_iroot.chebyshev`
-- `fast_iroot.nsrc`
+Returns the coefficients `abc_t` and a description string.
