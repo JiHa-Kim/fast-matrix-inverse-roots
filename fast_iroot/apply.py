@@ -154,6 +154,9 @@ def apply_inverse(
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
     nonspd_safe_early_y_tol: Optional[float] = None,
+    nonspd_safe_early_metric: str = "fro",
+    renorm_every: int = 0,
+    renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """
     Apply an iterative inverse to M_norm using a coupled quadratic PE scheme.
@@ -189,6 +192,9 @@ def apply_inverse(
         nonspd_adaptive_check_every=nonspd_adaptive_check_every,
         nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
         nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+        nonspd_safe_early_metric=nonspd_safe_early_metric,
+        renorm_every=renorm_every,
+        renorm_eps=renorm_eps,
     )
 
 
@@ -216,6 +222,9 @@ def apply_inverse_root(
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
     nonspd_safe_early_y_tol: Optional[float] = None,
+    nonspd_safe_early_metric: str = "fro",
+    renorm_every: int = 0,
+    renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """
     Apply an iterative inverse p-th root to M_norm using a coupled quadratic PE scheme.
@@ -247,6 +256,9 @@ def apply_inverse_root(
         nonspd_adaptive_check_every=nonspd_adaptive_check_every,
         nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
         nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+        nonspd_safe_early_metric=nonspd_safe_early_metric,
+        renorm_every=renorm_every,
+        renorm_eps=renorm_eps,
     )
 
 
@@ -276,6 +288,9 @@ def apply_inverse_root_auto(
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
     nonspd_safe_early_y_tol: Optional[float] = None,
+    nonspd_safe_early_metric: str = "fro",
+    renorm_every: int = 0,
+    renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, InverseApplyAutoWorkspace]:
     """Apply inverse p-th root with strategy selection for single-shot vs reuse.
 
@@ -314,6 +329,8 @@ def apply_inverse_root_auto(
             post_correction_steps=post_correction_steps,
             post_correction_order=post_correction_order,
             assume_spd=assume_spd,
+            renorm_every=renorm_every,
+            renorm_eps=renorm_eps,
         )
         return Xn @ M_norm, ws
 
@@ -341,6 +358,9 @@ def apply_inverse_root_auto(
         nonspd_adaptive_check_every=nonspd_adaptive_check_every,
         nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
         nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+        nonspd_safe_early_metric=nonspd_safe_early_metric,
+        renorm_every=renorm_every,
+        renorm_eps=renorm_eps,
     )
     return Zn, ws
 

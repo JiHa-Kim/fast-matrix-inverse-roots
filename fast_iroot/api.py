@@ -82,6 +82,8 @@ def solve_spd(
     online_stop_check_every: int = 1,
     post_correction_steps: int = 0,
     post_correction_order: int = 2,
+    renorm_every: int = 0,
+    renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, InverseApplyAutoWorkspace, PrecondStats, str]:
     """Solve/apply `Z ~= A^(-1/p) B` for SPD `A` using preconditioning + PE kernels."""
     pcfg = precond_config if precond_config is not None else PrecondConfig()
@@ -126,6 +128,8 @@ def solve_spd(
         post_correction_steps=post_correction_steps,
         post_correction_order=post_correction_order,
         assume_spd=True,
+        renorm_every=renorm_every,
+        renorm_eps=renorm_eps,
     )
     return Z, ws, stats, schedule_desc
 
@@ -158,6 +162,9 @@ def solve_nonspd(
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
     nonspd_safe_early_y_tol: Optional[float] = None,
+    nonspd_safe_early_metric: str = "fro",
+    renorm_every: int = 0,
+    renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, InverseApplyAutoWorkspace, str]:
     """Solve/apply `Z ~= A^(-1) B` for non-SPD `A` with generic scaling.
 
@@ -208,6 +215,9 @@ def solve_nonspd(
         nonspd_adaptive_check_every=nonspd_adaptive_check_every,
         nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
         nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+        nonspd_safe_early_metric=nonspd_safe_early_metric,
+        renorm_every=renorm_every,
+        renorm_eps=renorm_eps,
     )
     return Z, ws, schedule_desc
 

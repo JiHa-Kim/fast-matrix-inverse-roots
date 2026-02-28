@@ -120,12 +120,19 @@ def _parse_methods_csv(spec: str, available: Sequence[str]) -> List[str]:
         return list(available)
     out: List[str] = []
     seen: set[str] = set()
+    unknown: List[str] = []
     for m in toks:
         if m in seen:
             continue
         if m in available:
             seen.add(m)
             out.append(m)
+        else:
+            unknown.append(m)
+    if unknown:
+        raise ValueError(
+            f"Unknown method(s): {unknown}. Available: {list(available)}"
+        )
     return out
 
 
@@ -155,6 +162,9 @@ def _build_runner(
     nonspd_adaptive_check_every: int,
     nonspd_safe_fallback_tol: Optional[float],
     nonspd_safe_early_y_tol: Optional[float],
+    nonspd_safe_early_metric: str,
+    renorm_every: int,
+    renorm_eps: float,
     coupled_solve_fn: Callable[..., Tuple[torch.Tensor, object]],
 ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
     inv_newton_coeffs = [((1.0 + 1.0) / 1.0, -1.0 / 1.0, 0.0)] * len(pe_coeffs)
@@ -178,6 +188,9 @@ def _build_runner(
                 assume_spd=False,
                 nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
                 nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+                nonspd_safe_early_metric=nonspd_safe_early_metric,
+                renorm_every=renorm_every,
+                renorm_eps=renorm_eps,
             )
             return Zn
 
@@ -201,6 +214,8 @@ def _build_runner(
                 online_stop_tol=None,
                 online_min_steps=1,
                 assume_spd=False,
+                renorm_every=renorm_every,
+                renorm_eps=renorm_eps,
             )
             if out_scale != 1.0:
                 Zn = Zn * out_scale
@@ -228,6 +243,9 @@ def _build_runner(
                 nonspd_adaptive=False,
                 nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
                 nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+                nonspd_safe_early_metric=nonspd_safe_early_metric,
+                renorm_every=renorm_every,
+                renorm_eps=renorm_eps,
             )
             return Zn
 
@@ -256,6 +274,9 @@ def _build_runner(
                 nonspd_adaptive_check_every=nonspd_adaptive_check_every,
                 nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
                 nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+                nonspd_safe_early_metric=nonspd_safe_early_metric,
+                renorm_every=renorm_every,
+                renorm_eps=renorm_eps,
             )
             return Zn
 
@@ -305,6 +326,9 @@ def eval_method(
     nonspd_adaptive_check_every: int,
     nonspd_safe_fallback_tol: Optional[float],
     nonspd_safe_early_y_tol: Optional[float],
+    nonspd_safe_early_metric: str,
+    renorm_every: int,
+    renorm_eps: float,
     coupled_solve_fn: Callable[..., Tuple[torch.Tensor, object]],
 ) -> NonSpdBenchResult:
     ms_iter_list: List[float] = []
@@ -325,6 +349,9 @@ def eval_method(
             nonspd_adaptive_check_every,
             nonspd_safe_fallback_tol,
             nonspd_safe_early_y_tol,
+            nonspd_safe_early_metric,
+            renorm_every,
+            renorm_eps,
             coupled_solve_fn,
         )
 
@@ -466,8 +493,32 @@ def main():
         default=0.8,
         help=(
             "If > 0, trigger early exact-solve fallback after step 1 when "
-            "max|diag(Y)-1| exceeds this threshold"
+            "the chosen Y proxy exceeds this threshold"
         ),
+    )
+    p.add_argument(
+        "--nonspd-safe-early-metric",
+        type=str,
+        default="fro",
+        choices=["diag", "fro"],
+        help=(
+            "Proxy metric for early non-SPD fallback gate: "
+            "'fro' uses ||Y-I||_F/sqrt(n), 'diag' uses max|diag(Y)-1|."
+        ),
+    )
+    p.add_argument(
+        "--renorm-every",
+        type=int,
+        default=1,
+        help=(
+            "If > 0, apply periodic coupled-state renormalization every k Y-updating steps."
+        ),
+    )
+    p.add_argument(
+        "--renorm-eps",
+        type=float,
+        default=1e-12,
+        help="Minimum trace-scale magnitude used by renormalization.",
     )
     p.add_argument(
         "--coeff-mode",
@@ -522,6 +573,14 @@ def main():
         raise ValueError(
             "--nonspd-safe-early-y-tol must be >= 0, "
             f"got {args.nonspd_safe_early_y_tol}"
+        )
+    if int(args.renorm_every) < 0:
+        raise ValueError(
+            f"--renorm-every must be >= 0, got {args.renorm_every}"
+        )
+    if float(args.renorm_eps) <= 0.0:
+        raise ValueError(
+            f"--renorm-eps must be > 0, got {args.renorm_eps}"
         )
     nonspd_safe_fallback_tol = (
         float(args.nonspd_safe_fallback_tol)
@@ -581,7 +640,9 @@ def main():
                     f"growth_tol={args.nonspd_adaptive_growth_tol}, "
                     f"check_every={args.nonspd_adaptive_check_every}, "
                     f"safe_fallback_tol={args.nonspd_safe_fallback_tol}, "
-                    f"safe_early_y_tol={args.nonspd_safe_early_y_tol})"
+                    f"safe_early_y_tol={args.nonspd_safe_early_y_tol}, "
+                    f"safe_early_metric={args.nonspd_safe_early_metric}, "
+                    f"renorm_every={args.renorm_every})"
                 )
 
                 for case in cases:
@@ -623,6 +684,11 @@ def main():
                                 ),
                                 nonspd_safe_fallback_tol=nonspd_safe_fallback_tol,
                                 nonspd_safe_early_y_tol=nonspd_safe_early_y_tol,
+                                nonspd_safe_early_metric=str(
+                                    args.nonspd_safe_early_metric
+                                ),
+                                renorm_every=int(args.renorm_every),
+                                renorm_eps=float(args.renorm_eps),
                                 coupled_solve_fn=coupled_solve_fn,
                             )
                         except (NotImplementedError, RuntimeError) as e:

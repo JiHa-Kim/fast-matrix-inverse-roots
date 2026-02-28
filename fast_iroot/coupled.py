@@ -94,6 +94,31 @@ def _online_stop_error(
 
 
 @torch.no_grad()
+def _renorm_coupled_state_(
+    Y: torch.Tensor,
+    W: torch.Tensor,
+    *,
+    p_val: int,
+    eps: float,
+) -> None:
+    """Re-center Y around identity by trace scaling and keep W consistent.
+
+    Uses mu = mean(diag(Y)) per batch item and applies:
+      Y <- Y / |mu|
+      W <- W / |mu|^(1/p)
+    """
+    diag_mean = Y.diagonal(dim1=-2, dim2=-1).mean(dim=-1)
+    mu_abs = torch.abs(diag_mean)
+    mu_abs = torch.where(torch.isfinite(mu_abs), mu_abs, torch.zeros_like(mu_abs))
+    mu_abs = mu_abs.clamp_min(float(eps))
+
+    scale_y = mu_abs.reciprocal().unsqueeze(-1).unsqueeze(-1)
+    scale_w = torch.pow(mu_abs, -1.0 / float(p_val)).unsqueeze(-1).unsqueeze(-1)
+    Y.mul_(scale_y)
+    W.mul_(scale_w)
+
+
+@torch.no_grad()
 def _build_step_polynomial(
     Y: torch.Tensor, *, a: float, b: float, c: float, out: torch.Tensor
 ) -> torch.Tensor:
@@ -329,6 +354,8 @@ def inverse_proot_pe_quadratic_coupled(
     post_correction_steps: int = 0,
     post_correction_order: int = 2,
     assume_spd: bool = True,
+    renorm_every: int = 0,
+    renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, IrootWorkspaceCoupled]:
     """Coupled quadratic PE iteration for general p (inverse p-th root).
 
@@ -383,6 +410,12 @@ def inverse_proot_pe_quadratic_coupled(
         raise ValueError(
             f"terminal_tail_steps must be >= 0, got {terminal_tail_steps}"
         )
+    renorm_period = int(renorm_every)
+    if renorm_period < 0:
+        raise ValueError(f"renorm_every must be >= 0, got {renorm_every}")
+    renorm_eps_f = float(renorm_eps)
+    if renorm_eps_f <= 0.0:
+        raise ValueError(f"renorm_eps must be > 0, got {renorm_eps}")
     if post_steps > 0:
         if not assume_spd:
             raise ValueError(
@@ -410,6 +443,7 @@ def inverse_proot_pe_quadratic_coupled(
         and online_metric == "diag"
         and stop_check_every == 1
         and post_steps == 0
+        and renorm_period == 0
     ):
         X, ws2 = inverse_sqrt_pe_quadratic(
             A_norm,
@@ -485,6 +519,13 @@ def inverse_proot_pe_quadratic_coupled(
             # ws.B2 is used as scratch here; contents destroyed.
             _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
+        if renorm_period > 0 and ((t + 1) % renorm_period == 0):
+            _renorm_coupled_state_(
+                ws.Y,
+                ws.X,
+                p_val=p_val,
+                eps=renorm_eps_f,
+            )
 
         # Low-overhead online early-stop based on Y diagonal closeness to identity.
         if (
@@ -537,6 +578,9 @@ def inverse_solve_pe_quadratic_coupled(
     nonspd_adaptive_check_every: int = 1,
     nonspd_safe_fallback_tol: Optional[float] = None,
     nonspd_safe_early_y_tol: Optional[float] = None,
+    nonspd_safe_early_metric: str = "fro",
+    renorm_every: int = 0,
+    renorm_eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, InverseSolveWorkspaceCoupled]:
     """Coupled quadratic PE iteration for computing an inverse-like solve on M.
 
@@ -593,6 +637,12 @@ def inverse_solve_pe_quadratic_coupled(
         raise ValueError(
             f"terminal_tail_steps must be >= 0, got {terminal_tail_steps}"
         )
+    renorm_period = int(renorm_every)
+    if renorm_period < 0:
+        raise ValueError(f"renorm_every must be >= 0, got {renorm_every}")
+    renorm_eps_f = float(renorm_eps)
+    if renorm_eps_f <= 0.0:
+        raise ValueError(f"renorm_eps must be > 0, got {renorm_eps}")
     if post_steps > 0:
         if not assume_spd:
             raise ValueError(
@@ -640,6 +690,12 @@ def inverse_solve_pe_quadratic_coupled(
         raise ValueError(
             "nonspd_safe_early_y_tol must be > 0 when provided, "
             f"got {nonspd_safe_early_y_tol}"
+        )
+    nonspd_early_metric = str(nonspd_safe_early_metric).strip().lower()
+    if nonspd_early_metric not in ("diag", "fro"):
+        raise ValueError(
+            "nonspd_safe_early_metric must be 'diag' or 'fro', "
+            f"got '{nonspd_safe_early_metric}'"
         )
     if M_norm.shape[-2] != A_norm.shape[-1]:
         raise ValueError(
@@ -799,10 +855,21 @@ def inverse_solve_pe_quadratic_coupled(
                 if adaptive_active and (t % check_every == 0) and (not is_tail_frozen):
                     prev_proxy = _p1_y_proxy()
 
+            if (not is_tail_frozen) and renorm_period > 0 and ((t + 1) % renorm_period == 0):
+                _renorm_coupled_state_(
+                    ws.Y,
+                    ws.Z,
+                    p_val=p_val,
+                    eps=renorm_eps_f,
+                )
+
             if safe_early_active and t == 0:
                 # Cheap early divergence proxy for non-SPD p=1:
-                # hard failures show large diagonal deviation after the first step.
-                y_proxy = _p1_diag_proxy()
+                # use Frobenius by default; diag is available for back-compat.
+                if nonspd_early_metric == "fro":
+                    y_proxy = _p1_y_proxy()
+                else:
+                    y_proxy = _p1_diag_proxy()
                 if y_proxy > float(nonspd_safe_early_y_tol):
                     _fallback_solve_inplace()
                     return ws.Z, ws
@@ -894,6 +961,13 @@ def inverse_solve_pe_quadratic_coupled(
             # ws.B2 is used as scratch here; contents destroyed.
             _symmetrize_inplace(ws.Ybuf, ws.B2)
         ws.Y, ws.Ybuf = ws.Ybuf, ws.Y
+        if renorm_period > 0 and ((t + 1) % renorm_period == 0):
+            _renorm_coupled_state_(
+                ws.Y,
+                ws.Z,
+                p_val=p_val,
+                eps=renorm_eps_f,
+            )
 
         # Low-overhead online early-stop based on Y diagonal closeness to identity.
         if (

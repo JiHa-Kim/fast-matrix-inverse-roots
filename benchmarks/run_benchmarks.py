@@ -950,6 +950,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--ab-interleave",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "In A/B mode without --ab-baseline-rows-in, run A then B per spec "
+            "(default) to reduce run-order/thermal bias."
+        ),
+    )
+    parser.add_argument(
         "--ab-out",
         type=str,
         default="",
@@ -1060,6 +1069,37 @@ def main() -> None:
                     "parsed_rows": len(rows_a),
                 }
             )
+        elif bool(args.ab_interleave):
+            for spec in specs:
+                cmd_a = spec.cmd + a_extra
+                raw_a = _run_and_capture(cmd_a)
+                rows_a_spec = _parse_rows(raw_a, spec.kind)
+                rows_a.extend(rows_a_spec)
+                run_records.append(
+                    {
+                        "spec_name": spec.name,
+                        "kind": spec.kind,
+                        "variant": "A",
+                        "cmd": cmd_a,
+                        "stdout_sha256": _sha256_text(raw_a),
+                        "parsed_rows": len(rows_a_spec),
+                    }
+                )
+
+                cmd_b = spec.cmd + b_extra
+                raw_b = _run_and_capture(cmd_b)
+                rows_b_spec = _parse_rows(raw_b, spec.kind)
+                rows_b.extend(rows_b_spec)
+                run_records.append(
+                    {
+                        "spec_name": spec.name,
+                        "kind": spec.kind,
+                        "variant": "B",
+                        "cmd": cmd_b,
+                        "stdout_sha256": _sha256_text(raw_b),
+                        "parsed_rows": len(rows_b_spec),
+                    }
+                )
         else:
             for spec in specs:
                 cmd_a = spec.cmd + a_extra
@@ -1077,21 +1117,37 @@ def main() -> None:
                     }
                 )
 
-        for spec in specs:
-            cmd_b = spec.cmd + b_extra
-            raw_b = _run_and_capture(cmd_b)
-            rows_b_spec = _parse_rows(raw_b, spec.kind)
-            rows_b.extend(rows_b_spec)
-            run_records.append(
-                {
-                    "spec_name": spec.name,
-                    "kind": spec.kind,
-                    "variant": "B",
-                    "cmd": cmd_b,
-                    "stdout_sha256": _sha256_text(raw_b),
-                    "parsed_rows": len(rows_b_spec),
-                }
-            )
+            for spec in specs:
+                cmd_b = spec.cmd + b_extra
+                raw_b = _run_and_capture(cmd_b)
+                rows_b_spec = _parse_rows(raw_b, spec.kind)
+                rows_b.extend(rows_b_spec)
+                run_records.append(
+                    {
+                        "spec_name": spec.name,
+                        "kind": spec.kind,
+                        "variant": "B",
+                        "cmd": cmd_b,
+                        "stdout_sha256": _sha256_text(raw_b),
+                        "parsed_rows": len(rows_b_spec),
+                    }
+                )
+        if ab_baseline_rows_in:
+            for spec in specs:
+                cmd_b = spec.cmd + b_extra
+                raw_b = _run_and_capture(cmd_b)
+                rows_b_spec = _parse_rows(raw_b, spec.kind)
+                rows_b.extend(rows_b_spec)
+                run_records.append(
+                    {
+                        "spec_name": spec.name,
+                        "kind": spec.kind,
+                        "variant": "B",
+                        "cmd": cmd_b,
+                        "stdout_sha256": _sha256_text(raw_b),
+                        "parsed_rows": len(rows_b_spec),
+                    }
+                )
 
         if len(rows_a) == 0 or len(rows_b) == 0:
             raise RuntimeError(
@@ -1136,6 +1192,7 @@ def main() -> None:
             "b": str(args.ab_label_b),
         }
         manifest["ab_match_on_method"] = bool(args.ab_match_on_method)
+        manifest["ab_interleave"] = bool(args.ab_interleave)
         manifest["runs"] = run_records
         repro = _repro_context(
             mode="ab_markdown",

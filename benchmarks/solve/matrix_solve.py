@@ -55,14 +55,19 @@ def _parse_methods_csv(spec: str, available: list[str]) -> list[str]:
         return list(available)
     out: list[str] = []
     seen: set[str] = set()
+    unknown: list[str] = []
     for m in toks:
         if m in seen:
             continue
         if m in available:
             seen.add(m)
             out.append(m)
-    if not out:
-        print(f"WARNING: No valid methods found in {toks}. Available: {available}")
+        else:
+            unknown.append(m)
+    if unknown:
+        raise ValueError(
+            f"Unknown method(s): {unknown}. Available: {available}"
+        )
     return out
 
 
