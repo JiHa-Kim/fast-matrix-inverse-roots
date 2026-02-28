@@ -299,15 +299,20 @@ def _build_solve_runner(
 
     if method == "Torch-Solve":
         def run(A_norm: torch.Tensor, B: torch.Tensor):
-            A_f32 = A_norm.to(torch.float32)
-            B_f32 = B.to(torch.float32)
             if int(p_val) == 1:
+                A_f32 = A_norm.to(torch.float32)
+                B_f32 = B.to(torch.float32)
                 L = torch.linalg.cholesky(A_f32)
                 Z = torch.cholesky_solve(B_f32, L)
+                return Z.to(A_norm.dtype)
             else:
-                # Casting to fp32 as many torch linalg paths don't support bf16 on CUDA
-                Z = torch.linalg.solve(A_f32, B_f32)
-            return Z.to(A_norm.dtype)
+                # For p > 1, we must use EVD or similar to compute A^{-1/p}
+                A_f32 = A_norm.to(torch.float32)
+                B_f32 = B.to(torch.float32)
+                L, Q = torch.linalg.eigh(A_f32)
+                L_inv = torch.pow(L.clamp_min(1e-12), -1.0 / p_val)
+                Z = (Q * L_inv.unsqueeze(0)) @ (Q.mT @ B_f32)
+                return Z.to(A_norm.dtype)
 
         return run
 
