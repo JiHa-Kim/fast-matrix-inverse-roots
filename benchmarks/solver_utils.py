@@ -13,31 +13,6 @@ ParsedRow = Tuple[
 ]
 
 
-def assessment_score(row: ParsedRow) -> float:
-    """Calculate a heuristic score for method performance/quality."""
-    rel = float(row[8])
-    rel_p90 = float(row[9])
-    fail = float(row[12])  # Using combined fail_rate for score
-    qpm = float(row[13])
-
-    fail_clamped = min(1.0, max(0.0, fail)) if math.isfinite(fail) else 1.0
-
-    if math.isfinite(qpm) and qpm > 0.0:
-        base = qpm
-    else:
-        iter_ms = float(row[7])
-        if rel > 0.0 and math.isfinite(rel) and iter_ms > 0.0:
-            base = max(0.0, -math.log10(rel)) / iter_ms
-        else:
-            return float("-inf")
-
-    tail_penalty = 1.0
-    if rel > 0.0 and math.isfinite(rel) and math.isfinite(rel_p90) and rel_p90 > 0.0:
-        tail_penalty = max(1.0, rel_p90 / rel)
-
-    return (base / tail_penalty) * (1.0 - fail_clamped)
-
-
 def parse_rows(raw: str, kind: str) -> List[ParsedRow]:
     """Parse benchmark stdout into structured rows."""
     rows: list[ParsedRow] = []
