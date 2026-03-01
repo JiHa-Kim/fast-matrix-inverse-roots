@@ -290,6 +290,23 @@ def _get_applicable_methods(spec: RunSpec) -> list[str]:
     return []
 
 
+def load_baseline(path: str) -> list[ParsedRow]:
+    """Load benchmark rows from a baseline JSON file."""
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        raw_rows = data.get("rows", data.get("results", []))
+        return [row_from_dict(r) for r in raw_rows]
+
+
+def write_report_with_checksum(path: str, report: str, checksum: bool):
+    """Write report to file and optionally generate checksum sidecar."""
+    write_text_file(path, report)
+    if checksum:
+        write_sha256_sidecar(path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run maintained solver benchmark suites"
@@ -435,21 +452,15 @@ def main() -> None:
         baseline_path = os.path.join(
             REPO_ROOT, args.baseline_dir, "baseline_solver.json"
         )
-        if not os.path.exists(baseline_path):
+        all_rows = load_baseline(baseline_path)
+        if not all_rows:
             raise FileNotFoundError(
                 f"Cannot use --from-baseline: {baseline_path} not found."
             )
 
         print(f"[baseline] Generating report from: {baseline_path}")
-        with open(baseline_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            raw_rows = data.get("rows", data.get("results", []))
-            all_rows = [row_from_dict(r) for r in raw_rows]
-
         report = to_markdown(all_rows, config=safe_args)
-        write_text_file(args.out, report)
-        if args.integrity_checksums:
-            write_sha256_sidecar(args.out)
+        write_report_with_checksum(args.out, report, args.integrity_checksums)
         print(
             f"Done (from baseline). Report at: {repo_relative(args.out, str(REPO_ROOT))}"
         )
@@ -481,11 +492,8 @@ def main() -> None:
         b_extra = base_extra_args + shlex.split(args.ab_extra_args_b)
 
         if args.ab_baseline_rows_in:
-            with open(args.ab_baseline_rows_in, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                raw_rows = data.get("rows", data.get("results", []))
-                rows_a = [row_from_dict(r) for r in raw_rows]
-                print(f"[debug] Loaded {len(rows_a)} rows from A baseline.")
+            rows_a = load_baseline(args.ab_baseline_rows_in)
+            print(f"[debug] Loaded {len(rows_a)} rows from A baseline.")
 
         # Build lookup for A rows to allow skipping stable methods
         def _row_key(r: ParsedRow) -> tuple:
@@ -572,7 +580,7 @@ def main() -> None:
                 match_on_method=False,
                 config=vars(args),
             )
-        write_text_file(args.ab_out, report)
+        write_report_with_checksum(args.ab_out, report, args.integrity_checksums)
 
         # Baseline Update Logic
         if args.update_baseline:
@@ -595,7 +603,7 @@ def main() -> None:
             run_records.append({"spec": spec.name, "cmd": cmd, "parsed": len(r)})
 
         report = to_markdown(all_rows, config=safe_args)
-        write_text_file(args.out, report)
+        write_report_with_checksum(args.out, report, args.integrity_checksums)
 
         if args.update_baseline:
             baseline_path = os.path.join(
@@ -623,9 +631,7 @@ def main() -> None:
     }
     write_json_file(args.manifest_out, manifest)
     if args.integrity_checksums:
-        for p in [args.out, args.ab_out, args.manifest_out]:
-            if os.path.exists(p):
-                write_sha256_sidecar(p)
+        write_sha256_sidecar(args.manifest_out)
 
     final_report = args.ab_out if ab_mode else args.out
     print(f"Done. Report at: {repo_relative(final_report, str(REPO_ROOT))}")
