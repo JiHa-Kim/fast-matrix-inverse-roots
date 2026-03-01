@@ -155,9 +155,10 @@ def compute_inverse_proot_minimax_coeffs_cached(
 
         resid = y - (V @ coeffs)
         abs_resid = np.abs(resid)
+        # Lawson-style multiplicative update to flatten the error distribution (minimax).
         rmax = max(float(abs_resid.max()), 1e-30)
         floor = max(rmax * 1e-3, 1e-15)
-        w_new = np.clip(abs_resid, floor, None)
+        w_new = w * np.maximum(abs_resid, floor)
         w_new /= np.mean(w_new)
         w = damping * w + (1.0 - damping) * w_new
 

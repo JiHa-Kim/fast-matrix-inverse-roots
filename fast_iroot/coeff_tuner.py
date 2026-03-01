@@ -7,8 +7,9 @@ import torch
 
 
 def smooth_max(x, tau=80.0):
+    # logsumexp-based smooth maximum; closer to true max than using mean
     m = x.max()
-    return (torch.log(torch.mean(torch.exp(tau * (x - m)))) / tau) + m
+    return m + torch.logsumexp(tau * (x - m), dim=0) / tau
 
 
 def build_grid(lo, hi, n=8192):
@@ -795,7 +796,7 @@ def plan_coupled_local_minimax_schedule(
 
         # Gate minimax vs Newton log-width unless Newton itself is infeasible.
         mm_allowed = math.isfinite(score_mm)
-        if mm_allowed and math.isfinite(w_ns):
+        if mm_allowed and math.isfinite(score_ns) and math.isfinite(w_ns):
             base_den = max(abs(w_ns), eps)
             rel = (w_ns - w_mm) / base_den
             mm_allowed = rel > ns_gate
@@ -1172,63 +1173,159 @@ def _phi_and_dphi_coeffs_p2(a, b, c):
     return phi, dphi
 
 
+def _build_verify_grid(
+    lo: float, hi: float, n_log: int = 16384, n_lin: int = 16384
+) -> np.ndarray:
+    lo_f = max(float(lo), 1e-15)
+    hi_f = max(float(hi), lo_f * 1.0001)
+
+    # log grid
+    ys_log = np.exp(
+        np.linspace(np.log(lo_f), np.log(hi_f), int(n_log), dtype=np.float64)
+    )
+
+    # linear grid (helps catch narrow interior extrema near 1)
+    ys_lin = np.linspace(lo_f, hi_f, int(n_lin), dtype=np.float64)
+
+    ys = np.unique(np.concatenate([ys_log, ys_lin]))
+    return ys
+
+
+def _phi_eval_quadratic(
+    a: float, b: float, c: float, ys: np.ndarray, p_i: int
+) -> np.ndarray:
+    q = a + b * ys + c * ys * ys
+    # If q is negative and p is odd integer, phi can be negative.
+    # Our planners should prevent this, but we guard anyway.
+    return ys * (q**p_i)
+
+
 def interval_update_quadratic_exact(abc, lo, hi, p_val=2):
-    """Certified interval update via critical-point extrema.
+    """Robust interval update for phi(y)=y*(a+b*y+c*y^2)^p.
 
-    Finds roots of φ'(y) for φ(y)=y*(a+b*y+c*y^2)^p and evaluates φ at endpoints
-    + critical points. Falls back to dense grid sampling when numerical root
-    solving is ill-conditioned.
-
-    Returns (lo_new, hi_new).
+    - Uses polynomial critical points via roots as a fast path.
+    - Verifies against a dense mixed grid. If verification fails, falls back to a
+      conservative grid enclosure.
     """
     a, b, c = abc
-    lo, hi = float(lo), float(hi)
+    lo_f = max(float(lo), 1e-15)
+    hi_f = max(float(hi), lo_f * 1.0001)
     p_i = int(p_val)
     if p_i <= 0:
         raise ValueError(f"p_val must be >= 1, got {p_val}")
 
-    try:
-        # q(y)=a+b*y+c*y^2 in ascending-power basis.
-        q = np.array([float(a), float(b), float(c)], dtype=np.float64)
-        q_pow = np.polynomial.polynomial.polypow(q, p_i)  # ascending powers
-        phi = np.concatenate([np.array([0.0], dtype=np.float64), q_pow])  # y*q(y)^p
-        dphi = np.array([phi[k] * k for k in range(1, len(phi))], dtype=np.float64)
-        roots = np.roots(dphi[::-1]) if dphi.size > 1 else np.array([], dtype=np.float64)
+    # For p != 2, the root-finding polynomial degrees get large fast.
+    # Default to conservative grid enclosure unless you really need the fast path.
+    if p_i != 2:
+        return _interval_update_grid(
+            [a, b, c], lo_f, hi_f, n=32768, p_val=p_i, max_refine=2
+        )
 
-        candidates = [lo, hi]
+    try:
+        # Build phi polynomial in ascending order: q(y)=a+b y+c y^2
+        q = np.array([float(a), float(b), float(c)], dtype=np.float64)
+        q_pow = np.polynomial.polynomial.polypow(q, p_i)  # ascending
+        phi = np.concatenate(
+            [np.array([0.0], dtype=np.float64), q_pow]
+        )  # multiply by y
+        dphi = np.array(
+            [phi[k] * k for k in range(1, len(phi))], dtype=np.float64
+        )
+
+        roots = (
+            np.roots(dphi[::-1]) if dphi.size > 1 else np.array([], dtype=np.float64)
+        )
+
+        candidates = [lo_f, hi_f]
         for r in roots:
-            if np.isfinite(r.real) and abs(float(np.imag(r))) <= 1e-10:
+            if not np.isfinite(r.real):
+                continue
+            # more forgiving imag tolerance, and always take real part when tiny
+            if abs(float(np.imag(r))) <= 1e-8:
                 yr = float(np.real(r))
-                if lo <= yr <= hi:
+                if lo_f <= yr <= hi_f:
                     candidates.append(yr)
 
         vals = [float(np.polyval(phi[::-1], y)) for y in candidates]
         lo_new = float(min(vals))
         hi_new = float(max(vals))
         if not (math.isfinite(lo_new) and math.isfinite(hi_new)):
-            raise FloatingPointError("non-finite interval extrema")
+            raise FloatingPointError("non-finite extrema from roots path")
+
+        # Verification step: make sure a dense grid does not escape [lo_new, hi_new]
+        ys_v = _build_verify_grid(lo_f, hi_f, n_log=8192, n_lin=8192)
+        phi_v = _phi_eval_quadratic(float(a), float(b), float(c), ys_v, p_i)
+        mn_v = float(np.min(phi_v))
+        mx_v = float(np.max(phi_v))
+
+        # Allow tiny numerical slack, then if violated fall back to conservative enclosure.
+        slack = 1e-10 * max(1.0, abs(lo_new), abs(hi_new))
+        if (mn_v < lo_new - slack) or (mx_v > hi_new + slack):
+            return _interval_update_grid(
+                [a, b, c], lo_f, hi_f, n=32768, p_val=p_i, max_refine=2
+            )
+
+        lo_new = max(1e-15, lo_new)
+        hi_new = max(hi_new, lo_new * 1.0001)
         return lo_new, hi_new
+
     except Exception:
-        # fallback: dense grid + conservative padding
-        return _interval_update_grid(abc, lo, hi, p_val=p_i)
+        return _interval_update_grid(
+            [a, b, c], lo_f, hi_f, n=32768, p_val=p_i, max_refine=2
+        )
 
 
-def _interval_update_grid(abc, lo, hi, n=32768, p_val=2):
-    """Grid-based interval update with conservative padding (legacy / generic p)."""
+def _interval_update_grid(abc, lo, hi, n=32768, p_val=2, max_refine=2):
+    """Grid-based interval update with conservative padding."""
     a, b, c = abc
-    ys = build_grid(lo, hi, n=n).cpu().numpy()
-    q = a + b * ys + c * ys * ys
-    phi = ys * (q**p_val)
-    lo_new, hi_new = float(phi.min()), float(phi.max())
+    lo_f = max(float(lo), 1e-15)
+    hi_f = max(float(hi), lo_f * 1.0001)
+    p_i = int(p_val)
 
-    if p_val % 2 == 1 and lo_new <= 0:
-        lo_new = 1e-15  # force positivity if odd p gives negative phi (should be blocked by pos_ok)
+    # Start with a mixed grid (log + linear) for robustness.
+    ys = _build_verify_grid(lo_f, hi_f, n_log=n, n_lin=n)
 
-    # conservative padding for non-exact case
-    span = max(hi_new - lo_new, 1e-12)
-    # Be more conservative for odd p to strictly ensure we don't overestimate contraction
-    padding = 0.005 if p_val % 2 == 1 else 0.001
-    return max(1e-15, lo_new - padding * span), hi_new + padding * span
+    lo_new = float("inf")
+    hi_new = -float("inf")
+
+    for _ in range(int(max_refine) + 1):
+        phi = _phi_eval_quadratic(float(a), float(b), float(c), ys, p_i)
+        mn = float(np.min(phi))
+        mx = float(np.max(phi))
+
+        # Padding: bigger when p is odd (more fragile if q barely positive),
+        # and bigger when interval is wide in log-space.
+        span = max(mx - mn, 1e-12)
+        logw = max(np.log(hi_f) - np.log(lo_f), 1e-6)
+
+        base_pad = 0.002 if (p_i % 2 == 0) else 0.01
+        pad = base_pad * (1.0 + 0.25 * logw)
+
+        mn_pad = mn - pad * span
+        mx_pad = mx + pad * span
+
+        # Track monotone enclosure over refinements
+        lo_new2 = min(lo_new, mn_pad)
+        hi_new2 = max(hi_new, mx_pad)
+
+        # If stable, stop refining
+        if (
+            (lo_new2 >= lo_new - 1e-14)
+            and (hi_new2 <= hi_new + 1e-14)
+            and math.isfinite(lo_new)
+            and math.isfinite(hi_new)
+        ):
+            lo_new, hi_new = lo_new2, hi_new2
+            break
+
+        lo_new, hi_new = lo_new2, hi_new2
+
+        # refine grid by doubling points each loop
+        ys = _build_verify_grid(lo_f, hi_f, n_log=len(ys) * 2, n_lin=len(ys) * 2)
+
+    lo_new = max(1e-15, float(lo_new))
+    hi_new = max(float(hi_new), lo_new * 1.0001)
+    return lo_new, hi_new
 
 
 def interval_update_affine(ab, lo, hi, n=16384, p_val=2):
@@ -1371,7 +1468,6 @@ def make_schedule(
                 lo=lo_fit,
                 hi=hi_fit,
                 q_floor=float(q_floor),
-                seed=seed + t if "seed" in solve_local_affine_b_optimal.__code__.co_varnames else 0,  # harmless
             )
             a, b, c = affine_coeffs_from_b(b_star)
 

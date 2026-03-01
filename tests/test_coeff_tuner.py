@@ -73,8 +73,19 @@ def test_interval_update_affine_exact_matches_quadratic_exact_for_affine():
         abc = affine_coeffs_from_b(b_slope)
         lo1, hi1 = interval_update_affine_exact(b_slope, lo, hi, p_val=p)
         lo2, hi2 = interval_update_quadratic_exact(abc, lo, hi, p_val=p)
-        assert math.isclose(lo1, lo2, rel_tol=1e-8, abs_tol=1e-10)
-        assert math.isclose(hi1, hi2, rel_tol=1e-8, abs_tol=1e-10)
+
+        if p == 2:
+            # p=2 uses the root-based fast path for both
+            assert math.isclose(lo1, lo2, rel_tol=1e-8, abs_tol=1e-10)
+            assert math.isclose(hi1, hi2, rel_tol=1e-8, abs_tol=1e-10)
+        else:
+            # quadratic path uses pessimistic grid enclosure for p != 2;
+            # affine remains truly exact. Enclosure should be wider.
+            assert lo2 <= lo1 + 1e-12
+            assert hi2 >= hi1 - 1e-12
+            # And reasonably close (padding is usually ~1-2% of span)
+            assert math.isclose(lo1, lo2, rel_tol=0.05)
+            assert math.isclose(hi1, hi2, rel_tol=0.05)
 
 
 def test_affine_b_feasible_bounds_contains_newton():
