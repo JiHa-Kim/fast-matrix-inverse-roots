@@ -451,8 +451,9 @@ def solve_local_alpha_minimax(
 
     lo_f = max(float(lo), 1e-12)
     hi_f = max(float(hi), lo_f * 1.0001)
-    lo_q = round(lo_f / q) * q
-    hi_q = round(hi_f / q) * q
+    # Outward rounding for monotonic cache enclosures
+    lo_q = math.floor(lo_f / q) * q
+    hi_q = math.ceil(hi_f / q) * q
     hi_q = max(hi_q, lo_q * 1.0001)
 
     alpha, objective, eval_count, fallback_ns = _solve_local_alpha_minimax_cached(
@@ -580,8 +581,9 @@ def solve_local_affine_b_optimal(
 
     lo_f = max(float(lo), 1e-12)
     hi_f = max(float(hi), lo_f * 1.0001)
-    lo_q = round(lo_f / q) * q
-    hi_q = round(hi_f / q) * q
+    # Outward rounding for monotonic cache enclosures
+    lo_q = math.floor(lo_f / q) * q
+    hi_q = math.ceil(hi_f / q) * q
     hi_q = max(hi_q, lo_q * 1.0001)
 
     b_star, objective, eval_count, fallback_ns = _solve_local_affine_b_optimal_cached(
