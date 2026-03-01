@@ -61,11 +61,8 @@ What changed:
 - Solver rows now include:
   - `relerr` (median relative error),
   - `relerr_p90` (tail error),
-  - `fail_rate` (non-finite output rate),
-  - `q_per_ms` (`max(0, -log10(relerr)) / iter_ms`).
+  - `fail_rate` (non-finite output rate).
 - A/B markdown now reports deltas/ratios for these quality and stability fields, not only runtime and median error.
-- Standard markdown now includes an `Assessment Leaders` table per scenario (`kind,p,n,k,case`) with score:
-  - score = `q_per_ms / max(1, relerr_p90/relerr) * (1 - fail_rate)`.
 - Parser now preserves rows where values are `inf`/`nan` (instead of dropping failed cells).
 
 Why:

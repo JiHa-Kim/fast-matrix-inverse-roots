@@ -150,7 +150,6 @@ class SolveBenchResult:
     nonfinite_rate: float
     quality_fail_rate: float
     failure_rate: float  # (nonfinite | quality_fail)
-    quality_per_ms: float
     mem_alloc_mb: float
     mem_reserved_mb: float
     cheb_degree_used: float
@@ -772,11 +771,6 @@ def eval_solve_method(
         else float("nan")
     )
 
-    if rel_err_med > 0.0 and math.isfinite(rel_err_med) and ms_iter_med > 0.0:
-        quality_per_ms = max(0.0, -math.log10(rel_err_med)) / ms_iter_med
-    else:
-        quality_per_ms = float("nan")
-
     return SolveBenchResult(
         ms=ms_pre_med + ms_iter_med,
         ms_iter=ms_iter_med,
@@ -788,7 +782,6 @@ def eval_solve_method(
         nonfinite_rate=nf_rate,
         quality_fail_rate=qf_rate,
         failure_rate=failure_rate,
-        quality_per_ms=quality_per_ms,
         mem_alloc_mb=median(mem_alloc_list) if mem_alloc_list else float("nan"),
         mem_reserved_mb=median(mem_res_list) if mem_res_list else float("nan"),
         cheb_degree_used=(

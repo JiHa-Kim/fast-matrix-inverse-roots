@@ -428,23 +428,6 @@ def main() -> None:
     if not args.manifest_out:
         args.manifest_out = os.path.join(abs_run_dir, "run_manifest.json")
 
-    specs_all = _build_specs(
-        trials=args.trials,
-        dtype=args.dtype,
-        timing_reps=args.timing_reps,
-        warmup_reps=args.timing_warmup_reps,
-        spd_dir=spd_dir,
-        nonspd_dir=nonspd_dir,
-        ts=time_prefix,
-    )
-    specs = _filter_specs(
-        specs_all,
-        _parse_csv_tokens(args.only),
-        _parse_csv_tokens(args.kinds),
-        _parse_csv_tokens(args.p_vals),
-        _parse_csv_tokens(args.sizes),
-    )
-
     # Create sanitized args for reporting
     safe_args = _sanitize_args(args, str(REPO_ROOT))
 
@@ -472,6 +455,35 @@ def main() -> None:
 
     ab_mode = bool(
         args.ab_extra_args_a or args.ab_extra_args_b or args.ab_baseline_rows_in
+    )
+
+    # Set dynamic default for trials if not explicitly provided via CLI
+    import sys
+
+    trials_provided = any(arg.startswith("--trials") for arg in sys.argv)
+    if not trials_provided:
+        if args.prod or args.update_baseline:
+            args.trials = 10
+        elif ab_mode:
+            args.trials = 3
+        else:
+            args.trials = 10
+
+    specs_all = _build_specs(
+        trials=args.trials,
+        dtype=args.dtype,
+        timing_reps=args.timing_reps,
+        warmup_reps=args.timing_warmup_reps,
+        spd_dir=spd_dir,
+        nonspd_dir=nonspd_dir,
+        ts=time_prefix,
+    )
+    specs = _filter_specs(
+        specs_all,
+        _parse_csv_tokens(args.only),
+        _parse_csv_tokens(args.kinds),
+        _parse_csv_tokens(args.p_vals),
+        _parse_csv_tokens(args.sizes),
     )
 
     rows_a: list[ParsedRow] = []

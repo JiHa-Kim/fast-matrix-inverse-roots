@@ -61,7 +61,6 @@ class NonSpdBenchResult:
     nonfinite_rate: float
     quality_fail_rate: float
     failure_rate: float
-    quality_per_ms: float
     bad: int
     mem_alloc_mb: float
     mem_reserved_mb: float
@@ -434,10 +433,6 @@ def eval_method(
     ms_iter_med = median(ms_iter_list)
     relerr_med = median(relerr_list)
     resid_med = median(resid_list)
-    if relerr_med > 0.0 and math.isfinite(relerr_med) and ms_iter_med > 0.0:
-        quality_per_ms = max(0.0, -math.log10(relerr_med)) / ms_iter_med
-    else:
-        quality_per_ms = float("nan")
 
     return NonSpdBenchResult(
         ms=(ms_precond_median + ms_iter_med),
@@ -450,7 +445,6 @@ def eval_method(
         nonfinite_rate=nf_rate,
         quality_fail_rate=qf_rate,
         failure_rate=failure_rate,
-        quality_per_ms=quality_per_ms,
         bad=nonfinite_count + quality_fail_count,
         mem_alloc_mb=median(mem_alloc_list) if mem_alloc_list else float("nan"),
         mem_reserved_mb=median(mem_res_list) if mem_res_list else float("nan"),
@@ -744,7 +738,7 @@ def main():
                             f"relerr {rr.rel_err:.3e} (p90 {rr.rel_err_p90:.3e}) | "
                             f"resid {rr.residual:.3e} (p90 {rr.residual_p90:.3e}) | "
                             f"fail {100.0 * rr.failure_rate:.1f}% (nf {100.0 * rr.nonfinite_rate:.1f}%, q {100.0 * rr.quality_fail_rate:.1f}%) | "
-                            f"q_per_ms {rr.quality_per_ms:.3e} | bad {rr.bad}"
+                            f"bad {rr.bad}"
                         )
 
                     finite = [

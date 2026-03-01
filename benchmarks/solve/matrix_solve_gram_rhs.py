@@ -73,6 +73,12 @@ def main() -> None:
     p.add_argument("--precond-ruiz-iters", type=int, default=2)
     p.add_argument("--l-target", type=float, default=0.05)
     p.add_argument("--ridge-rel", type=float, default=1e-4)
+    p.add_argument(
+        "--methods",
+        type=str,
+        default="PE-Quad-Coupled-Apply-Primal-Gram,PE-Quad-Coupled-Apply-Dual-Gram-RHS",
+        help="Comma-separated methods to run.",
+    )
     args = p.parse_args()
 
     if int(args.p) < 1:
@@ -123,6 +129,8 @@ def main() -> None:
     ).to(dtype_compute)
 
     print(f"[coeff] using {coeff_desc} (PE steps = {len(abc_t)})")
+
+    to_run = [m.strip() for m in args.methods.split(",") if m.strip()]
 
     with torch.inference_mode():
         for k in ks:
@@ -190,43 +198,65 @@ def main() -> None:
                     )
                     return z
 
+                run_p = "PE-Quad-Coupled-Apply-Primal-Gram" in to_run
+                run_d = "PE-Quad-Coupled-Apply-Dual-Gram-RHS" in to_run
+
                 for _ in range(int(args.timing_warmup_reps)):
-                    _ = _run_primal()
-                    _ = _run_dual()
+                    if run_p:
+                        _ = _run_primal()
+                    if run_d:
+                        _ = _run_dual()
 
-                ms_p, z_p = time_ms_repeat(
-                    _run_primal, device, reps=int(args.timing_reps)
-                )
-                ms_d, z_d = time_ms_repeat(
-                    _run_dual, device, reps=int(args.timing_reps)
-                )
-                primal_ms.append(float(ms_p))
-                dual_ms.append(float(ms_d))
-                rel = float(
-                    (
-                        torch.linalg.matrix_norm(z_p - z_d)
-                        / torch.linalg.matrix_norm(z_d).clamp_min(1e-12)
-                    ).item()
-                )
-                rel_diffs.append(rel)
+                z_p, z_d = None, None
+                if run_p:
+                    ms_p, z_p = time_ms_repeat(
+                        _run_primal, device, reps=int(args.timing_reps)
+                    )
+                    primal_ms.append(float(ms_p))
+                if run_d:
+                    ms_d, z_d = time_ms_repeat(
+                        _run_dual, device, reps=int(args.timing_reps)
+                    )
+                    dual_ms.append(float(ms_d))
 
-            primal_ms_med = float(torch.tensor(primal_ms).median().item())
-            dual_ms_med = float(torch.tensor(dual_ms).median().item())
-            rel_med = float(torch.tensor(rel_diffs).median().item())
+                if run_p and run_d:
+                    rel = float(
+                        (
+                            torch.linalg.matrix_norm(z_p - z_d)
+                            / torch.linalg.matrix_norm(z_d).clamp_min(1e-12)
+                        ).item()
+                    )
+                    rel_diffs.append(rel)
+
+            primal_ms_med = (
+                float(torch.tensor(primal_ms).median().item()) if primal_ms else None
+            )
+            dual_ms_med = (
+                float(torch.tensor(dual_ms).median().item()) if dual_ms else None
+            )
+            rel_med = (
+                float(torch.tensor(rel_diffs).median().item()) if rel_diffs else 0.0
+            )
 
             for method_name, total_ms in (
                 ("PE-Quad-Coupled-Apply-Primal-Gram", primal_ms_med),
                 ("PE-Quad-Coupled-Apply-Dual-Gram-RHS", dual_ms_med),
             ):
-                print(
-                    f"{method_name:<36s} {total_ms:8.3f} ms "
-                    f"(pre {0.000:.3f} + iter {total_ms:.3f}) | "
-                    f"relerr vs solve: {rel_med:.3e}"
-                )
+                if total_ms is not None:
+                    print(
+                        f"{method_name:<36s} {total_ms:8.3f} ms "
+                        f"(pre {0.000:.3f} + iter {total_ms:.3f}) | "
+                        f"relerr vs solve: {rel_med:.3e}"
+                    )
 
-            speedup = primal_ms_med / max(dual_ms_med, 1e-12)
-            print(f"speedup dual_vs_primal: {speedup:.3f}x")
-            if any(not math.isfinite(x) for x in (primal_ms_med, dual_ms_med, rel_med)):
+            if primal_ms_med is not None and dual_ms_med is not None:
+                speedup = primal_ms_med / max(dual_ms_med, 1e-12)
+                print(f"speedup dual_vs_primal: {speedup:.3f}x")
+
+            if any(
+                x is not None and not math.isfinite(x)
+                for x in (primal_ms_med, dual_ms_med, rel_med)
+            ):
                 print("WARNING: non-finite benchmark statistic detected")
 
 
