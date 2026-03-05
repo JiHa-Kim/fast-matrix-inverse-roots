@@ -1,0 +1,22 @@
+{
+  "bf16_eval_max_g": 1.0,
+  "bf16_eval_min_g": 0.259765625,
+  "coeff_cheb_domain_[ell,1]": [
+    1.8265767321934554,
+    -2.059985032841376,
+    1.5306137294914355,
+    -1.212964239955283,
+    0.9842324412840185,
+    -0.8023146237837607
+  ],
+  "deg": 5,
+  "ell": 0.001,
+  "kind": "phase1_bf16_safe",
+  "mu_star": 0.014048633575439451,
+  "next_bf16_after_1": 1.0078125,
+  "notes": {
+    "invariant": "exhaustive bf16 scalar eval enforces sqrt(x)*q(x) <= 1, so x' = x*q(x)^2 <= 1",
+    "proxy_set": "dense real grid (log+lin) plus optional bf16 union"
+  },
+  "proxy_min_g": 0.26615900638848905
+}
