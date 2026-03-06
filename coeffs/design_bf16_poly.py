@@ -2,7 +2,7 @@
 """
 Design bf16-safe one-sided polynomials on x in [ell, 1].
 
-Goal: maximize m = min_x g(x) where g(x) = sqrt(x) q(x)
+Goal: maximize m = min_x g(x) where g(x) = x**(1/r) q(x)
 Subject to (proxy constraints): m <= g(x) <= 1 - mu
 Then verify in bf16 arithmetic on ALL bf16 representables in [ell,1]:
   g_bf16(x) <= 1.0  (no overshoot)
@@ -108,16 +108,17 @@ def solve_one_sided_lp(
     mu: float,
     x_proxy: np.ndarray,
     coef_bound: float,
+    r: float,
 ) -> DesignResult:
     a_dom, b_dom = float(ell), 1.0
     x = x_proxy.astype(np.float64)
-    s = np.sqrt(x).reshape(-1, 1)
+    s = (x ** (1.0 / r)).reshape(-1, 1)
 
     # ALWAYS optimize using the mathematically well-conditioned Chebyshev basis
     t = x_to_t(x, a_dom, b_dom).astype(np.float64)
     V = cheb_vander_t(t, deg)
 
-    # g(x) = sqrt(x) * q(x) = (s * V) @ coeffs
+    # g(x) = x**(1/r) * q(x) = (s * V) @ coeffs
     G = s * V
 
     # variables z = [coeffs(0..deg), m]
@@ -147,7 +148,7 @@ def solve_one_sided_lp(
 
 
 def verify_bf16_no_overshoot(
-    ell: float, coeffs: np.ndarray, basis: str
+    ell: float, coeffs: np.ndarray, basis: str, r: float
 ) -> Tuple[bool, float, float]:
     a_dom, b_dom = float(ell), 1.0
     xs = all_bf16_values_in_interval(a_dom, b_dom)
@@ -158,16 +159,16 @@ def verify_bf16_no_overshoot(
     else:
         q = monomial_eval_bf16_horner(xs, coeffs.astype(np.float32))
 
-    g = bf16_round_f32(np.sqrt(xs.astype(np.float32)) * q)
+    g = bf16_round_f32((xs.astype(np.float32) ** np.float32(1.0 / r)) * q)
     max_g = float(np.max(g))
     min_g = float(np.min(g))
     ok = max_g <= 1.0
     return ok, max_g, min_g
 
 
-def refine_bf16_coeffs(ell: float, initial_coeffs: np.ndarray, basis: str) -> Tuple[np.ndarray, float, float]:
+def refine_bf16_coeffs(ell: float, initial_coeffs: np.ndarray, basis: str, r: float) -> Tuple[np.ndarray, float, float]:
     def eval_g(c: np.ndarray) -> Tuple[float, float]:
-        _, max_g, min_g = verify_bf16_no_overshoot(ell, c, basis)
+        _, max_g, min_g = verify_bf16_no_overshoot(ell, c, basis, r)
         return max_g, min_g
 
     def get_alpha_and_min(c: np.ndarray) -> Tuple[float, float, float]:
@@ -238,6 +239,7 @@ def design(
     coef_bound: float,
     include_bf16_in_proxy: bool,
     refine_bf16: bool = False,
+    r: float = 2.0,
 ) -> dict:
     x_proxy = build_proxy_set(ell, proxy_log, proxy_lin)
     if include_bf16_in_proxy:
@@ -250,7 +252,7 @@ def design(
     for _ in range(mu_iters):
         mu = 0.5 * (lo + hi)
         try:
-            sol = solve_one_sided_lp(ell, deg, mu, x_proxy, coef_bound)
+            sol = solve_one_sided_lp(ell, deg, mu, x_proxy, coef_bound, r)
         except RuntimeError:
             hi = mu
             continue
@@ -263,7 +265,7 @@ def design(
             if len(c_eval) < deg + 1:
                 c_eval = np.pad(c_eval, (0, deg + 1 - len(c_eval)))
 
-        ok, max_g, min_g = verify_bf16_no_overshoot(ell, c_eval, basis)
+        ok, max_g, min_g = verify_bf16_no_overshoot(ell, c_eval, basis, r)
         if ok:
             best = (sol, c_eval, max_g, min_g)
             hi = mu
@@ -277,7 +279,7 @@ def design(
     
     kind = "phase1_bf16_safe"
     if refine_bf16:
-        c_eval, max_g, min_g = refine_bf16_coeffs(ell, c_eval, basis)
+        c_eval, max_g, min_g = refine_bf16_coeffs(ell, c_eval, basis, r)
         kind = "phase1_bf16_safe_refined"
 
     return {
@@ -285,6 +287,7 @@ def design(
         "basis": basis,
         "ell": ell,
         "deg": int(deg),
+        "r": float(r),
         "mu_star": float(sol.mu),
         "proxy_min_g": float(sol.g_min_proxy),
         "bf16_eval_max_g": float(max_g),
@@ -298,6 +301,7 @@ def main() -> None:
     ap.add_argument("--ell", type=float, required=True)
     ap.add_argument("--deg", type=int, required=True)
     ap.add_argument("--basis", type=str, choices=["mono", "cheb"], required=True)
+    ap.add_argument("--r", type=float, default=2.0, help="Root degree (e.g. 2 for inv sqrt, 4 for inv 4th root)")
 
     ap.add_argument("--mu-hi", type=float, default=0.05)
     ap.add_argument("--mu-iters", type=int, default=24)
@@ -322,6 +326,7 @@ def main() -> None:
         coef_bound=args.coef_bound,
         include_bf16_in_proxy=args.include_bf16_in_proxy,
         refine_bf16=args.refine_bf16,
+        r=args.r,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, sort_keys=True)
