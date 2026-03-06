@@ -21,7 +21,7 @@ That immediately tells you what to sweep and what to stop on.
 ## 1. What to Measure (Certificates for Preconditioning)
 
 ### Primary Metric: Whiteness / Anisotropy After Applying
-Compute in fp32 on the small side:
+Compute in bf16 on the small side:
 $$
 E := S - I, \quad \delta_F := \|E\|_F, \quad \delta_2 \le \delta_F
 $$

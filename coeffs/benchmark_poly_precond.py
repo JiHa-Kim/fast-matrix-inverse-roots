@@ -21,6 +21,7 @@ from fast_iroot.eval import (
     choose_beta,
     fro_norm,
     jacobi_init,
+    symmetrize,
 )
 
 try:
@@ -70,7 +71,7 @@ def run_precond(
     beta_mode: str,
 ) -> RunOut:
     n = B.shape[0]
-    I_mat = torch.eye(n, device=B.device, dtype=torch.float32)
+    I_mat = torch.eye(n, device=B.device, dtype=torch.bfloat16)
 
     # ridge in original coordinates: B <- B + ridge I
     if ridge != 0.0:
@@ -81,8 +82,8 @@ def run_precond(
 
     # Get the correctly compiled (or eager) function pointers
     global _APPLY_MONO_FN, _APPLY_CHEB_FN
-    apply_mono = _APPLY_MONO_FN if _APPLY_MONO_FN is not None else apply_poly_right_mono
-    apply_cheb = _APPLY_CHEB_FN if _APPLY_CHEB_FN is not None else apply_poly_right_cheb
+    apply_mono = _APPLY_MONO_FN if _APPLY_MONO_FN is not None else apply_poly_right_mono       
+    apply_cheb = _APPLY_CHEB_FN if _APPLY_CHEB_FN is not None else apply_poly_right_cheb       
 
     # Warmup one S build outside timing if you want (kept simple here)
     if B.is_cuda:
@@ -91,25 +92,26 @@ def run_precond(
     t0 = time.perf_counter()
     with torch.inference_mode():
         for _ in range(iters):
-            # S = Z^T B Z in fp32
-            Zf = Z.to(torch.float32)
-            tmp = B @ Zf
-            S = Zf.T @ tmp
+            # S = Z^T B Z in bf16
+            tmp = B @ Z
+            S = Z.T @ tmp
+
+            # Symmetrize to prevent complex eigenvalue drift in bf16
+            S = symmetrize(S)
 
             deltaF = float(fro_norm(S - I_mat).item())
             delta_traj.append(deltaF)
 
             beta = choose_beta(S, mode=beta_mode)
-            Shat = (S / beta).to(torch.float32)
+            Shat = S / beta
 
-            # Apply polynomial in fp32 (matmuls dominate anyway), then cast back to bf16 Z
+            # Apply polynomial in bf16
             if basis == "mono":
-                Y = apply_mono(Zf, Shat, coeffs)
+                Y = apply_mono(Z, Shat, coeffs)
             else:
-                Y = apply_cheb(Zf, Shat, coeffs, ell=ell)
+                Y = apply_cheb(Z, Shat, coeffs, ell=ell)
 
-            Znew = (Y / torch.sqrt(beta)).to(torch.bfloat16)
-            Z = Znew
+            Z = (Y / torch.sqrt(beta)).to(torch.bfloat16)
 
     if B.is_cuda:
         torch.cuda.synchronize()
@@ -139,15 +141,15 @@ def microbench_apply(
     """
     assert torch is not None
     dev = torch.device(device)
-    Z = torch.randn(n, n, device=dev, dtype=torch.float32)
-    S = torch.randn(n, n, device=dev, dtype=torch.float32)
+    Z = torch.randn(n, n, device=dev, dtype=torch.bfloat16)
+    S = torch.randn(n, n, device=dev, dtype=torch.bfloat16)
     S = (S + S.T) * 0.5
     S = S @ S.T  # SPD-ish
     S = S / choose_beta(S, mode="fro")
 
     global _APPLY_MONO_FN, _APPLY_CHEB_FN
-    apply_mono = _APPLY_MONO_FN if _APPLY_MONO_FN is not None else apply_poly_right_mono
-    apply_cheb = _APPLY_CHEB_FN if _APPLY_CHEB_FN is not None else apply_poly_right_cheb
+    apply_mono = _APPLY_MONO_FN if _APPLY_MONO_FN is not None else apply_poly_right_mono       
+    apply_cheb = _APPLY_CHEB_FN if _APPLY_CHEB_FN is not None else apply_poly_right_cheb       
 
     if dev.type == "cuda":
         torch.cuda.synchronize()
@@ -184,7 +186,7 @@ def main() -> None:
         "--coeff-dir",
         type=str,
         required=True,
-        help="Directory with coeff json files named like basis_deg.json, e.g. mono_3.json",
+        help="Directory with coeff json files named like basis_deg.json, e.g. mono_3.json",    
     )
     ap.add_argument("--out-csv", type=str, default="bench_out.csv")
     ap.add_argument("--do-micro", action="store_true")
@@ -208,7 +210,7 @@ def main() -> None:
         _APPLY_CHEB_FN = None
 
     Bs_np = load_mats(args.npz)
-    Bs = [torch.tensor(B, dtype=torch.float32, device=args.device) for B in Bs_np]
+    Bs = [torch.tensor(B, dtype=torch.bfloat16, device=args.device) for B in Bs_np]
 
     degs = [int(x) for x in args.deg_list.split(",")]
     iters_list = [int(x) for x in args.iter_list.split(",")]
@@ -222,7 +224,7 @@ def main() -> None:
                 with open(w_coeff_path, "r", encoding="utf-8") as f:
                     w_dat = json.load(f)
                 w_coeffs = torch.tensor(
-                    w_dat["coeffs"], dtype=torch.float32, device=args.device
+                    w_dat["coeffs"], dtype=torch.bfloat16, device=args.device
                 )
 
                 # Run a few dummy iterations to trigger compilation
@@ -248,7 +250,7 @@ def main() -> None:
             with open(coeff_path, "r", encoding="utf-8") as f:
                 dat = json.load(f)
             coeffs = torch.tensor(
-                dat["coeffs"], dtype=torch.float32, device=args.device
+                dat["coeffs"], dtype=torch.bfloat16, device=args.device
             )
 
             if args.do_micro:
@@ -296,7 +298,6 @@ def main() -> None:
                             ),
                         }
                     )
-
     with open(args.out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()

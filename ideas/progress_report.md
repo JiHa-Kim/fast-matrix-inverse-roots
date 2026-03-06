@@ -9,7 +9,7 @@ Our primary goal is the efficient whitening of a symmetric positive definite (SP
     where $Z$ is the preconditioning matrix.
 *   **Primary Metric**: The Relative Frobenius Error:
     $$\delta_F = \|S - I\|_F$$
-    measured in `fp32` to provide a high-fidelity assessment of stability and convergence.
+    measured in `bf16` to assess convergence within the target hardware's native precision.
 *   **Performance Target**: We optimize for **Progress-per-Second** (wall-clock time) rather than raw operation counts, ensuring real-world performance on modern GPU hardware.
 
 ## 2. Implementation & Recent Achievements
@@ -48,11 +48,11 @@ Our research has clarified several critical behaviors in $bf16$ arithmetic:
 
 ### Phase 1: Robustness and Refinement
 *   [x] **BF16-Optimal Scalar Refinement**: Implemented exact pattern search for rounding-aware coefficient design.
-*   [ ] **Minimal GEMM-Robustness**:
-    *   Implement $\epsilon_\beta$ padding: $\beta \leftarrow (1 + \epsilon_\beta)\beta$
-    *   Fold $\alpha$ shrink factor into scale: $Z \leftarrow \alpha Z$
-    *   Mandatory `fp32` symmetrization of $\widehat{S}$ before polynomial application.
-*   [ ] **Unified Scaling Policy**: Enforce parity across `fro`, `trace`, and `maxdiag` estimators for $\beta$.
+*   [x] **Minimal GEMM-Robustness**:
+    *   Implement relative $\epsilon_\beta$ padding to guarantee $S/\beta \le 1.0$.
+    *   Mandatory `bf16` symmetrization of $\widehat{S}$ to prevent complex eigenvalue drift.
+    *   Unified scaling policy across `fro`, `trace`, and `maxdiag` estimators.
+*   [ ] **Comprehensive Scaling Policy Validation**: Verify parity across different matrix dimensions.
 
 ### Phase 2: Strategic Integration
 *   [ ] **Ridge & Jacobi Analysis**: Conduct a localized sweep over $\delta$ (ridge) and $\epsilon$ (Jacobi) to optimize residual floors.
