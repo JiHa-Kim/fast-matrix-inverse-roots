@@ -97,9 +97,9 @@ def apply_poly_right_cheb(
     beta = -(1.0 + ell) / (1.0 - ell)
 
     B_k2 = torch.zeros_like(Z)
-    B_k1 = torch.zeros_like(Z)
+    B_k1 = c[d] * Z  # Start at k=d
 
-    for k in range(d, 0, -1):
+    for k in range(d - 1, 0, -1):
         # B_k = c_k Z + 2 B_{k+1} t - B_{k+2}
         # B_{k+1} t = B_{k+1} @ (alpha S + beta I)
         B_k1_S = B_k1 @ S
@@ -265,8 +265,8 @@ def main() -> None:
     global _APPLY_MONO_FN, _APPLY_CHEB_FN
     if args.compile:
         print("Compiling functions with torch.compile()...")
-        _APPLY_MONO_FN = torch.compile(apply_poly_right_mono)
-        _APPLY_CHEB_FN = torch.compile(apply_poly_right_cheb)
+        _APPLY_MONO_FN = torch.compile(apply_poly_right_mono, mode="max-autotune")
+        _APPLY_CHEB_FN = torch.compile(apply_poly_right_cheb, mode="max-autotune")
     else:
         _APPLY_MONO_FN = None
         _APPLY_CHEB_FN = None
@@ -279,30 +279,29 @@ def main() -> None:
 
     # --- Warmup ---
     if torch.device(args.device).type == "cuda":
-        print("Warming up GPU...")
-        # Use first basis/deg/coeffs to warm up
-        w_basis = "mono"
-        w_deg = degs[0]
-        w_coeff_path = os.path.join(args.coeff_dir, f"{w_basis}_{w_deg}.json")
-        with open(w_coeff_path, "r", encoding="utf-8") as f:
-            w_dat = json.load(f)
-        w_coeffs = torch.tensor(
-            w_dat["coeffs"], dtype=torch.float32, device=args.device
-        )
+        print("Warming up GPU and compiling all kernels...")
+        for w_basis in ["mono", "cheb"]:
+            for w_deg in degs:
+                w_coeff_path = os.path.join(args.coeff_dir, f"{w_basis}_{w_deg}.json")
+                with open(w_coeff_path, "r", encoding="utf-8") as f:
+                    w_dat = json.load(f)
+                w_coeffs = torch.tensor(
+                    w_dat["coeffs"], dtype=torch.float32, device=args.device
+                )
 
-        # Run a few dummy iterations
-        for _ in range(5):
-            _ = run_precond(
-                B=Bs[0],
-                basis=w_basis,
-                deg=w_deg,
-                iters=5,
-                ell=args.ell,
-                coeffs=w_coeffs,
-                ridge=args.ridge,
-                jacobi_eps=args.jacobi_eps,
-                beta_mode=args.beta_mode,
-            )
+                # Run a few dummy iterations to trigger compilation
+                for _ in range(3):
+                    _ = run_precond(
+                        B=Bs[0],
+                        basis=w_basis,
+                        deg=w_deg,
+                        iters=3,
+                        ell=args.ell,
+                        coeffs=w_coeffs,
+                        ridge=args.ridge,
+                        jacobi_eps=args.jacobi_eps,
+                        beta_mode=args.beta_mode,
+                    )
         torch.cuda.synchronize()
         print("Warmup complete.")
 
