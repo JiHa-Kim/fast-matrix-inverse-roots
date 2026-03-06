@@ -99,6 +99,8 @@ def build_proxy_set(ell: float, n_log: int, n_lin: int) -> np.ndarray:
         xs.append(np.geomspace(a, b, n_log, dtype=np.float64))
     if n_lin > 0:
         xs.append(np.linspace(a, b, n_lin, dtype=np.float64))
+    if not xs:
+        return np.array([], dtype=np.float64)
     return np.unique(np.concatenate(xs))
 
 
