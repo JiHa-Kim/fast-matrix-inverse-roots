@@ -21,6 +21,7 @@ from typing import Tuple
 
 import numpy as np
 from scipy.optimize import linprog
+from numpy.polynomial import Chebyshev, Polynomial
 
 
 def bf16_round_f32(x: np.ndarray) -> np.ndarray:
@@ -107,19 +108,14 @@ def solve_one_sided_lp(
     mu: float,
     x_proxy: np.ndarray,
     coef_bound: float,
-    basis: str,
 ) -> DesignResult:
     a_dom, b_dom = float(ell), 1.0
     x = x_proxy.astype(np.float64)
     s = np.sqrt(x).reshape(-1, 1)
 
-    if basis == "cheb":
-        t = x_to_t(x, a_dom, b_dom).astype(np.float64)
-        V = cheb_vander_t(t, deg)
-    elif basis == "mono":
-        V = np.vstack([x**k for k in range(deg + 1)]).T.astype(np.float64)
-    else:
-        raise ValueError("basis must be 'mono' or 'cheb'")
+    # ALWAYS optimize using the mathematically well-conditioned Chebyshev basis
+    t = x_to_t(x, a_dom, b_dom).astype(np.float64)
+    V = cheb_vander_t(t, deg)
 
     # g(x) = sqrt(x) * q(x) = (s * V) @ coeffs
     G = s * V
@@ -191,14 +187,22 @@ def design(
     for _ in range(mu_iters):
         mu = 0.5 * (lo + hi)
         try:
-            sol = solve_one_sided_lp(ell, deg, mu, x_proxy, coef_bound, basis)
+            sol = solve_one_sided_lp(ell, deg, mu, x_proxy, coef_bound)
         except RuntimeError:
             hi = mu
             continue
 
-        ok, max_g, min_g = verify_bf16_no_overshoot(ell, sol.coeffs, basis)
+        c_eval = sol.coeffs
+        if basis == "mono":
+            poly = Chebyshev(c_eval, domain=[ell, 1.0]).convert(kind=Polynomial)
+            c_eval = poly.coef
+            # zero pad if conversion dropped highest order zero term
+            if len(c_eval) < deg + 1:
+                c_eval = np.pad(c_eval, (0, deg + 1 - len(c_eval)))
+
+        ok, max_g, min_g = verify_bf16_no_overshoot(ell, c_eval, basis)
         if ok:
-            best = (sol, max_g, min_g)
+            best = (sol, c_eval, max_g, min_g)
             hi = mu
         else:
             lo = mu
@@ -206,7 +210,7 @@ def design(
     if best is None:
         raise RuntimeError("No feasible mu found. Increase mu_hi or coef_bound.")
 
-    sol, max_g, min_g = best
+    sol, c_eval, max_g, min_g = best
     return {
         "kind": "phase1_bf16_safe",
         "basis": basis,
@@ -216,7 +220,7 @@ def design(
         "proxy_min_g": float(sol.g_min_proxy),
         "bf16_eval_max_g": float(max_g),
         "bf16_eval_min_g": float(min_g),
-        "coeffs": sol.coeffs.tolist(),
+        "coeffs": c_eval.tolist(),
     }
 
 
