@@ -1,161 +1,82 @@
-# Applied inverse-root roadmap:
-# from inverse modulus to general G P^{-s/r}
+# Applied inverse-root roadmap: from inverse modulus to general G P^{-s/r}
 
-## 0. Goal
+## 0) Goal and sequencing (do not skip this)
 
-Generalize the preconditioner-side logic from inverse square root to the applied transform
+We want fast applied transforms of the form
 $$
 G P^{-s/r},
 $$
-with $P \succeq 0$, $r > 0$, and $s > 0$.
+where $P \succeq 0$, $r>0$, $s>0$, using GEMM-heavy polynomial policies.
 
-This is motivated by optimizer-style uses:
-- Shampoo-like preconditioning
-- quarter-root / inverse-root style updates
-- applied transforms where forming the full matrix function explicitly may be unnecessary
+Sequencing:
+1) First deliverable: applied inverse square root ($r=2$, $s=1$) for whitening/preconditioning.
+2) Next: small integer $r$ (especially $r=4$).
+3) Only pursue general real $r$ if integer-$r$ cases show clear practical value.
 
-Immediate focus:
-- inverse square root ($r=2$, $s=1$)
+## 1) Applied objective and certificates
 
-Next:
-- small integer $r$ such as $4$
-
-Later:
-- broader real $r > 0$ if still useful
-
-## 1. Core principle
-
-The object of interest is usually not the explicit matrix function itself.
-It is the applied transform on a matrix $G$.
-
-So the main question is:
-
-Can we compute
+For inverse square root (whitening), we aim for $Z \approx P^{-1/2}$ such that
 $$
-G P^{-s/r}
+S := Z^T P Z \approx I,
 $$
-faster and more stably than:
-1. computing $P^{-1/r}$ explicitly, then
-2. multiplying by $G$ afterward?
+and the project metrics are $\delta_F=\|S-I\|_F$ and $\rho_2=\|S-I\|_2$.
 
-The working hypothesis is yes, especially when:
-- the small-side certificate can be maintained directly,
-- the update can be written as a coupled polynomial iteration,
-- explicit unstable amplification is avoided until the end or avoided entirely.
+For more general applied roots, define the certificate by the downstream use case (do not optimize $\|Z-P^{-1/r}\|$ unless it improves the applied metric).
 
-## 2. Start with the inverse-square-root special case
+## 2) Coupled iteration family (bridge from inverse modulus to general applied roots)
 
-For $r=2$, the nearest-term target is:
+A useful template is the coupled polynomial iteration that drives an auxiliary sequence $P_t \to I$ while updating the applied transform:
 $$
-G P^{-1/2}.
-$$
-
-This should be developed first because:
-- it directly matches the inverse-modulus / whitening problem,
-- the local certificate is clean,
-- it is the most relevant special case for the polar-factor comparison.
-
-Deliverable:
-- a fully benchmarked applied inverse-square-root path before any general-$r$ work.
-
-## 3. Coupled-iteration family to explore
-
-Use the applied coupled template:
-$$
-G_{t+1} = G_t \big(a_{t+1}I + b_{t+1}P_t + c_{t+1}P_t^2\big)^s,
+G_{t+1} = G_t \left(a_{t+1}I + b_{t+1}P_t + c_{t+1}P_t^2\right)^s,
 $$
 $$
-P_{t+1} = \big(a_{t+1}I + b_{t+1}P_t + c_{t+1}P_t^2\big)^r P_t.
+P_{t+1} = \left(a_{t+1}I + b_{t+1}P_t + c_{t+1}P_t^2\right)^r P_t.
 $$
+This connects the inverse-modulus viewpoint to later $G P^{-s/r}$ deliverables. 
 
-If $P_t$ remains invertible and tends to $I$, then the limit gives the desired applied root.
+## 3) Two-phase reverse-engineered policy (reuse the polar blueprint)
 
-This suggests the roadmap:
-- first solve the "make $P_t \to I$ quickly and safely" problem,
-- then lift that design to the coupled applied iteration.
+### Phase 2 (local finish)
+Once the certificate is near identity, use 1-2 locally designed steps with exact-arithmetic interval analysis and bf16 calibrated envelope, plus guards.
 
-## 4. Initialization / scaling to test
+### Phase 1 (global compression)
+Use bf16-safe global steps + scaling/preconditioning to enter Phase 2 band quickly and safely.
 
-Initialization quality is critical.
+## 4) Scaling/preconditioning sweep
 
-Candidates:
-- Frobenius scaling
-- scaling by $\sqrt{\mathrm{tr}(P^2)}$
-- diagonal/Jacobi scaling
-- ridge-regularized scaling:
-  $$
-  P_\lambda = P + \lambda I
-  $$
+Test small-side scalings and preprocessors, including Frobenius-inner-product based options (useful to compress spectrum into a safe interval without expensive estimates). 
 
-The purpose is to compress eigenvalues into a safe interval for the polynomial map while preserving enough useful gain.
+Include ridge option for near-PSD/noisy inputs:
+1) symmetrize $P \leftarrow 0.5(P+P^T)$
+2) ridge $P_\lambda = P + \lambda I$
 
-## 5. Policy structure
+If ridge is used, treat the objective as changed and report the induced floor in $\|S-I\|$.
 
-### Phase 1: global contraction
-Use bf16-safe global steps that move the spectrum of the certificate toward $1$ without overshoot.
+## 5) Verification and benchmarking
 
-### Phase 2: local aggressive finish
-Once the certificate is close enough to identity, use local minimax-style steps designed on
-$$
-[1-\rho, 1+\rho].
-$$
-
-This is the same structural logic as the inverse-square-root case, but now applied to the coupled iteration.
-
-## 6. What to verify
-
-### Exact-arithmetic verification
-For each candidate policy:
-- scalar contraction of the relevant map
-- interval of validity
+### Exact arithmetic verification
+For each polynomial/schedule:
+- scalar interval contraction checks for the relevant map
 - composition behavior across multiple steps
 
-### Applied verification
-For the returned transform:
-$$
-U := G P^{-s/r}_{\text{approx}}
-$$
-or its coupled-iteration analogue, measure the induced certificate on the appropriate small side.
+### Deployment verification
+- end-to-end bf16 kernel tests (same code path as deployment)
+- calibrated envelopes, plateau behavior, and guard triggers
+- evaluate progress-per-second at target tiers
 
-For inverse square root:
-$$
-S = Z^T P Z \approx I.
-$$
-
-For more general applied roots, define the downstream metric based on the optimizer/preconditioner objective rather than on raw matrix-function error alone.
-
-## 7. Research sequence
-
-### Stage 1. Lock inverse-square-root
-- finalize preconditioner-side local design
-- compare explicit $Z$ vs coupled applied route
-- benchmark against direct polar-style odd iteration where applicable
-
-### Stage 2. Extend to integer $r$
-- start with $r=4$
-- reuse the two-phase structure
-- redesign local maps for the new scalar objective
-
-### Stage 3. Decide whether real $r$ is worth it
-General real powers are algebraically possible, but the design space and finite-precision behavior become less clean.
-Only pursue this if integer-$r$ results show clear practical value.
-
-## 8. Deliverables
+## 6) Deliverables
 
 ### Code
-- `policy_apply_inv_sqrt.py`
-- `policy_apply_inv_rth_root.py`
-- `bench_applied_roots.py`
+- `policy_apply_inv_sqrt.py` (primary deliverable)
+- `policy_apply_inv_rth_root.py` (for r=4 next)
+- `design_local_steps.py` (Phase 2 local designer)
+- `bench_applied_roots.py` (unified harness)
 
 ### Reports
-- `report_inv_sqrt_vs_explicit_root.md`
-- `report_integer_r_roots.md`
+- `report_inv_sqrt_policies.md` (compare direct vs preconditioner-first vs hybrid)
+- `report_integer_r_roots.md` (start with r=4)
 - `report_scaling_and_ridge.md`
 
-## 9. Final decision criterion
+## 7) Ship rule
 
-Ship the family that minimizes wall-clock to a downstream-useful certificate under bf16-safe guards.
-
-For this track, "best" means:
-- fastest applied preconditioning effect,
-- not best raw approximation of $P^{-1/r}$ in isolation.
+Ship the policy family that minimizes wall time to a downstream-useful certificate under bf16-safe guards, and only expand to more general $r$ when the integer-$r$ results demonstrate clear practical benefit.
