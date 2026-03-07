@@ -237,7 +237,9 @@ $$
 $$
 and combine with trace-based inequalities to tighten decisions. Use only if it reduces total wall time.
 
-$$\min{\text{Fro}, \text{GeoMean } \sqrt{\|S\|_1 \|S\|_\infty}, \text{Gershgorin}}$$
+$$\min \left\{\text{Fro}, \text{GeoMean } \sqrt{\|S\|_1 \|S\|_\infty}, \text{Gershgorin}\right\}$$
+
+Brauer, Ostrowski, etc. probably overkill
 
 ---
 
