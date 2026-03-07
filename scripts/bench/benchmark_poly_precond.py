@@ -72,7 +72,7 @@ def run_precond(
     symmetrize_input: bool = True,
 ) -> RunOut:
     n = B.shape[0]
-    
+
     # Always ensure input B is structurally symmetric in bf16
     if symmetrize_input:
         B = symmetrize(B)
@@ -88,8 +88,8 @@ def run_precond(
 
     # Get the correctly compiled (or eager) function pointers
     global _APPLY_MONO_FN, _APPLY_CHEB_FN
-    apply_mono = _APPLY_MONO_FN if _APPLY_MONO_FN is not None else apply_poly_right_mono       
-    apply_cheb = _APPLY_CHEB_FN if _APPLY_CHEB_FN is not None else apply_poly_right_cheb       
+    apply_mono = _APPLY_MONO_FN if _APPLY_MONO_FN is not None else apply_poly_right_mono
+    apply_cheb = _APPLY_CHEB_FN if _APPLY_CHEB_FN is not None else apply_poly_right_cheb
 
     # Warmup one S build outside timing if you want (kept simple here)
     if B.is_cuda:
@@ -154,8 +154,8 @@ def microbench_apply(
     S = S / choose_beta(S, mode="fro")
 
     global _APPLY_MONO_FN, _APPLY_CHEB_FN
-    apply_mono = _APPLY_MONO_FN if _APPLY_MONO_FN is not None else apply_poly_right_mono       
-    apply_cheb = _APPLY_CHEB_FN if _APPLY_CHEB_FN is not None else apply_poly_right_cheb       
+    apply_mono = _APPLY_MONO_FN if _APPLY_MONO_FN is not None else apply_poly_right_mono
+    apply_cheb = _APPLY_CHEB_FN if _APPLY_CHEB_FN is not None else apply_poly_right_cheb
 
     if dev.type == "cuda":
         torch.cuda.synchronize()
@@ -192,7 +192,7 @@ def main() -> None:
         "--coeff-dir",
         type=str,
         required=True,
-        help="Directory with coeff json files named like basis_deg.json, e.g. mono_3.json",    
+        help="Directory with coeff json files named like basis_deg.json, e.g. mono_3.json",
     )
     ap.add_argument("--out-csv", type=str, default="bench_out.csv")
     ap.add_argument("--do-micro", action="store_true")

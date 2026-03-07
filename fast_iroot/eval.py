@@ -15,7 +15,9 @@ def jacobi_init(B: torch.Tensor, jacobi_eps: float) -> torch.Tensor:
     return Z
 
 
-def choose_beta(S: torch.Tensor, mode: str = "fro", rel_padding: float = 0.01) -> torch.Tensor:
+def choose_beta(
+    S: torch.Tensor, mode: str = "fro", rel_padding: float = 0.01
+) -> torch.Tensor:
     """
     Unified scaling policy: returns beta such that S/beta has lambda_max <= 1.0.
     Includes relative padding to protect against bf16 GEMM noise.
@@ -31,7 +33,7 @@ def choose_beta(S: torch.Tensor, mode: str = "fro", rel_padding: float = 0.01) -
     else:
         raise ValueError("beta mode must be fro|trace|maxdiag")
 
-    # Clamp to ensure we don't shrink if S is already small, 
+    # Clamp to ensure we don't shrink if S is already small,
     # then apply relative padding.
     beta = torch.max(e, torch.ones_like(e)) * (1.0 + rel_padding)
     return beta
@@ -73,7 +75,7 @@ def apply_poly_right_cheb(
     beta_cheb = -(b_dom + a_dom) / denom
 
     B_k2 = torch.zeros_like(Z)
-    B_k1 = c[d] * Z 
+    B_k1 = c[d] * Z
 
     for k in range(d - 1, 0, -1):
         B_k1_S = B_k1 @ S
@@ -86,6 +88,7 @@ def apply_poly_right_cheb(
 
     return out
 
+
 # ---------------------------------------------------------
 # Phase 2: Local Minimax Refinement (Minimal Implementation)
 # ---------------------------------------------------------
@@ -94,22 +97,25 @@ def apply_poly_right_cheb(
 # Extracted via exact bf16-in-the-loop backward induction.
 
 PHASE2_TRANSITION_COEFFS = [
-    1.1710753446292332, 
-    -0.5625516521895263, 
-    0.19683376700487223, 
-    -0.0764417229369569
+    1.1710753446292332,
+    -0.5625516521895263,
+    0.19683376700487223,
+    -0.0764417229369569,
 ]
 PHASE2_TRANSITION_RHO = 0.7653
 
 PHASE2_TERMINAL_COEFFS = [
-    1.0012529091554423, 
-    -0.040928175241500456, 
-    0.0012543153087897158, 
-    -4.297118508547139e-05
+    1.0012529091554423,
+    -0.040928175241500456,
+    0.0012543153087897158,
+    -4.297118508547139e-05,
 ]
 PHASE2_TERMINAL_RHO = 0.0816
 
-def step_phase2_local(Z: torch.Tensor, B: torch.Tensor, rho_in: float, coeffs: list[float]) -> torch.Tensor:
+
+def step_phase2_local(
+    Z: torch.Tensor, B: torch.Tensor, rho_in: float, coeffs: list[float]
+) -> torch.Tensor:
     """
     Applies a single step of the local Phase 2 preconditioner without dynamic scaling (beta).
     The input matrix spectrum is mathematically guaranteed to be within [1 - rho_in, 1 + rho_in].
@@ -118,7 +124,6 @@ def step_phase2_local(Z: torch.Tensor, B: torch.Tensor, rho_in: float, coeffs: l
     a_dom = 1.0 - rho_in
     b_dom = 1.0 + rho_in
     c_t = torch.tensor(coeffs, dtype=torch.bfloat16, device=Z.device)
-    
+
     # Z_new = Z * q(S)
     return apply_poly_right_cheb(Z, S, c_t, a_dom=a_dom, b_dom=b_dom)
-
