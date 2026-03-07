@@ -31,6 +31,8 @@ B := G^T G,
 S := \widehat Q^T \widehat Q = Z^T B Z.
 $$
 
+To quantify $Z \approx B^{-1/2}$, we need to measure $S \approx I$.
+
 The error certificate is
 $$
 E := S - I.
@@ -55,9 +57,15 @@ $$
 \kappa(S) \le \frac{1+\rho_2}{1-\rho_2}.
 $$
 
-### Log-space "uniformity" coordinate (the right global geometry)
+### Condition-number target is the right spec
 
-Define the log-width of the SPD certificate:
+For preconditioning/whitening, the natural global objective is
+$$
+\kappa(S) := \frac{\lambda_{\max}(S)}{\lambda_{\min}(S)}
+\quad\text{(multiplicative residual anisotropy).}
+$$
+
+A convenient log-width coordinate is
 $$
 \eta(S) := \frac12 \log\!\left(\frac{\lambda_{\max}(S)}{\lambda_{\min}(S)}\right)
 = \frac12 \log \kappa(S).
@@ -68,26 +76,44 @@ $$
 \eta(S) = \log\!\left(\frac{s_{\max}}{s_{\min}}\right) = \log \kappa(U).
 $$
 
-Also define a log-center drift:
+A condition-number spec $\kappa(S)\le \kappa_\star$ is equivalent to
 $$
-c(S) := \frac12\big(\log \lambda_{\max}(S) + \log \lambda_{\min}(S)\big)
+\eta(S) \le \eta_\star := \frac12\log \kappa_\star.
+$$
+
+Example: $\kappa_\star=1.5$ corresponds to $\eta_\star=\tfrac12\log(1.5)$.
+
+### Log-center (multiplicative scale drift) and cheap recentering
+
+Define log-center drift in two ways:
+
+1) Endpoint drift (needs $\lambda_{\min},\lambda_{\max}$):
+$$
+c_{\mathrm{end}}(S) := \frac12\big(\log \lambda_{\max}(S) + \log \lambda_{\min}(S)\big)
 = \log \sqrt{\lambda_{\max}(S)\lambda_{\min}(S)}.
 $$
 
-Interpretation:
-- $\eta(S)$ measures multiplicative spread / uniformity (primary global width metric).
-- $c(S)$ measures multiplicative scale drift away from $1$.
+2) Mean-log drift (cheap via Cholesky):
+$$
+c_{\det}(S) := \frac{1}{n}\log\det(S)
+= \frac{1}{n}\sum_{i=1}^n \log \lambda_i(S).
+$$
 
-If scalar rescaling of $Z$ is allowed (cheap), then rescale
+If scalar rescaling of $Z$ is allowed (cheap), then recenter multiplicatively using either drift:
 $$
 Z \leftarrow e^{-c(S)/2} Z
 \quad\Longrightarrow\quad
-S \leftarrow e^{-c(S)} S,
+S \leftarrow e^{-c(S)} S.
 $$
-which recenters the spectrum multiplicatively so that
+
+Using $c_{\det}(S)$ is especially practical: if $S=LL^T$ (Cholesky), then
 $$
-\lambda\big(e^{-c(S)} S\big) \subseteq [e^{-\eta(S)},\,e^{\eta(S)}].
+\log\det(S) = 2\sum_{i=1}^n \log L_{ii}.
 $$
+
+Interpretation:
+- $\eta(S)$ measures multiplicative spread (primary global width metric).
+- $c(S)$ measures multiplicative scale drift away from 1 (remove by cheap rescaling).
 
 Target tiers (evaluated on $E=S-I$):
 $$
@@ -156,8 +182,9 @@ $$
 
 The same map appears for direct odd updates on $G$. Therefore direct and Gram-side methods share the same exact local scalar dynamics. The difference is cost, state location, certification, and finite-precision behavior.
 
-### Additive local contraction metric (near $1$)
-For a candidate $q$ and additive band around $1$,
+### Additive local contraction metric (near 1)
+
+For a candidate $q$ and additive band around 1,
 $$
 m_q(\rho) := \sup_{x \in [1-\rho,\,1+\rho]} |x q(x)^2 - 1|.
 $$
@@ -167,6 +194,7 @@ $$
 $$
 
 ### Multiplicative (log-space) global contraction metric
+
 For log-band $x \in [e^{-\eta},e^\eta]$, define
 $$
 \psi(z) := \log\!\big(\phi(e^z)\big),
@@ -183,11 +211,14 @@ $$
 \eta(S_+) \ \le\ \eta_\phi(\eta(S)).
 $$
 
-For reciprocal-symmetric updates (common in inverse-root design), $\phi(1/x)=1/\phi(x)$, hence $\psi(-z)=-\psi(z)$ and the log-center drift is automatically $0$.
+For reciprocal-symmetric updates (common in inverse-root design), $\phi(1/x)=1/\phi(x)$, hence $\psi(-z)=-\psi(z)$ and the log-center drift is automatically 0.
 
-Example: Mobius family $q_c(x) = \dfrac{x+c}{cx+1}$ has $\phi(x) = x\left(\dfrac{x+c}{cx+1}\right)^2$ and $q_c(1/x) = \dfrac{1}{q_c(x)}$.
-
-
+Example: Mobius family $q_c(x) = \dfrac{x+c}{cx+1}$ has
+$$
+\phi(x) = x\left(\dfrac{x+c}{cx+1}\right)^2,
+\qquad
+q_c(1/x) = \dfrac{1}{q_c(x)}.
+$$
 
 ---
 
@@ -206,7 +237,7 @@ Default candidates:
 Measure and compare Phase 1 steps primarily by $\eta$ shrinkage per wall time (with guards).
 
 ### Phase 2: local finish (near 1)
-Use one or two aggressive local steps designed from the certificate map once the spectrum is near $1$.
+Use one or two aggressive local steps designed from the certificate map once the spectrum is near 1.
 
 Local model:
 - work near $x=1$ (additive coordinate),
@@ -238,7 +269,7 @@ $$
 $$
 
 For each degree $d$, solve the discrete predecessor problem:
-find the largest contiguous bf16 input band around $1$ such that
+find the largest contiguous bf16 input band around 1 such that
 $$
 \forall x \in \mathcal X_d,
 \qquad
@@ -274,7 +305,7 @@ $$
 with exact contraction bounds via $m_q(\rho)$ or log-width maps $\eta_\phi$.
 
 ### B. Exact scalar bf16 deployment model
-Centered-at-$1$ Chebyshev + bf16 Clenshaw predecessor solve above.
+Centered-at-1 Chebyshev + bf16 Clenshaw predecessor solve above.
 
 ### C. Real matrix-kernel deployment
 GEMM accumulation, reduction order, casts, and backend details. Must be calibrated empirically.
@@ -303,6 +334,8 @@ $$
 \qquad
 \eta = \frac12 \log\!\left(\frac{\lambda_{\max}(S_{\mathrm{sym}})}{\lambda_{\min}(S_{\mathrm{sym}})}\right).
 $$
+
+Optional: avoid eigendecompositions for global width by using a Cholesky-only log-center and a conservative $\kappa$ bound derived from $\operatorname{tr}(S)$ and $\log\det(S)$.
 
 Every deployed policy should include:
 - NaN/Inf detection,
@@ -376,7 +409,7 @@ Use saved training matrices or Gram snapshots whenever possible.
 ## 11. Default execution order
 
 ### Step 1
-Lock the local evaluator to centered-at-$1$ shifted Chebyshev with Clenshaw.
+Lock the local evaluator to centered-at-1 shifted Chebyshev with Clenshaw.
 
 ### Step 2
 Solve the exact scalar bf16 predecessor problem for degrees $2,3,4$ and pick:
@@ -387,7 +420,7 @@ Solve the exact scalar bf16 predecessor problem for degrees $2,3,4$ and pick:
 Build a minimal Phase 1 baseline using direct odd updates with simple safe scaling and log-width tracking.
 
 ### Step 4
-Add a Gram-side baseline with (optional) multiplicative recentering and refinement.
+Add a Gram-side baseline with refinement and optional multiplicative recentering.
 
 ### Step 5
 Benchmark three policy families:
