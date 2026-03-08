@@ -92,52 +92,34 @@ but this requires a Cholesky of $S$ and is typically too expensive for the inner
 
 ---
 
-## 5. Primary step: 1-solve scaled Zolotarev map (type $(7,6)$)
+## 5. Primary step: 1-solve scaled Zolotarev map (type $(11,10)$)
 
-### 5.1 Scalar model
-
-After scaling so that $\sigma_{\max}(X)=1$, suppose $\sigma(X)\subset[\ell,1]$ where $\ell=1/\kappa(G)$ in the Gram-side polar interpretation.
-
-The scaled Zolotarev map $\hat Z_{2r+1}(x;\ell)$ is minimax optimal for shrinking $[\ell,1]$ toward 1, and has the odd rational structure
+We use a 1-step minimax (interval-optimal) scaled Zolotarev map
 $$
-\hat Z_{2r+1}(x;\ell) = x\,q(x^2),\qquad q(t)=\alpha\frac{P(t)}{Q(t)},\quad \deg P=\deg Q=r.
+\hat Z_{2r+1}(x;\ell)=x\,q(x^2),\qquad
+q(t)=\alpha\frac{P(t)}{Q(t)},\quad \deg P=\deg Q=r,
 $$
-
-For the primary path we use $r=3$ (type $(7,6)$). In the scalar worst-case band model, designing $q$ for $\kappa_\star=1.5$ yields coverage around
+implemented as one solve on the small SPD side:
 $$
-\kappa(G) \approx 3000,\qquad \kappa(S)\approx \kappa(G)^2 \approx 9\times 10^6,
-$$
-while landing in the target band in one step.
-
-Interpretation: this covers the typical regime we care about, with only one solve.
-
-### 5.2 Matrix update (one solve)
-
-Maintain $Z\in\mathbb{R}^{d\times d}$ and form
-$$
-S := Z^T \tilde A Z.
+Z \leftarrow Z\,q(S)=Z\,P(S)\,Q(S)^{-1},\qquad S=Z^T\tilde A Z.
 $$
 
-Define
-$$
-q(t)=\alpha\frac{P(t)}{Q(t)},\qquad \deg P=\deg Q=3,
-$$
-with coefficients generated offline.
+**Default tier:** $r=5$ (type $(11,10)$).
 
-Update:
+For $\kappa_\star=1.5$, the scalar worst-case band model predicts the 1-step coverage
 $$
-Z \leftarrow Z\,q(S) = Z\,P(S)\,Q(S)^{-1}.
+\kappa(G)_{\max,\mathrm{model}}\approx 6.47\times 10^5,\qquad
+\kappa(S)_{\max,\mathrm{model}}\approx 4.18\times 10^{11}.
 $$
 
-Implementation shape:
-- Build $S$ in fp32 (bf16 inputs, fp32 accumulate).
-- Build $P(S)$ and $Q(S)$ in fp32 (use $S^2,S^3$ or Horner).
-- Symmetrize $Q(S)\leftarrow \tfrac12(Q(S)+Q(S)^T)$.
-- Cholesky factorize $Q(S)=LL^T$ (fp32).
-- Right-solve $ZP(S)$ against $Q(S)$ using $L$ (many RHS).
-- Cast $Z$ to bf16 only if needed for downstream GEMMs.
+This covers typical momentum-buffer condition numbers ($10^4$ to $10^5$) with margin, while keeping per-step degree modest for stability.
 
-This is exactly "1 inverse + spam GEMMs".
+**Optional higher tier (rare):** $r=6$ (type $(13,12)$) gives
+$$
+\kappa(G)_{\max,\mathrm{model}}\approx 9.48\times 10^6,\qquad
+\kappa(S)_{\max,\mathrm{model}}\approx 8.99\times 10^{13},
+$$
+useful if you really want to cover raw gradients ($\kappa(G)\sim 10^6$) in one solve under the pessimistic interval model.
 
 ---
 

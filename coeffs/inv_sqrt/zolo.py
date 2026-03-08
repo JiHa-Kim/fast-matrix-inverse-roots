@@ -183,7 +183,7 @@ def main() -> None:
     p.add_argument(
         "--r-primary",
         type=int,
-        default=3,
+        default=5,
         help="Primary one-step degree r (type (2r+1,2r)).",
     )
     p.add_argument(
