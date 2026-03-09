@@ -30,6 +30,9 @@ def cuda_time_ms(fn):
         t0 = time.time()
         out = fn()
         return 1000.0 * (time.time() - t0), out
+    
+    # Optional NVTX for Nsight Systems
+    # torch.cuda.nvtx.range_push(fn.__name__ if hasattr(fn, "__name__") else "cuda_time_ms")
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
     torch.cuda.synchronize()
@@ -37,6 +40,7 @@ def cuda_time_ms(fn):
     out = fn()
     end.record()
     torch.cuda.synchronize()
+    # torch.cuda.nvtx.range_pop()
     return float(start.elapsed_time(end)), out
 
 
