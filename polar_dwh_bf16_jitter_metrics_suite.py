@@ -1,36 +1,17 @@
 #!/usr/bin/env python3
-# polar_dwh_bf16_predcap_gersh_power_suite.py
+# polar_dwh_bf16_honest_baseline.py
 #
-# BF16-friendly polar/orthogonalization preconditioner via direct x g(x^2)
-# (DWH/QDWH-style), with GPU-fast extremal eigenvalue BOUNDS/ESTIMATES designed
-# for bf16 stability.
+# Correctness-first DWH/QDWH-style polar baseline for tall matrices.
 #
-# What this script does (high level):
-#   - Stores tall iterand X in bf16.
-#   - Forms small Gram S = X^T X in fp32, symmetrizes, trace-centers.
-#   - Uses FAST GPU bounds for eigenvalues of S:
-#       * Gershgorin bounds (O(n^2), purely elementwise+reductions, GPU-friendly).
-#         We apply a conservative "sum fudge" so float32 reduction never underestimates
-#         row sums, which could otherwise break the bound.
-#       * Optional block power iteration to get a tighter *estimate* of lambda_max
-#         using GEMM (S @ Q) with small block size, GPU-efficient.
-#   - Chooses coefficients (a,b,c) by searching ell in [lo, 1] and minimizing
-#     predicted kappa based on (lam_min_lb, lam_max_design), under caps.
-#   - Factors only M = I + c S (never S), with jitter only on M, and optional fp64 fallback.
+# Key choices:
+#   - Uses actual DWH coefficients from Nakatsukasa-Bai-Gygi.
+#   - Uses the numerically safer update:
+#       X_{k+1} = (b/c) X + (a - b/c) X (I + c X^T X)^(-1)
+#   - Computes the small Gram in chunked fp64.
+#   - Solves the small right-side system in chunks to control memory.
+#   - Uses exact eig certification for small n, and trace/logdet bound otherwise.
 #
-# Certification:
-#   - For n <= eig_threshold: eigvalsh(S) for exact cert.
-#   - For n > eig_threshold: rigorous-ish Gershgorin kappa upper bound:
-#       kappa_ub(S) = lam_max_ub / max(lam_min_lb, floor)
-#     and kappa_O_ub = sqrt(kappa_ub).
-#
-# IMPORTANT:
-#   - Gershgorin bounds depend on accurate row sums of abs entries. In float32,
-#     reductions can undercount. We compensate with a provable-style worst-case
-#     relative fudge ~= O(n * eps32). This makes the bound conservative in practice.
-#
-# Suite:
-#   - Runs "Kimi K2/GLM5-ish" shapes; skips OOM cases and continues.
+# This is intended as an honest baseline, not the final fastest Muon path.
 
 from __future__ import annotations
 
@@ -47,7 +28,7 @@ import torch
 Tensor = torch.Tensor
 
 
-# ----------------------------- utilities -----------------------------------
+# ----------------------------- utilities ------------------------------------
 
 
 def symmetrize(A: Tensor) -> Tensor:
@@ -55,9 +36,10 @@ def symmetrize(A: Tensor) -> Tensor:
 
 
 def pct(xs: List[float], p: float) -> float:
-    if not xs:
+    ys = [float(x) for x in xs if math.isfinite(float(x))]
+    if not ys:
         return float("nan")
-    ys = sorted(xs)
+    ys.sort()
     i = int(round(p * (len(ys) - 1)))
     i = max(0, min(len(ys) - 1, i))
     return float(ys[i])
@@ -65,7 +47,9 @@ def pct(xs: List[float], p: float) -> float:
 
 def cuda_time_ms(fn):
     if not torch.cuda.is_available():
-        return 0.0, fn()
+        t0 = time.time()
+        out = fn()
+        return 1000.0 * (time.time() - t0), out
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
     torch.cuda.synchronize()
@@ -76,216 +60,220 @@ def cuda_time_ms(fn):
     return float(start.elapsed_time(end)), out
 
 
-# ----------------------- fast eigenvalue bounds/estimates -------------------
+def seed_all(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def safe_exp(x: float) -> float:
+    if x >= 709.0:
+        return float("inf")
+    return float(math.exp(x))
+
+
+def acosh_exp(logu: float) -> float:
+    if logu <= 0.0:
+        return 0.0
+    if logu < 20.0:
+        u = math.exp(logu)
+        return float(math.acosh(max(u, 1.0)))
+    return float(logu + math.log(2.0))
+
+
+# ----------------------------- fp64 small-side ops --------------------------
 
 
 @torch.no_grad()
-def gershgorin_bounds_symmetric(
-    S: Tensor,
-    sum_fudge: float = 0.0,
-) -> Tuple[float, float]:
+def gram_xtx_chunked_fp64(
+    X: Tensor,
+    chunk_rows: int,
+) -> Tensor:
     """
-    Gershgorin bounds for symmetric S:
-      lam_min >= min_i (S_ii - sum_{j!=i} |S_ij|)
-      lam_max <= max_i (S_ii + sum_{j!=i} |S_ij|)
-
-    We compute row sums in float32 and apply a conservative multiplicative fudge
-    to avoid underestimation from float32 reductions:
-      offsum <- offsum * (1 + sum_fudge_effective)
-
-    If sum_fudge is 0, we set:
-      sum_fudge_effective = max(1e-4, 4 * n * eps32)
-    which is intentionally conservative.
+    Accurate small Gram S = X^T X in fp64, accumulated in row chunks.
     """
-    S = symmetrize(S)
-    n = S.shape[0]
-    diag = torch.diag(S)
-    absS = torch.abs(S)
-    # row_abs_sum includes diagonal
-    row_abs_sum = torch.sum(absS, dim=1)
-    offsum = row_abs_sum - torch.abs(diag)
+    m, n = X.shape
+    device = X.device
+    S = torch.zeros((n, n), device=device, dtype=torch.float64)
 
-    eps32 = torch.finfo(torch.float32).eps
-    auto_fudge = max(1e-4, float(4.0 * n * eps32))
-    fudge = float(sum_fudge) if sum_fudge > 0.0 else auto_fudge
+    for i in range(0, m, chunk_rows):
+        Xi = X[i : i + chunk_rows]
+        Xi = Xi.float().to(torch.float64)
+        S.addmm_(Xi.T, Xi)
 
-    offsum = offsum * (1.0 + fudge)
-
-    lb = torch.min(diag - offsum).item()
-    ub = torch.max(diag + offsum).item()
-    return float(lb), float(ub)
+    return symmetrize(S)
 
 
 @torch.no_grad()
-def block_power_lambda_max(
-    S: Tensor,
-    iters: int = 8,
-    block: int = 8,
-    seed: int = 0,
-    reorth: bool = True,
-) -> float:
+def chol_with_jitter_fp64(
+    A: Tensor,
+    jitter_rel: float,
+    max_tries: int = 8,
+) -> Tuple[Tensor, float]:
+    A = symmetrize(A.to(torch.float64))
+    if not torch.isfinite(A).all():
+        raise RuntimeError("non-finite matrix before Cholesky")
+
+    n = A.shape[0]
+    I = torch.eye(n, device=A.device, dtype=torch.float64)
+
+    scale = float((torch.trace(A).abs() / max(n, 1)).item())
+    base = max(float(jitter_rel) * max(scale, 1.0), 1e-30)
+
+    delta = 0.0
+    for _ in range(max_tries):
+        At = A if delta == 0.0 else (A + delta * I)
+        L, info = torch.linalg.cholesky_ex(At)
+        if int(info.item()) == 0:
+            return L, float(delta)
+        delta = base if delta == 0.0 else 2.0 * delta
+
+    raise RuntimeError("Cholesky failed even after jitter escalation")
+
+
+# ----------------------------- DWH scalar theory ----------------------------
+
+
+def dwh_coeffs_from_ell(ell: float) -> Tuple[float, float, float]:
     """
-    GPU-efficient lambda_max estimate using block power iteration with GEMM.
-
-    Returns a LOWER bound on lambda_max(S) (Rayleigh in the block subspace),
-    which is useful to tighten design endpoints:
-      lam_max_design = min(lam_max_ub, lam_max_est*(1+margin))
-
-    This uses (n x n) @ (n x b) GEMM each iteration (fast on GPU).
+    DWH coefficients from Nakatsukasa-Bai-Gygi:
+      a = h(ell)
+      b = (a - 1)^2 / 4
+      c = a + b - 1
     """
-    S = symmetrize(S)
-    n = S.shape[0]
-    device = S.device
-    dtype = S.dtype
-
-    gen = torch.Generator(device="cpu").manual_seed(int(seed))
-    Q = torch.randn((n, block), device=device, dtype=dtype, generator=gen)
-    # Orthonormalize initial block
-    Q, _ = torch.linalg.qr(Q, mode="reduced")
-
-    for _ in range(iters):
-        Z = S @ Q  # GEMM (n,n)x(n,b)
-        Q, _ = torch.linalg.qr(Z, mode="reduced")
-        if reorth:
-            # one extra reorth pass helps numerical stability for small block
-            Q, _ = torch.linalg.qr(Q, mode="reduced")
-
-    # Rayleigh on subspace
-    B = Q.T @ (S @ Q)  # (b,b)
-    B = symmetrize(B).double()
-    evals = torch.linalg.eigvalsh(B)
-    lam_max_est = float(evals[-1].item())
-    return lam_max_est
-
-
-# ----------------------------- DWH coefficients ----------------------------
-
-
-def dwh_coeffs(ell: float) -> Tuple[float, float, float]:
-    ell = float(ell)
-    ell = min(max(ell, 1e-12), 1.0)
+    ell = float(min(max(ell, 1e-300), 1.0))
     ell2 = ell * ell
 
     d = (4.0 * (1.0 - ell2) / (ell2 * ell2)) ** (1.0 / 3.0)
-    h = math.sqrt(1.0 + d) + 0.5 * math.sqrt(
+    a = math.sqrt(1.0 + d) + 0.5 * math.sqrt(
         8.0 - 4.0 * d + 8.0 * (2.0 - ell2) / (ell2 * math.sqrt(1.0 + d))
     )
-    a = h
-    b = (a - 1.0) * (a - 1.0) / 4.0
+    b = 0.25 * (a - 1.0) * (a - 1.0)
     c = a + b - 1.0
-    return a, b, c
+    return float(a), float(b), float(c)
 
 
-def phi_map(a: float, b: float, c: float, x: float) -> float:
-    r = (a + b * x) / (1.0 + c * x)
-    return x * (r * r)
+def dwh_ell_next(ell: float, a: float, b: float, c: float) -> float:
+    ell = float(ell)
+    return float(ell * (a + b * ell * ell) / (1.0 + c * ell * ell))
 
 
-def pick_capped_coeffs_by_pred(
-    lam_min: float,
-    lam_max: float,
-    ell0: float,
-    a_cap: float,
-    b_cap: float,
-    c_cap: float,
-    grid: int = 48,
-) -> Tuple[float, float, float, float]:
-    """
-    Search ell in [ell0, 1] (geometric grid) and pick DWH(a,b,c) that:
-      - satisfies caps
-      - minimizes predicted kappa after one step using endpoints lam_min, lam_max:
-          k_pred = phi(lam_max) / phi(lam_min)
-
-    Returns (a,b,c, ell_chosen). If nothing fits, returns mild step (3,1,3).
-    """
-    lo = min(max(float(ell0), 1e-12), 1.0)
-    if lo >= 1.0:
-        return 1.0, 0.0, 0.0, 1.0
-
-    lam_min = max(float(lam_min), 0.0)
-    lam_max = max(float(lam_max), lam_min)
-
-    ts = np.linspace(0.0, 1.0, int(grid))
-    ells = lo * (1.0 / lo) ** ts
-
-    best = None
-    best_k = None
-    best_ell = None
-
-    for ell in ells:
-        a, b, c = dwh_coeffs(float(ell))
-        if a > a_cap or b > b_cap or c > c_cap:
-            continue
-        y_min = phi_map(a, b, c, lam_min)
-        y_max = phi_map(a, b, c, lam_max)
-        if not (math.isfinite(y_min) and math.isfinite(y_max)):
-            continue
-        if y_min <= 0.0 or y_max <= 0.0:
-            continue
-        k = y_max / y_min
-        if best_k is None or k < best_k:
-            best_k = k
-            best = (a, b, c)
-            best_ell = float(ell)
-
-    if best is None:
-        return 3.0, 1.0, 3.0, lo
-    return float(best[0]), float(best[1]), float(best[2]), float(best_ell)
-
-
-# ----------------------------- Cholesky on M -------------------------------
+# ----------------------------- DWH matrix update ----------------------------
 
 
 @torch.no_grad()
-def chol_on_M_with_jitter(
-    M: Tensor,
+def build_q_from_s(
+    S: Tensor,
+    a: float,
+    b: float,
+    c: float,
     jitter_rel: float,
-    max_tries: int = 10,
-    allow_fp64_fallback: bool = True,
-    fp64_eps_rel: float = 1e-12,
-) -> Tuple[Tensor, float]:
+) -> Tuple[Tensor, Tensor, float]:
     """
-    Cholesky for M, with jitter on M only.
-    If fp32+jitter fails, optional fp64 minimal shift via eigvalsh(M).
-    Returns (L, used_shift_or_jitter). L may be fp32 or fp64.
+    Build:
+      M = I + c S
+      Q = (a I + b S) M^{-1}
+    in fp64.
+
+    Returns:
+      Q, L, shift
+    where L is chol(M + shift I), useful for chunked X update.
     """
-    M = symmetrize(M)
-    if not torch.isfinite(M).all():
-        raise RuntimeError("Non-finite entries in M before Cholesky")
+    S = symmetrize(S.to(torch.float64))
+    n = S.shape[0]
+    I = torch.eye(n, device=S.device, dtype=torch.float64)
 
-    n = M.shape[0]
-    I32 = torch.eye(n, device=M.device, dtype=M.dtype)
+    M = symmetrize(I + float(c) * S)
+    R = symmetrize(float(a) * I + float(b) * S)
 
-    tr = torch.trace(M).abs()
-    base = float((jitter_rel * (tr / n)).item()) if jitter_rel > 0.0 else 0.0
-    delta = base
-
-    for _ in range(max_tries):
-        Mt = M if delta == 0.0 else (M + delta * I32)
-        L, info = torch.linalg.cholesky_ex(Mt)
-        if int(info.item()) == 0:
-            return L, float(delta)
-        if jitter_rel <= 0.0:
-            break
-        delta = delta * 2.0 if delta > 0.0 else base
-
-    if not allow_fp64_fallback:
-        raise RuntimeError(
-            "Cholesky failed on M (fp32+jitter) and fp64 fallback disabled"
-        )
-
-    Md = symmetrize(M.double())
-    evals = torch.linalg.eigvalsh(Md)
-    lam_min = float(evals[0].item())
-    trd = float(torch.trace(Md).abs().item())
-    eps = fp64_eps_rel * (trd / n if n > 0 else 1.0)
-    shift = max(0.0, -lam_min + eps)
-    I64 = torch.eye(n, device=M.device, dtype=torch.float64)
-    Ld = torch.linalg.cholesky(Md + shift * I64)
-    return Ld, float(shift)
+    L, shift = chol_with_jitter_fp64(M, jitter_rel=jitter_rel)
+    Q = torch.cholesky_solve(R, L)
+    Q = symmetrize(Q)
+    return Q, L, float(shift)
 
 
-# ----------------------------- synthetic matrices --------------------------
+@torch.no_grad()
+def apply_dwh_update_chunked(
+    X: Tensor,
+    L: Tensor,
+    a: float,
+    b: float,
+    c: float,
+    rhs_chunk_rows: int,
+    out_dtype: torch.dtype,
+) -> Tensor:
+    """
+    Apply:
+      X_{k+1} = (b/c) X + (a - b/c) X (I + c X^T X)^(-1)
+
+    using the Cholesky factor L of M = I + c X^T X.
+    """
+    alpha = float(b / c)
+    beta = float(a - b / c)
+
+    m, n = X.shape
+    device = X.device
+    X_next = torch.empty((m, n), device=device, dtype=out_dtype)
+
+    for i in range(0, m, rhs_chunk_rows):
+        Xi = X[i : i + rhs_chunk_rows].float().to(torch.float64)  # (b, n)
+        Yi_t = torch.cholesky_solve(Xi.T.contiguous(), L)  # (n, b)
+        Yi = Yi_t.T  # (b, n)
+        Zi = alpha * Xi + beta * Yi
+        X_next[i : i + rhs_chunk_rows] = Zi.to(out_dtype)
+
+    return X_next
+
+
+# ----------------------------- certification --------------------------------
+
+
+@torch.no_grad()
+def cert_from_s(
+    S: Tensor,
+    cert_mode: str,
+    exact_threshold: int,
+    chol_jitter_rel: float,
+) -> Tuple[float, float, float]:
+    """
+    Returns:
+      kappa_O_value_or_upper_bound,
+      exact_value_or_nan,
+      shift_used_for_cholesky
+
+    Modes:
+      - exact: always eigvalsh
+      - bound: always trace/logdet upper bound
+      - auto: exact if n <= exact_threshold else bound
+    """
+    S = symmetrize(S.to(torch.float64))
+    n = S.shape[0]
+
+    use_exact = (cert_mode == "exact") or (cert_mode == "auto" and n <= exact_threshold)
+
+    if use_exact:
+        evals = torch.linalg.eigvalsh(S)
+        lam_min = max(float(evals[0].item()), 1e-300)
+        lam_max = max(float(evals[-1].item()), lam_min)
+        kappa_O = float(math.sqrt(lam_max / lam_min))
+        return float(kappa_O), float(kappa_O), 0.0
+
+    L, shift = chol_with_jitter_fp64(S, jitter_rel=chol_jitter_rel)
+    logdet = 2.0 * torch.log(torch.diagonal(L)).sum().item()
+
+    a = max(float((torch.trace(S) / n).item()), 1e-300)
+    g = safe_exp(logdet / n)
+    r = max(a / max(g, 1e-300), 1.0)
+
+    logu = 0.5 * n * math.log(r)
+    eta_ub = acosh_exp(logu)
+    kappa_O_ub = safe_exp(eta_ub)
+    return float(kappa_O_ub), float("nan"), float(shift)
+
+
+# ----------------------------- synthetic matrices ---------------------------
 
 
 def make_matrix_from_singulars(
@@ -293,18 +281,24 @@ def make_matrix_from_singulars(
     singulars: Tensor,
     seed: int,
     device: str,
-    storage_dtype: torch.dtype = torch.bfloat16,
+    storage_dtype: torch.dtype,
 ) -> Tensor:
     n = int(singulars.numel())
-    gen = torch.Generator(device="cpu").manual_seed(int(seed))
+
+    seed_all(seed)
     U, _ = torch.linalg.qr(
-        torch.randn(m, n, generator=gen, dtype=torch.float32), mode="reduced"
+        torch.randn(m, n, device=device, dtype=torch.float32),
+        mode="reduced",
     )
+
+    seed_all(seed + 1)
     V, _ = torch.linalg.qr(
-        torch.randn(n, n, generator=gen, dtype=torch.float32), mode="reduced"
+        torch.randn(n, n, device=device, dtype=torch.float32),
+        mode="reduced",
     )
-    G = (U * singulars.float()) @ V.T
-    return G.to(device=device, dtype=storage_dtype)
+
+    G = (U * singulars.to(device=device, dtype=torch.float32)) @ V.T
+    return G.to(dtype=storage_dtype)
 
 
 def make_spectrum_bank(
@@ -318,14 +312,14 @@ def make_spectrum_bank(
         torch.logspace(0.0, math.log10(sig_min), n, base=10.0, dtype=torch.float32)
     )
 
-    t = torch.linspace(0.0, 1.0, n)
+    t = torch.linspace(0.0, 1.0, n, dtype=torch.float32)
     for p in [0.5, 1.0, 1.5, 2.0, 3.0]:
-        logs = math.log(sig_max) + (math.log(sig_min) - math.log(sig_max)) * (t**p)
-        out.append(torch.exp(logs))
-        logs = math.log(sig_max) + (math.log(sig_min) - math.log(sig_max)) * (
+        logs1 = math.log(sig_max) + (math.log(sig_min) - math.log(sig_max)) * (t**p)
+        logs2 = math.log(sig_max) + (math.log(sig_min) - math.log(sig_max)) * (
             1.0 - (1.0 - t) ** p
         )
-        out.append(torch.exp(logs))
+        out.append(torch.exp(logs1))
+        out.append(torch.exp(logs2))
 
     for frac in [1 / n, 2 / n, 4 / n, 8 / n, 0.1, 0.25, 0.5, 0.75, 0.9]:
         r = max(1, min(n - 1, int(round(frac * n))))
@@ -345,9 +339,6 @@ def make_spectrum_bank(
     return out[:bank_size]
 
 
-# ----------------------------- suite shapes --------------------------------
-
-
 def suite_shapes_kimi_glm5() -> List[Tuple[int, int]]:
     return [
         (2048, 256),
@@ -363,188 +354,146 @@ def suite_shapes_kimi_glm5() -> List[Tuple[int, int]]:
     ]
 
 
-# ----------------------------- run core ------------------------------------
+# ----------------------------- run core -------------------------------------
 
 
 @dataclasses.dataclass
 class RunSummary:
     success: bool
-    final_kO_ub: float
+    final_kO_cert: float
+    final_kO_exact: float
+    final_kO_pred: float
     steps: int
+    guards: int
     ms_gram: float
     ms_solve: float
     ms_upd: float
+    ms_cert: float
     ms_total: float
 
 
 @torch.no_grad()
 def run_one_case(
     G_storage: Tensor,
+    kappa_G_upper: float,
     target_kappa_O: float,
     max_steps: int,
-    ell0: float,
-    eps_scale: float,
-    safety: float,
-    jitter_rel: float,
+    iter_dtype: torch.dtype,
+    cert_mode: str,
+    exact_threshold: int,
+    gram_chunk_rows: int,
+    rhs_chunk_rows: int,
+    solve_jitter_rel: float,
+    cert_jitter_rel: float,
     tf32: bool,
-    psd_repair: bool,
-    cert_floor_rel: float,
-    sum_fudge: float,
-    a_cap: float,
-    b_cap: float,
-    c_cap: float,
-    ell_grid: int,
-    use_block_power: bool,
-    power_iters: int,
-    power_block: int,
-    power_margin: float,
-    eig_threshold: int,
-    allow_fp64_fallback: bool,
 ) -> RunSummary:
     device = G_storage.device
-    m, n = G_storage.shape
-    Id_mat = torch.eye(n, device=device, dtype=torch.float32)
-
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = bool(tf32)
         torch.backends.cudnn.allow_tf32 = bool(tf32)
         torch.set_float32_matmul_precision("high")
 
-    Gf = G_storage.float()
-
-    fro = torch.linalg.norm(Gf, ord="fro")
-    denom = float(safety) * fro + float(eps_scale)
-    X = (Gf / denom).to(torch.bfloat16)
-
-    tau = 1.0 / float(safety)
+    # Honest synthetic assumption:
+    # spectra are generated with sigma_max = 1 and sigma_min = 1 / kappa_G_upper.
+    X = G_storage.to(dtype=iter_dtype)
+    ell = 1.0 / float(kappa_G_upper)
 
     ms_gram_sum = 0.0
     ms_solve_sum = 0.0
     ms_upd_sum = 0.0
+    ms_cert_sum = 0.0
+    guards = 0
+
+    # Initial small Gram in fp64.
+    ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
+    ms_gram_sum += ms_gram
+
+    final_kO_cert = float("inf")
+    final_kO_exact = float("nan")
+    final_kO_pred = float("inf")
 
     for it in range(1, max_steps + 1):
-        # Gram
-        ms_gram, S = cuda_time_ms(lambda: symmetrize(X.float().T @ X.float()))
-        ms_gram_sum += ms_gram
+        a, b, c = dwh_coeffs_from_ell(ell)
 
-        # Trace center
-        mu = torch.trace(S) / n
-        mu_f = float(mu.item())
-        if not math.isfinite(mu_f) or mu_f <= 0.0:
+        ms_solve, (Q, L, shift) = cuda_time_ms(
+            lambda: build_q_from_s(
+                S=S,
+                a=a,
+                b=b,
+                c=c,
+                jitter_rel=solve_jitter_rel,
+            )
+        )
+        ms_solve_sum += ms_solve
+        guards += int(shift > 0.0)
+
+        # Small-side propagated certificate matrix for next step / cert.
+        S_next = symmetrize(Q @ S @ Q)
+        S = S_next
+
+        ms_upd, X = cuda_time_ms(
+            lambda: apply_dwh_update_chunked(
+                X=X,
+                L=L,
+                a=a,
+                b=b,
+                c=c,
+                rhs_chunk_rows=rhs_chunk_rows,
+                out_dtype=iter_dtype,
+            )
+        )
+        ms_upd_sum += ms_upd
+
+        ell = dwh_ell_next(ell, a, b, c)
+        final_kO_pred = 1.0 / max(ell, 1e-300)
+
+        ms_cert, (kO_cert, kO_exact, cert_shift) = cuda_time_ms(
+            lambda: cert_from_s(
+                S=S,
+                cert_mode=cert_mode,
+                exact_threshold=exact_threshold,
+                chol_jitter_rel=cert_jitter_rel,
+            )
+        )
+        ms_cert_sum += ms_cert
+        guards += int(cert_shift > 0.0)
+
+        final_kO_cert = float(kO_cert)
+        final_kO_exact = float(kO_exact)
+
+        if final_kO_cert <= target_kappa_O:
+            ms_total = ms_gram_sum + ms_solve_sum + ms_upd_sum + ms_cert_sum
             return RunSummary(
-                False,
-                float("inf"),
+                True,
+                final_kO_cert,
+                final_kO_exact,
+                final_kO_pred,
                 it,
+                guards,
                 ms_gram_sum,
                 ms_solve_sum,
                 ms_upd_sum,
-                float("inf"),
-            )
-        X = (X.float() / math.sqrt(mu_f)).to(torch.bfloat16)
-        S = S / mu
-
-        # Fast bounds (Gershgorin)
-        lam_lb, lam_ub = gershgorin_bounds_symmetric(S, sum_fudge=sum_fudge)
-
-        # Optional PSD repair of S using Gersh LB (cheapest possible repair)
-        # If LB < 0, shift S so LB becomes small positive.
-        if psd_repair and lam_lb < 0.0:
-            eps = cert_floor_rel * max(lam_ub, 1.0)
-            shift = -lam_lb + eps
-            S = S + shift * Id_mat
-            lam_lb += shift
-            lam_ub += shift
-            lam_lb = max(lam_lb, 0.0)
-
-        # Certification:
-        # - For small n, do exact eigvalsh(S) to accept.
-        # - For large n, use Gersh kappa upper bound.
-        if n <= eig_threshold:
-            Sd = symmetrize(S).double()
-            evals = torch.linalg.eigvalsh(Sd)
-            lam_min = max(float(evals[0].item()), 0.0)
-            lam_max = max(float(evals[-1].item()), 0.0)
-            lam_min_safe = max(
-                lam_min, cert_floor_rel * lam_max if lam_max > 0.0 else 0.0
-            )
-            kappa_cert = (
-                1.0 if lam_max == 0.0 else (lam_max / max(lam_min_safe, 1e-300))
-            )
-            kO_ub = math.sqrt(kappa_cert)
-            # For design endpoints:
-            lam_min_design = lam_min
-            lam_max_design = lam_max
-        else:
-            lam_min_safe = max(max(lam_lb, 0.0), cert_floor_rel * max(lam_ub, 0.0))
-            kappa_ub = max(lam_ub, 0.0) / max(lam_min_safe, 1e-300)
-            kO_ub = math.sqrt(kappa_ub)
-            lam_min_design = max(lam_lb, 0.0)
-            lam_max_design = max(lam_ub, lam_min_design)
-
-        if kO_ub <= target_kappa_O:
-            ms_total = ms_gram_sum + ms_solve_sum + ms_upd_sum
-            return RunSummary(
-                True, float(kO_ub), it, ms_gram_sum, ms_solve_sum, ms_upd_sum, ms_total
+                ms_cert_sum,
+                ms_total,
             )
 
-        # Tighten lam_max for DESIGN using block power estimate (lower bound) to counter loose Gersh ub.
-        if use_block_power:
-            lam_max_est = block_power_lambda_max(
-                S.float(),
-                iters=power_iters,
-                block=power_block,
-                seed=1337 + it,
-                reorth=True,
-            )
-            lam_max_design = min(
-                lam_max_design, float(lam_max_est) * (1.0 + float(power_margin))
-            )
-            lam_max_design = max(lam_max_design, lam_min_design)
-
-        # Choose bounded coefficients by predicted contraction on [lam_min_design, lam_max_design].
-        a, b, c, ell_chosen = pick_capped_coeffs_by_pred(
-            lam_min=lam_min_design,
-            lam_max=lam_max_design,
-            ell0=ell0,
-            a_cap=a_cap,
-            b_cap=b_cap,
-            c_cap=c_cap,
-            grid=ell_grid,
-        )
-
-        # Solve U = (aI + bS)(I + cS)^(-1)
-        def solve():
-            M = Id_mat + float(c) * S
-            RHS = float(a) * Id_mat + float(b) * S
-            L, _used = chol_on_M_with_jitter(
-                M,
-                jitter_rel=jitter_rel,
-                max_tries=10,
-                allow_fp64_fallback=allow_fp64_fallback,
-                fp64_eps_rel=1e-12,
-            )
-            if L.dtype == torch.float64:
-                U64 = torch.cholesky_solve(RHS.double(), L)
-                return U64.float()
-            return torch.cholesky_solve(RHS, L)
-
-        ms_solve, U = cuda_time_ms(solve)
-        ms_solve_sum += ms_solve
-
-        # Fixed damping only (no cap-driven tau shrinking)
-        U = (1.0 - tau) * Id_mat + tau * U
-
-        ms_upd, X = cuda_time_ms(lambda: (X.float() @ U).to(torch.bfloat16))
-        ms_upd_sum += ms_upd
-
-    # If max_steps reached, report final upper bound kO_ub from last iteration.
-    ms_total = ms_gram_sum + ms_solve_sum + ms_upd_sum
+    ms_total = ms_gram_sum + ms_solve_sum + ms_upd_sum + ms_cert_sum
     return RunSummary(
-        False, float(kO_ub), max_steps, ms_gram_sum, ms_solve_sum, ms_upd_sum, ms_total
+        False,
+        final_kO_cert,
+        final_kO_exact,
+        final_kO_pred,
+        max_steps,
+        guards,
+        ms_gram_sum,
+        ms_solve_sum,
+        ms_upd_sum,
+        ms_cert_sum,
+        ms_total,
     )
 
 
-# ----------------------------- CLI -----------------------------------------
+# ----------------------------- CLI ------------------------------------------
 
 
 def main() -> None:
@@ -556,46 +505,22 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=256)
     ap.add_argument("--kappa_G", type=float, default=1e7)
     ap.add_argument("--target_kappa_O", type=float, default=1.22474)
-    ap.add_argument("--max_steps", type=int, default=5)
+    ap.add_argument("--max_steps", type=int, default=6)
 
-    ap.add_argument("--ell0", type=float, default=1e-3)
-    ap.add_argument("--eps_scale", type=float, default=1e-2)
-    ap.add_argument("--safety", type=float, default=1.01)
-    ap.add_argument("--jitter_rel", type=float, default=1e-10)
+    ap.add_argument("--input_dtype", choices=["float32", "bfloat16"], default="float32")
+    ap.add_argument("--iter_dtype", choices=["float32", "bfloat16"], default="float32")
+
+    ap.add_argument("--cert_mode", choices=["auto", "exact", "bound"], default="auto")
+    ap.add_argument("--exact_threshold", type=int, default=1024)
+
+    ap.add_argument("--gram_chunk_rows", type=int, default=2048)
+    ap.add_argument("--rhs_chunk_rows", type=int, default=2048)
+
+    ap.add_argument("--solve_jitter_rel", type=float, default=1e-15)
+    ap.add_argument("--cert_jitter_rel", type=float, default=1e-15)
+
     ap.add_argument("--tf32", action="store_true")
 
-    ap.add_argument("--psd_repair", action="store_true", default=True)
-    ap.add_argument("--no_psd_repair", dest="psd_repair", action="store_false")
-    ap.add_argument("--cert_floor_rel", type=float, default=1e-12)
-
-    # Gershgorin reduction fudge. If 0, auto uses max(1e-4, 4*n*eps32).
-    ap.add_argument("--sum_fudge", type=float, default=0.0)
-
-    # Coefficient caps
-    ap.add_argument("--a_cap", type=float, default=96.0)
-    ap.add_argument("--b_cap", type=float, default=8192.0)
-    ap.add_argument("--c_cap", type=float, default=8192.0)
-    ap.add_argument("--ell_grid", type=int, default=48)
-
-    # Optional block power tightening for lambda_max design
-    ap.add_argument("--use_block_power", action="store_true", default=True)
-    ap.add_argument("--no_block_power", dest="use_block_power", action="store_false")
-    ap.add_argument("--power_iters", type=int, default=8)
-    ap.add_argument("--power_block", type=int, default=8)
-    ap.add_argument("--power_margin", type=float, default=0.02)
-
-    # Exact eig cert for small n
-    ap.add_argument("--eig_threshold", type=int, default=2048)
-
-    # Fallbacks
-    ap.add_argument(
-        "--no_fp64_fallback",
-        dest="allow_fp64_fallback",
-        action="store_false",
-        default=True,
-    )
-
-    # Bank/suite
     ap.add_argument("--bank_size", type=int, default=12)
     ap.add_argument("--suite_cases", type=int, default=6)
     ap.add_argument("--suite_shapes", choices=["kimi_glm5"], default="kimi_glm5")
@@ -606,47 +531,48 @@ def main() -> None:
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but not available")
 
+    input_dtype = torch.float32 if args.input_dtype == "float32" else torch.bfloat16
+    iter_dtype = torch.float32 if args.iter_dtype == "float32" else torch.bfloat16
+
     print(
         f"device={args.device}  mode={args.mode}  kappa_G<={args.kappa_G:.3g}  target_kappa(O)<={args.target_kappa_O:.6g}"
     )
     print(
         "knobs: "
-        f"ell0={args.ell0:g} eps_scale={args.eps_scale:g} safety={args.safety:g} jitter_rel={args.jitter_rel:g} "
-        f"tf32={args.tf32} psd_repair={args.psd_repair} cert_floor_rel={args.cert_floor_rel:g} "
-        f"a_cap={args.a_cap:g} b_cap={args.b_cap:g} c_cap={args.c_cap:g} ell_grid={args.ell_grid} "
-        f"use_block_power={args.use_block_power} power_iters={args.power_iters} power_block={args.power_block} power_margin={args.power_margin} "
-        f"eig_threshold={args.eig_threshold} max_steps={args.max_steps}"
+        f"max_steps={args.max_steps} input_dtype={args.input_dtype} iter_dtype={args.iter_dtype} "
+        f"cert_mode={args.cert_mode} exact_threshold={args.exact_threshold} "
+        f"gram_chunk_rows={args.gram_chunk_rows} rhs_chunk_rows={args.rhs_chunk_rows} "
+        f"solve_jitter_rel={args.solve_jitter_rel:g} cert_jitter_rel={args.cert_jitter_rel:g} tf32={args.tf32}"
     )
+    if args.input_dtype == "bfloat16":
+        print(
+            "WARNING: bfloat16 input storage changes the actual synthetic spectrum. Use input_dtype=float32 for honest stress tests."
+        )
 
     def make_case(m: int, n: int, case_seed: int) -> Tensor:
         spectra = make_spectrum_bank(n, args.kappa_G, bank_size=1, seed=case_seed + n)
         return make_matrix_from_singulars(
-            m, spectra[0], seed=case_seed, device=args.device
+            m=m,
+            singulars=spectra[0],
+            seed=case_seed,
+            device=args.device,
+            storage_dtype=input_dtype,
         )
 
     def run_case(G: Tensor) -> RunSummary:
         return run_one_case(
             G_storage=G,
+            kappa_G_upper=args.kappa_G,
             target_kappa_O=args.target_kappa_O,
             max_steps=args.max_steps,
-            ell0=args.ell0,
-            eps_scale=args.eps_scale,
-            safety=args.safety,
-            jitter_rel=args.jitter_rel,
+            iter_dtype=iter_dtype,
+            cert_mode=args.cert_mode,
+            exact_threshold=args.exact_threshold,
+            gram_chunk_rows=args.gram_chunk_rows,
+            rhs_chunk_rows=args.rhs_chunk_rows,
+            solve_jitter_rel=args.solve_jitter_rel,
+            cert_jitter_rel=args.cert_jitter_rel,
             tf32=args.tf32,
-            psd_repair=args.psd_repair,
-            cert_floor_rel=args.cert_floor_rel,
-            sum_fudge=args.sum_fudge,
-            a_cap=args.a_cap,
-            b_cap=args.b_cap,
-            c_cap=args.c_cap,
-            ell_grid=args.ell_grid,
-            use_block_power=args.use_block_power,
-            power_iters=args.power_iters,
-            power_block=args.power_block,
-            power_margin=args.power_margin,
-            eig_threshold=args.eig_threshold,
-            allow_fp64_fallback=args.allow_fp64_fallback,
         )
 
     if args.mode == "demo":
@@ -654,41 +580,70 @@ def main() -> None:
         res = run_case(G)
         print("")
         print(
-            f"demo m={args.m} n={args.n}: success={res.success} final_kO_ub={res.final_kO_ub:.6g} steps={res.steps}"
+            f"demo m={args.m} n={args.n}: success={res.success} "
+            f"final_kappa(O)_cert={res.final_kO_cert:.6g} "
+            f"exact={res.final_kO_exact:.6g} pred={res.final_kO_pred:.6g} "
+            f"steps={res.steps} guards={res.guards}"
         )
         print(
-            f"  ms total={res.ms_total:.3f} (gram={res.ms_gram:.3f} solve={res.ms_solve:.3f} upd={res.ms_upd:.3f})"
+            f"  ms total={res.ms_total:.3f} "
+            f"(gram={res.ms_gram:.3f} solve={res.ms_solve:.3f} upd={res.ms_upd:.3f} cert={res.ms_cert:.3f})"
         )
         return
 
     if args.mode == "bank":
-        finals: List[float] = []
-        steps: List[int] = []
+        finals = []
+        finals_exact = []
+        finals_pred = []
+        steps = []
+        guards = []
+        ms_total = []
+
         for i in range(args.bank_size):
-            G = make_case(args.m, args.n, args.seed + 1000 + i)
             try:
+                G = make_case(args.m, args.n, args.seed + 1000 + i)
                 res = run_case(G)
-                finals.append(res.final_kO_ub)
+                finals.append(res.final_kO_cert)
+                finals_exact.append(res.final_kO_exact)
+                finals_pred.append(res.final_kO_pred)
                 steps.append(res.steps)
-            except torch.cuda.OutOfMemoryError:
-                finals.append(float("inf"))
-                steps.append(0)
+                guards.append(res.guards)
+                ms_total.append(res.ms_total)
+                del G
                 if args.device.startswith("cuda"):
                     torch.cuda.empty_cache()
+            except torch.cuda.OutOfMemoryError:
+                finals.append(float("inf"))
+                finals_exact.append(float("nan"))
+                finals_pred.append(float("inf"))
+                steps.append(0)
+                guards.append(0)
+                ms_total.append(float("inf"))
+                if args.device.startswith("cuda"):
+                    torch.cuda.empty_cache()
+
         print("")
         print(f"bank summary (N={len(finals)}):")
         print(
             f"  success <= target: {sum(1 for x in finals if x <= args.target_kappa_O)}/{len(finals)}"
         )
         print(
-            f"  worst kappa(O): {max(finals):.6g}  median: {pct(finals, 0.5):.6g}  p90: {pct(finals, 0.9):.6g}"
+            f"  worst kappa(O)_cert: {max(finals):.6g}  median: {pct(finals, 0.5):.6g}  p90: {pct(finals, 0.9):.6g}"
         )
+        if any(math.isfinite(x) for x in finals_exact):
+            print(
+                f"  exact kappa(O) median: {pct(finals_exact, 0.5):.6g}  p90: {pct(finals_exact, 0.9):.6g}"
+            )
         print(
-            f"  steps median: {pct([float(x) for x in steps], 0.5):.6g}  p90: {pct([float(x) for x in steps], 0.9):.6g}"
+            f"  pred kappa(O) median: {pct(finals_pred, 0.5):.6g}  p90: {pct(finals_pred, 0.9):.6g}"
+        )
+        print(f"  steps median: {pct(steps, 0.5):.6g}  p90: {pct(steps, 0.9):.6g}")
+        print(f"  guards median: {pct(guards, 0.5):.6g}  p90: {pct(guards, 0.9):.6g}")
+        print(
+            f"  ms total median: {pct(ms_total, 0.5):.3f}  p90: {pct(ms_total, 0.9):.3f}"
         )
         return
 
-    # suite
     shapes = (
         suite_shapes_kimi_glm5()
         if args.suite_shapes == "kimi_glm5"
@@ -704,12 +659,16 @@ def main() -> None:
         else:
             print(f"\nshape m={m} n={n}")
 
-        finals: List[float] = []
-        steps_used: List[int] = []
-        ms_total: List[float] = []
-        ms_gram: List[float] = []
-        ms_solve: List[float] = []
-        ms_upd: List[float] = []
+        finals = []
+        finals_exact = []
+        finals_pred = []
+        steps_used = []
+        guards_used = []
+        ms_total = []
+        ms_gram = []
+        ms_solve = []
+        ms_upd = []
+        ms_cert = []
         successes = 0
 
         t0 = time.time()
@@ -717,40 +676,67 @@ def main() -> None:
             try:
                 G = make_case(m, n, args.seed + 10000 + i)
                 res = run_case(G)
-                finals.append(res.final_kO_ub)
+                finals.append(res.final_kO_cert)
+                finals_exact.append(res.final_kO_exact)
+                finals_pred.append(res.final_kO_pred)
                 steps_used.append(res.steps)
-                successes += int(res.final_kO_ub <= args.target_kappa_O)
+                guards_used.append(res.guards)
+                successes += int(res.final_kO_cert <= args.target_kappa_O)
                 ms_total.append(res.ms_total)
                 ms_gram.append(res.ms_gram)
                 ms_solve.append(res.ms_solve)
                 ms_upd.append(res.ms_upd)
+                ms_cert.append(res.ms_cert)
+                del G
+                if args.device.startswith("cuda"):
+                    torch.cuda.empty_cache()
             except torch.cuda.OutOfMemoryError:
                 print(f"  case {i:02d} OOM (skipping)")
                 finals.append(float("inf"))
+                finals_exact.append(float("nan"))
+                finals_pred.append(float("inf"))
                 steps_used.append(0)
+                guards_used.append(0)
                 ms_total.append(float("inf"))
                 ms_gram.append(float("inf"))
                 ms_solve.append(float("inf"))
                 ms_upd.append(float("inf"))
+                ms_cert.append(float("inf"))
                 if args.device.startswith("cuda"):
                     torch.cuda.empty_cache()
             except Exception as ex:
                 print(f"  case {i:02d} FAILED: {type(ex).__name__}: {ex}")
                 finals.append(float("inf"))
+                finals_exact.append(float("nan"))
+                finals_pred.append(float("inf"))
                 steps_used.append(0)
+                guards_used.append(0)
                 ms_total.append(float("inf"))
                 ms_gram.append(float("inf"))
                 ms_solve.append(float("inf"))
                 ms_upd.append(float("inf"))
+                ms_cert.append(float("inf"))
+                if args.device.startswith("cuda"):
+                    torch.cuda.empty_cache()
 
         dt = time.time() - t0
         print(f"  ran {args.suite_cases} cases in {dt:.2f}s")
         print(f"  success <= target: {successes}/{args.suite_cases}")
         print(
-            f"  worst kappa(O): {max(finals):.6g}  median: {pct(finals, 0.5):.6g}  p90: {pct(finals, 0.9):.6g}"
+            f"  worst kappa(O)_cert: {max(finals):.6g}  median: {pct(finals, 0.5):.6g}  p90: {pct(finals, 0.9):.6g}"
+        )
+        if any(math.isfinite(x) for x in finals_exact):
+            print(
+                f"  exact kappa(O) median: {pct(finals_exact, 0.5):.6g}  p90: {pct(finals_exact, 0.9):.6g}"
+            )
+        print(
+            f"  pred kappa(O) median: {pct(finals_pred, 0.5):.6g}  p90: {pct(finals_pred, 0.9):.6g}"
         )
         print(
-            f"  steps median: {pct([float(x) for x in steps_used], 0.5):.6g}  p90: {pct([float(x) for x in steps_used], 0.9):.6g}"
+            f"  steps median: {pct(steps_used, 0.5):.6g}  p90: {pct(steps_used, 0.9):.6g}"
+        )
+        print(
+            f"  guards median: {pct(guards_used, 0.5):.6g}  p90: {pct(guards_used, 0.9):.6g}"
         )
         print(
             f"  ms total median: {pct(ms_total, 0.5):.3f}  p90: {pct(ms_total, 0.9):.3f}"
@@ -759,10 +745,13 @@ def main() -> None:
             f"    ms gram  median: {pct(ms_gram, 0.5):.3f}  p90: {pct(ms_gram, 0.9):.3f}"
         )
         print(
-            f"    ms solve  median: {pct(ms_solve, 0.5):.3f}  p90: {pct(ms_solve, 0.9):.3f}"
+            f"    ms solve median: {pct(ms_solve, 0.5):.3f}  p90: {pct(ms_solve, 0.9):.3f}"
         )
         print(
             f"    ms upd   median: {pct(ms_upd, 0.5):.3f}  p90: {pct(ms_upd, 0.9):.3f}"
+        )
+        print(
+            f"    ms cert  median: {pct(ms_cert, 0.5):.3f}  p90: {pct(ms_cert, 0.9):.3f}"
         )
 
 
