@@ -8,13 +8,7 @@ import time
 import torch
 
 from polar.runner import RunSummary, run_one_case
-from polar.schedule_search import (
-    ScheduleInfo,
-    solve_optimal_schedule_exact,
-    solve_two_step_exact_cholesky,
-    solve_two_step_schedule_sufficient,
-    solve_two_step_tempered_cholesky,
-)
+from polar.schedules import StepSpec, auto_schedule_name, build_schedule
 from polar.synthetic import (
     dtype_from_name,
     make_matrix_from_singulars,
@@ -27,132 +21,46 @@ from polar.zolo import bf16_target, mp
 Tensor = torch.Tensor
 
 
-def build_schedule_info(args: argparse.Namespace, ell0: float, target_kappa_O: float) -> ScheduleInfo:
-    zolo_r_values = [int(x.strip()) for x in args.zolo_r_values.split(",") if x.strip()]
-    tempered_pole_floors = [
-        float(x.strip()) for x in args.tempered_pole_floors.split(",") if x.strip()
-    ]
-
-    if args.schedule_mode == "optimal":
-        return solve_optimal_schedule_exact(
-            ell0=ell0,
-            target_kappa_O=target_kappa_O,
-            max_steps=args.max_steps,
-            zolo_r_values=zolo_r_values,
-            zolo_coeff_dps=args.zolo_coeff_dps,
-            zolo_shift_cond_max=args.zolo_shift_cond_max,
-            zolo_max_a=args.zolo_max_a,
-        )
-    if args.schedule_mode == "two_step_exact_cholesky":
-        return solve_two_step_exact_cholesky(
-            ell0=ell0,
-            target_kappa_O=target_kappa_O,
-            zolo_r_values=zolo_r_values,
-            zolo_coeff_dps=args.zolo_coeff_dps,
-            tighten_fraction=args.tempered_tighten_fraction,
-        )
-    if args.schedule_mode == "two_step_sufficient":
-        return solve_two_step_schedule_sufficient(
-            ell0=ell0,
-            target_kappa_O=target_kappa_O,
-            zolo_r_values=zolo_r_values,
-            zolo_coeff_dps=args.zolo_coeff_dps,
-            zolo_shift_cond_max=args.zolo_shift_cond_max,
-            zolo_max_a=args.zolo_max_a,
-            switch_ell_min=args.two_step_switch_ell_min,
-        )
-    return solve_two_step_tempered_cholesky(
-        ell0=ell0,
-        target_kappa_O=target_kappa_O,
-        zolo_r_values=zolo_r_values,
-        zolo_coeff_dps=args.zolo_coeff_dps,
-        pole_floor_values=tempered_pole_floors,
-        max_cond_allowed=args.tempered_max_cond,
-        max_a_allowed=args.tempered_max_a,
-        max_cancel_allowed=args.tempered_max_cancel,
-        tighten_fraction=args.tempered_tighten_fraction,
-    )
-
-
-def print_schedule_info(
-    args: argparse.Namespace, ell0: float, target_kappa_O: float, sched_info: ScheduleInfo
-) -> None:
-    zolo_r_values = [int(x.strip()) for x in args.zolo_r_values.split(",") if x.strip()]
-    tempered_pole_floors = [
-        float(x.strip()) for x in args.tempered_pole_floors.split(",") if x.strip()
-    ]
-    schedule = sched_info.steps
-
-    print(
-        f"device={args.device}  mode={args.mode}  kappa_G<={args.kappa_G:.3g}  "
-        f"target_mode={args.target_mode}  target_kappa(O)<={target_kappa_O:.8g}"
-    )
-    print(
-        "knobs: "
-        f"max_steps={args.max_steps} input_dtype={args.input_dtype} iter_dtype={args.iter_dtype} "
-        f"gram_chunk_rows={args.gram_chunk_rows} rhs_chunk_rows={args.rhs_chunk_rows} "
-        f"jitter_rel={args.jitter_rel:g} cert_jitter_rel={args.cert_jitter_rel:g} "
-        f"tf32={args.tf32} exact_verify_device={args.exact_verify_device}"
-    )
-    print(
-        "control: "
-        f"ell0={ell0:.6g} zolo_r_values={zolo_r_values} zolo_coeff_dps={args.zolo_coeff_dps} "
-        f"zolo_realization={args.zolo_realization} "
-        f"zolo_shift_cond_max={args.zolo_shift_cond_max:g} zolo_max_a={args.zolo_max_a:g} "
-        f"two_step_switch_ell_min={args.two_step_switch_ell_min:g} "
-        f"tempered_pole_floors={tempered_pole_floors} "
-        f"tempered_max_cond={args.tempered_max_cond:g} "
-        f"tempered_max_a={args.tempered_max_a:g} "
-        f"tempered_max_cancel={args.tempered_max_cancel:g} "
-        f"tempered_tighten_fraction={args.tempered_tighten_fraction:g} "
-        f"stop_on_cert={args.stop_on_cert}"
-    )
-
-    objective_text = {
-        "exact_optimal": "optimal schedule objective: minimize outer steps, then small-side solve count, then final predicted kappa(O)",
-        "two_step_exact_cholesky": "two-step exact-Cholesky objective: hit a tightened target using exact Zolo maps with the product-form Cholesky realization, minimizing total solve count first",
-        "two_step_sufficient": "two-step sufficient objective: hit target in <=2 steps while minimizing worst small-side conditioning, then combination scale, then solve count",
-        "two_step_tempered_cholesky": "two-step tempered-Cholesky objective: hit a tightened target using only tempered Zolo steps while minimizing total solve count, then worst-step conditioning, weight size, and cancellation",
-    }
-    print(objective_text[sched_info.objective_name])
-    print("chosen schedule:")
+def print_schedule(schedule_name: str, schedule: list[StepSpec]) -> None:
+    print(f"chosen schedule: {schedule_name}")
+    print("theory schedule:")
     for i, st in enumerate(schedule, 1):
         if st.kind == "DWH":
-            print(
-                f"  step {i}: DWH        ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}"
-            )
-        elif st.kind == "TZOLO":
-            print(
-                f"  step {i}: TZOLO(r={st.r}, floor={st.pole_floor:.3e}) "
-                f"ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}"
-            )
+            print(f"  step {i}: DWH      ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
         else:
-            print(
-                f"  step {i}: ZOLO(r={st.r}) ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}"
-            )
+            print(f"  step {i}: ZOLO r={st.r:<2d} ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
 
-    if sched_info.objective_name == "exact_optimal":
-        print(
-            f"schedule cost key: steps={int(sched_info.cost_key[0])} "
-            f"small_cost={int(sched_info.cost_key[1])} final_pred={sched_info.cost_key[2]:.8g}"
-        )
-    elif sched_info.objective_name == "two_step_exact_cholesky":
-        print(
-            f"schedule cost key: small_cost={sched_info.cost_key[0]:.8g} "
-            f"final_pred={sched_info.cost_key[1]:.8g} tie_break_r2={sched_info.cost_key[2]:.8g}"
-        )
-    elif sched_info.objective_name == "two_step_sufficient":
-        print(
-            f"schedule cost key: worst_cond={sched_info.cost_key[0]:.8g} "
-            f"worst_scale={sched_info.cost_key[1]:.8g} small_cost={sched_info.cost_key[2]:.8g} "
-            f"final_pred={sched_info.cost_key[3]:.8g}"
-        )
-    else:
-        print(
-            f"schedule cost key: small_cost={sched_info.cost_key[0]:.8g} "
-            f"worst_cond={sched_info.cost_key[1]:.8g} worst_max_a={sched_info.cost_key[2]:.8g} "
-            f"worst_cancel={sched_info.cost_key[3]:.8g} final_pred={sched_info.cost_key[4]:.8g}"
-        )
+
+def make_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--mode", choices=["demo", "bank", "suite"], default="suite")
+    ap.add_argument("--m", type=int, default=2048)
+    ap.add_argument("--n", type=int, default=256)
+    ap.add_argument("--kappa_G", type=float, default=1e7)
+    ap.add_argument("--target_mode", choices=["aggressive", "robust", "custom"], default="robust")
+    ap.add_argument("--target_kappa_O", type=float, default=0.0)
+    ap.add_argument(
+        "--schedule",
+        choices=["auto", "zolo22", "zolo23", "zolo32", "dwh3"],
+        default="auto",
+    )
+    ap.add_argument("--input_dtype", choices=["float32", "bfloat16", "float64"], default="float32")
+    ap.add_argument("--iter_dtype", choices=["float32", "bfloat16", "float64"], default="float32")
+    ap.add_argument("--gram_chunk_rows", type=int, default=2048)
+    ap.add_argument("--rhs_chunk_rows", type=int, default=2048)
+    ap.add_argument("--jitter_rel", type=float, default=1e-15)
+    ap.add_argument("--cert_jitter_rel", type=float, default=1e-15)
+    ap.add_argument("--tf32", action="store_true")
+    ap.add_argument("--ell0", type=float, default=0.0)
+    ap.add_argument("--zolo_coeff_dps", type=int, default=100)
+    ap.add_argument("--exact_verify_device", choices=["auto", "cpu", "cuda"], default="auto")
+    ap.add_argument("--stop_on_cert", action="store_true", default=False)
+    ap.add_argument("--bank_size", type=int, default=12)
+    ap.add_argument("--suite_cases", type=int, default=6)
+    ap.add_argument("--suite_shapes", choices=["kimi_glm5"], default="kimi_glm5")
+    ap.add_argument("--seed", type=int, default=0)
+    return ap
 
 
 def summarize_demo(args: argparse.Namespace, res: RunSummary) -> None:
@@ -170,53 +78,6 @@ def summarize_demo(args: argparse.Namespace, res: RunSummary) -> None:
     print(f"  ms exact verify (excluded)={res.ms_exact_verify:.3f}")
 
 
-def make_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--mode", choices=["demo", "bank", "suite"], default="suite")
-    ap.add_argument("--m", type=int, default=2048)
-    ap.add_argument("--n", type=int, default=256)
-    ap.add_argument("--kappa_G", type=float, default=1e7)
-    ap.add_argument("--target_mode", choices=["aggressive", "robust", "custom"], default="robust")
-    ap.add_argument("--target_kappa_O", type=float, default=0.0)
-    ap.add_argument("--max_steps", type=int, default=6)
-    ap.add_argument(
-        "--schedule_mode",
-        choices=["optimal", "two_step_exact_cholesky", "two_step_sufficient", "two_step_tempered_cholesky"],
-        default="two_step_exact_cholesky",
-    )
-    ap.add_argument("--input_dtype", choices=["float32", "bfloat16", "float64"], default="float32")
-    ap.add_argument("--iter_dtype", choices=["float32", "bfloat16", "float64"], default="float32")
-    ap.add_argument("--gram_chunk_rows", type=int, default=2048)
-    ap.add_argument("--rhs_chunk_rows", type=int, default=2048)
-    ap.add_argument("--jitter_rel", type=float, default=1e-15)
-    ap.add_argument("--cert_jitter_rel", type=float, default=1e-15)
-    ap.add_argument("--tf32", action="store_true")
-    ap.add_argument("--ell0", type=float, default=0.0, help="If 0, uses 1 / kappa_G")
-    ap.add_argument("--zolo_r_values", type=str, default="2,3,4,5,6,8,10,12")
-    ap.add_argument("--zolo_coeff_dps", type=int, default=100)
-    ap.add_argument("--zolo_realization", choices=["product", "partial"], default="product")
-    ap.add_argument("--zolo_shift_cond_max", type=float, default=1e4)
-    ap.add_argument("--zolo_max_a", type=float, default=1e6)
-    ap.add_argument("--two_step_switch_ell_min", type=float, default=1e-2)
-    ap.add_argument(
-        "--tempered_pole_floors",
-        type=str,
-        default="0,1e-6,3e-6,1e-5,3e-5,1e-4,3e-4,1e-3,3e-3,1e-2,3e-2,1e-1",
-    )
-    ap.add_argument("--tempered_max_cond", type=float, default=2e4)
-    ap.add_argument("--tempered_max_a", type=float, default=64.0)
-    ap.add_argument("--tempered_max_cancel", type=float, default=256.0)
-    ap.add_argument("--tempered_tighten_fraction", type=float, default=0.5)
-    ap.add_argument("--exact_verify_device", choices=["auto", "cpu", "cuda"], default="auto")
-    ap.add_argument("--stop_on_cert", action="store_true", default=False)
-    ap.add_argument("--bank_size", type=int, default=12)
-    ap.add_argument("--suite_cases", type=int, default=6)
-    ap.add_argument("--suite_shapes", choices=["kimi_glm5"], default="kimi_glm5")
-    ap.add_argument("--seed", type=int, default=0)
-    return ap
-
-
 def main() -> None:
     args = make_parser().parse_args()
     if args.device.startswith("cuda") and not torch.cuda.is_available():
@@ -228,19 +89,26 @@ def main() -> None:
     iter_dtype = dtype_from_name(args.iter_dtype)
     ell0 = float(args.ell0) if args.ell0 > 0.0 else (1.0 / float(args.kappa_G))
     target_kappa_O = (
-        float(args.target_kappa_O)
-        if args.target_mode == "custom"
-        else bf16_target(args.target_mode)
+        float(args.target_kappa_O) if args.target_mode == "custom" else bf16_target(args.target_mode)
     )
 
-    sched_info = build_schedule_info(args, ell0, target_kappa_O)
-    if (
-        args.schedule_mode in ["two_step_exact_cholesky", "two_step_tempered_cholesky"]
-        and not sched_info.steps
-    ):
-        raise RuntimeError("no two-step Cholesky schedule found under the current constraints")
+    schedule_name = args.schedule
+    if schedule_name == "auto":
+        schedule_name = auto_schedule_name(target_kappa_O)
+    schedule = build_schedule(schedule_name, ell0, args.zolo_coeff_dps)
 
-    print_schedule_info(args, ell0, target_kappa_O, sched_info)
+    print(
+        f"device={args.device}  mode={args.mode}  kappa_G<={args.kappa_G:.3g}  target_kappa(O)<={target_kappa_O:.8g}"
+    )
+    print(
+        "knobs: "
+        f"input_dtype={args.input_dtype} iter_dtype={args.iter_dtype} "
+        f"gram_chunk_rows={args.gram_chunk_rows} rhs_chunk_rows={args.rhs_chunk_rows} "
+        f"jitter_rel={args.jitter_rel:g} cert_jitter_rel={args.cert_jitter_rel:g} "
+        f"tf32={args.tf32} exact_verify_device={args.exact_verify_device}"
+    )
+    print(f"control: ell0={ell0:.6g} target_mode={args.target_mode} zolo_coeff_dps={args.zolo_coeff_dps}")
+    print_schedule(schedule_name, schedule)
 
     def make_case(m: int, n: int, case_seed: int) -> Tensor:
         spectra = make_spectrum_bank(n, args.kappa_G, bank_size=1, seed=case_seed + n)
@@ -256,7 +124,7 @@ def main() -> None:
         return run_one_case(
             G_storage=G,
             target_kappa_O=target_kappa_O,
-            schedule=sched_info.steps,
+            schedule=schedule,
             iter_dtype=iter_dtype,
             gram_chunk_rows=args.gram_chunk_rows,
             rhs_chunk_rows=args.rhs_chunk_rows,
@@ -265,7 +133,6 @@ def main() -> None:
             tf32=args.tf32,
             exact_verify_device=args.exact_verify_device,
             zolo_coeff_dps=args.zolo_coeff_dps,
-            zolo_realization=args.zolo_realization,
             stop_on_cert=args.stop_on_cert,
         )
 
@@ -366,26 +233,16 @@ def main() -> None:
                 f"  cert kappa(O) median: {pct(certs, 0.5):.8g}  p90: {pct(certs, 0.9):.8g}"
             )
         print(f"  steps median: {pct(steps_used, 0.5):.6g}  p90: {pct(steps_used, 0.9):.6g}")
-        print(
-            f"  dwh_steps median: {pct(dwh_steps_used, 0.5):.6g}  p90: {pct(dwh_steps_used, 0.9):.6g}"
-        )
-        print(
-            f"  zolo_steps median: {pct(zolo_steps_used, 0.5):.6g}  p90: {pct(zolo_steps_used, 0.9):.6g}"
-        )
-        print(
-            f"  fallbacks median: {pct(fallbacks_used, 0.5):.6g}  p90: {pct(fallbacks_used, 0.9):.6g}"
-        )
+        print(f"  dwh_steps median: {pct(dwh_steps_used, 0.5):.6g}  p90: {pct(dwh_steps_used, 0.9):.6g}")
+        print(f"  zolo_steps median: {pct(zolo_steps_used, 0.5):.6g}  p90: {pct(zolo_steps_used, 0.9):.6g}")
+        print(f"  fallbacks median: {pct(fallbacks_used, 0.5):.6g}  p90: {pct(fallbacks_used, 0.9):.6g}")
         print(f"  guards median: {pct(guards_used, 0.5):.6g}  p90: {pct(guards_used, 0.9):.6g}")
-        print(
-            f"  ms timed total median: {pct(ms_total, 0.5):.3f}  p90: {pct(ms_total, 0.9):.3f}"
-        )
+        print(f"  ms timed total median: {pct(ms_total, 0.5):.3f}  p90: {pct(ms_total, 0.9):.3f}")
         print(f"    ms gram  median: {pct(ms_gram, 0.5):.3f}  p90: {pct(ms_gram, 0.9):.3f}")
         print(f"    ms solve median: {pct(ms_solve, 0.5):.3f}  p90: {pct(ms_solve, 0.9):.3f}")
         print(f"    ms upd   median: {pct(ms_upd, 0.5):.3f}  p90: {pct(ms_upd, 0.9):.3f}")
         print(f"    ms cert  median: {pct(ms_cert, 0.5):.3f}  p90: {pct(ms_cert, 0.9):.3f}")
-        print(
-            f"    ms exact_verify median: {pct(ms_exact_verify, 0.5):.3f}  p90: {pct(ms_exact_verify, 0.9):.3f}  (excluded)"
-        )
+        print(f"    ms exact_verify median: {pct(ms_exact_verify, 0.5):.3f}  p90: {pct(ms_exact_verify, 0.9):.3f}  (excluded)")
 
 
 if __name__ == "__main__":

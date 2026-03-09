@@ -13,15 +13,8 @@ from polar.ops import (
     exact_eigvalsh,
     gram_xtx_chunked_fp64,
 )
-from polar.schedule_search import StepSpec
-from polar.zolo import (
-    dwh_ell_next,
-    dwh_small_right_update,
-    temper_zolo_coeffs_by_floor,
-    zolo_coeffs_from_ell,
-    zolo_product_step_chunked,
-    zolo_small_right_update,
-)
+from polar.schedules import StepSpec
+from polar.zolo import dwh_ell_next, dwh_small_right_update, zolo_coeffs_from_ell, zolo_product_step_chunked
 
 Tensor = torch.Tensor
 
@@ -67,7 +60,6 @@ def run_one_case(
     tf32: bool,
     exact_verify_device: str,
     zolo_coeff_dps: int,
-    zolo_realization: str,
     stop_on_cert: bool,
 ) -> RunSummary:
     device = G_storage.device
@@ -96,33 +88,26 @@ def run_one_case(
                 ms_solve, (U, shift) = cuda_time_ms(
                     lambda: dwh_small_right_update(S, step.ell_in, jitter_rel)
                 )
+                ms_upd, X = cuda_time_ms(
+                    lambda: apply_right_small_chunked(X, U, rhs_chunk_rows, iter_dtype)
+                )
+                ms_upd_sum += ms_upd
                 dwh_steps += 1
                 last_step_kind = "DWH"
             else:
                 coeffs = zolo_coeffs_from_ell(step.r, step.ell_in, dps=zolo_coeff_dps)
-                if step.kind == "TZOLO":
-                    coeffs = temper_zolo_coeffs_by_floor(coeffs, step.pole_floor)
-                if zolo_realization == "product":
-                    ms_solve, (X, shift) = cuda_time_ms(
-                        lambda: zolo_product_step_chunked(
-                            X=X,
-                            S=S,
-                            coeffs=coeffs,
-                            rhs_chunk_rows=rhs_chunk_rows,
-                            jitter_rel=jitter_rel,
-                            out_dtype=iter_dtype,
-                        )
+                ms_solve, (X, shift) = cuda_time_ms(
+                    lambda: zolo_product_step_chunked(
+                        X=X,
+                        S=S,
+                        coeffs=coeffs,
+                        rhs_chunk_rows=rhs_chunk_rows,
+                        jitter_rel=jitter_rel,
+                        out_dtype=iter_dtype,
                     )
-                else:
-                    ms_solve, (U, shift) = cuda_time_ms(
-                        lambda: zolo_small_right_update(S, coeffs, jitter_rel)
-                    )
-                zolo_steps += 1
-                last_step_kind = (
-                    f"TZOLO(r={step.r},floor={step.pole_floor:.3e})"
-                    if step.kind == "TZOLO"
-                    else f"ZOLO(r={step.r})"
                 )
+                zolo_steps += 1
+                last_step_kind = f"ZOLO(r={step.r})"
             ms_solve_sum += ms_solve
             guards += int(shift > 0.0)
         except Exception:
@@ -130,16 +115,14 @@ def run_one_case(
             ms_solve, (U, shift) = cuda_time_ms(
                 lambda: dwh_small_right_update(S, step.ell_in, jitter_rel)
             )
-            ms_solve_sum += ms_solve
-            guards += int(shift > 0.0)
-            dwh_steps += 1
-            last_step_kind = "DWH(fallback)"
-
-        if step.kind == "DWH" or zolo_realization == "partial":
             ms_upd, X = cuda_time_ms(
                 lambda: apply_right_small_chunked(X, U, rhs_chunk_rows, iter_dtype)
             )
+            ms_solve_sum += ms_solve
             ms_upd_sum += ms_upd
+            guards += int(shift > 0.0)
+            dwh_steps += 1
+            last_step_kind = "DWH(fallback)"
 
     ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
     ms_gram_sum += ms_gram
@@ -157,14 +140,15 @@ def run_one_case(
             ms_solve, (U, shift) = cuda_time_ms(
                 lambda: dwh_small_right_update(S, ell, jitter_rel)
             )
-            ms_solve_sum += ms_solve
-            guards += int(shift > 0.0)
-            dwh_steps += 1
-            last_step_kind = "DWH(polish)"
             ms_upd, X = cuda_time_ms(
                 lambda: apply_right_small_chunked(X, U, rhs_chunk_rows, iter_dtype)
             )
+            ms_solve_sum += ms_solve
             ms_upd_sum += ms_upd
+            guards += int(shift > 0.0)
+            dwh_steps += 1
+            last_step_kind = "DWH(polish)"
+
             ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
             ms_gram_sum += ms_gram
             ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
