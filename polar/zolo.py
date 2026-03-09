@@ -44,6 +44,26 @@ def dwh_ell_next(ell: float) -> float:
 
 
 @torch.no_grad()
+def dwh_step_matrix_only(
+    S: Tensor,
+    ell: float,
+    jitter_rel: float,
+) -> Tuple[Tensor, float]:
+    # Compute the n x n update matrix Q for DWH
+    a, b, c = dwh_coeffs_from_ell(ell)
+    n = S.shape[0]
+    I = torch.eye(n, device=S.device, dtype=torch.float64)
+    M = symmetrize(I + float(c) * S)
+    L, shift = chol_with_jitter_fp64(M, jitter_rel=jitter_rel)
+    
+    invM = torch.cholesky_inverse(L)
+    alpha = float(b / c)
+    beta = float(a - b / c)
+    Q = alpha * I + beta * invM
+    return Q, float(shift)
+
+
+@torch.no_grad()
 def dwh_step_chunked(
     X: Tensor,
     S: Tensor,
@@ -52,20 +72,7 @@ def dwh_step_chunked(
     jitter_rel: float,
     out_dtype: torch.dtype,
 ) -> Tuple[Tensor, float]:
-    # Mathematical Form: X_{k+1} = X_k (a I + b S) (I + c S)^{-1}
-    # This is equivalent to X_k [ (b/c) I + (a - b/c) (I + c S)^{-1} ]
-    a, b, c = dwh_coeffs_from_ell(ell)
-    n = S.shape[0]
-    I = torch.eye(n, device=S.device, dtype=torch.float64)
-    M = symmetrize(I + float(c) * S)
-    L, shift = chol_with_jitter_fp64(M, jitter_rel=jitter_rel)
-    
-    # We precompute the n x n update matrix Q.
-    # GEMM (X @ Q) is much faster than TRSM (cholesky_solve).
-    invM = torch.cholesky_inverse(L)
-    alpha = float(b / c)
-    beta = float(a - b / c)
-    Q = alpha * I + beta * invM
+    Q, shift = dwh_step_matrix_only(S, ell, jitter_rel)
 
     X_next = torch.empty_like(X, dtype=out_dtype)
     for i in range(0, X.shape[0], rhs_chunk_rows):
@@ -141,6 +148,30 @@ def zolo_ell_next(ell: float, coeffs: ZoloCoeffs) -> float:
 
 
 @torch.no_grad()
+def zolo_step_matrix_only(
+    S: Tensor,
+    coeffs: ZoloCoeffs,
+    jitter_rel: float,
+) -> Tuple[Tensor, float]:
+    # Compute the n x n update matrix Q for Zolo
+    n = S.shape[0]
+    I = torch.eye(n, device=S.device, dtype=torch.float64)
+    max_shift = 0.0
+    Q = torch.eye(n, device=S.device, dtype=torch.float64)
+
+    for ce, co in zip(coeffs.c_even, coeffs.c_odd):
+        Z = symmetrize(S + float(co) * I)
+        L, shift = chol_with_jitter_fp64(Z, jitter_rel=jitter_rel)
+        max_shift = max(max_shift, float(shift))
+        delta = float(ce - co)
+        invZ = torch.cholesky_inverse(L)
+        Q = Q + delta * (Q @ invZ)
+
+    Q = float(coeffs.mhat) * Q
+    return Q, float(max_shift)
+
+
+@torch.no_grad()
 def zolo_product_step_chunked(
     X: Tensor,
     S: Tensor,
@@ -149,30 +180,8 @@ def zolo_product_step_chunked(
     jitter_rel: float,
     out_dtype: torch.dtype,
 ) -> Tuple[Tensor, float]:
-    # Mathematical Form: X_{k+1} = mhat * X_k * product( (S + co I)^{-1} (S + ce I) )
-    # This is equivalent to X_k * [ mhat * product( I + (ce - co) (S + co I)^{-1} ) ]
-    # The term in brackets is a pure n x n matrix. By computing it first, 
-    # we reduce the number of passes over the large matrix X from r to 1.
-    n = S.shape[0]
-    I = torch.eye(n, device=S.device, dtype=torch.float64)
-    max_shift = 0.0
+    Q, shift = zolo_step_matrix_only(S, coeffs, jitter_rel)
 
-    # Initialize n x n update matrix Q
-    Q = torch.eye(n, device=S.device, dtype=torch.float64)
-
-    for ce, co in zip(coeffs.c_even, coeffs.c_odd):
-        Z = symmetrize(S + float(co) * I)
-        L, shift = chol_with_jitter_fp64(Z, jitter_rel=jitter_rel)
-        max_shift = max(max_shift, float(shift))
-        delta = float(ce - co)
-
-        # Update Q: Q_next = Q @ (I + delta * Z^{-1}) = Q + delta * (Q @ Z^{-1})
-        invZ = torch.cholesky_inverse(L)
-        Q = Q + delta * (Q @ invZ)
-
-    Q = float(coeffs.mhat) * Q
-
-    # One pass over X using GEMM
     X_next = torch.empty_like(X, dtype=out_dtype)
     for i in range(0, X.shape[0], rhs_chunk_rows):
         end = min(i + rhs_chunk_rows, X.shape[0])
@@ -180,4 +189,4 @@ def zolo_product_step_chunked(
         Zi = Xi @ Q
         X_next[i:end] = Zi.to(dtype=out_dtype)
 
-    return X_next, float(max_shift)
+    return X_next, float(shift)

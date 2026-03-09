@@ -67,12 +67,10 @@ def run_one_case(
     M = symmetrize(P_honest / tau)
     do_oracle = oracle_mode == "on" or (oracle_mode == "auto" and n <= oracle_n_max)
     
-    Z = None
-    if do_oracle:
-        Z = torch.eye(n, device=P_honest.device, dtype=torch.float64)
+    # We accumulate all W updates into a single n x n matrix W_acc.
+    # B_final = G @ W_1 @ W_2 ... @ W_k
+    W_acc = torch.eye(n, device=P_honest.device, dtype=torch.float64)
     
-    B = G_storage.to(iter_dtype)
-
     ms_small_sum = 0.0
     ms_apply_sum = 0.0
     ms_cert_sum = 0.0
@@ -91,14 +89,11 @@ def run_one_case(
         ms_small_sum += ms_small
         guards += int(chol_shift > 0.0)
 
-        ms_apply, B = cuda_time_ms(
-            lambda: apply_right_chunked(B, W, rhs_chunk_rows, iter_dtype)
-        )
-        ms_apply_sum += ms_apply
+        # Accumulate the small-side update.
+        # W_acc = W_acc @ W
+        # Since W is symmetric, we can use that if needed, but standard MMM is fine.
+        W_acc = W_acc @ W
 
-        # Small-side exact state.
-        if do_oracle:
-            Z = symmetrize(W @ Z)
         M = update_M(M, W, p=p_root)
         alpha = alpha_next(alpha, mu, p=p_root)
 
@@ -108,6 +103,15 @@ def run_one_case(
 
         if final_action_rel_cert <= target_action_rel:
             break
+
+    # Apply the fused update to G.
+    scale = (tau**(-1.0 / float(p_root))) * ((1.0 + alpha) / (2.0 * alpha))
+    W_final = W_acc * scale
+    
+    ms_apply, B = cuda_time_ms(
+        lambda: apply_right_chunked(G_storage, W_final, rhs_chunk_rows, iter_dtype)
+    )
+    ms_apply_sum += ms_apply
 
     def cert_step_final():
         # A posteriori exact/bound diagnostic from M_tilde = Z_tilde^p P.

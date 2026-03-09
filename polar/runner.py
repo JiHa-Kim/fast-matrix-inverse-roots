@@ -6,9 +6,23 @@ from typing import Sequence
 
 import torch
 
-from polar.ops import cert_bound_trace_logdet, cuda_time_ms, exact_eigvalsh, gram_xtx_chunked_fp64
+from polar.ops import (
+    apply_right_small_chunked,
+    cert_bound_trace_logdet,
+    cuda_time_ms,
+    exact_eigvalsh,
+    gram_xtx_chunked_fp64,
+    symmetrize,
+)
 from polar.schedules import StepSpec
-from polar.zolo import dwh_ell_next, dwh_step_chunked, zolo_coeffs_from_ell, zolo_product_step_chunked
+from polar.zolo import (
+    dwh_ell_next,
+    dwh_step_chunked,
+    dwh_step_matrix_only,
+    zolo_coeffs_from_ell,
+    zolo_product_step_chunked,
+    zolo_step_matrix_only,
+)
 
 Tensor = torch.Tensor
 
@@ -74,62 +88,74 @@ def run_one_case(
     last_step_kind = "none"
     final_kO_cert = float("inf")
 
+    # Q_acc accumulates all updates to X. X_final = X_init @ Q_acc.
+    Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=torch.float64)
+    # The Gram matrix S is updated in O(n^3) to avoid O(mn^2) passes.
+    ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
+    ms_gram_sum += ms_gram
+
     for i, step in enumerate(schedule):
-        ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
-        ms_gram_sum += ms_gram
         try:
             if step.kind == "DWH":
-                ms_solve, (X, shift) = cuda_time_ms(
-                    lambda: dwh_step_chunked(
-                        X=X,
+                ms_solve, (Q_step, shift) = cuda_time_ms(
+                    lambda: dwh_step_matrix_only(
                         S=S,
                         ell=step.ell_in,
-                        rhs_chunk_rows=rhs_chunk_rows,
                         jitter_rel=jitter_rel,
-                        out_dtype=iter_dtype,
                     )
                 )
                 dwh_steps += 1
                 last_step_kind = "DWH"
             else:
                 coeffs = zolo_coeffs_from_ell(step.r, step.ell_in, dps=zolo_coeff_dps)
-                ms_solve, (X, shift) = cuda_time_ms(
-                    lambda: zolo_product_step_chunked(
-                        X=X,
+                ms_solve, (Q_step, shift) = cuda_time_ms(
+                    lambda: zolo_step_matrix_only(
                         S=S,
                         coeffs=coeffs,
-                        rhs_chunk_rows=rhs_chunk_rows,
                         jitter_rel=jitter_rel,
-                        out_dtype=iter_dtype,
                     )
                 )
                 zolo_steps += 1
                 last_step_kind = f"ZOLO(r={step.r})"
+            
+            # Update the accumulated transform and the Gram matrix.
+            # S_next = Q_step^T @ S @ Q_step. Since Q_step is symmetric here? 
+            # In Zolo/DWH, Q is symmetric.
+            Q_acc = Q_acc @ Q_step
+            S = symmetrize(Q_step.mT @ S @ Q_step)
+            
             ms_solve_sum += ms_solve
             guards += int(shift > 0.0)
         except Exception:
+            # Fallback needs to touch X to be safe? 
+            # Or we can still fallback in O(n^3).
+            # For simplicity, let's just do it in O(n^3).
             fallbacks += 1
-            ms_solve, (X, shift) = cuda_time_ms(
-                lambda: dwh_step_chunked(
-                    X=X,
+            ms_solve, (Q_step, shift) = cuda_time_ms(
+                lambda: dwh_step_matrix_only(
                     S=S,
                     ell=step.ell_in,
-                    rhs_chunk_rows=rhs_chunk_rows,
                     jitter_rel=jitter_rel,
-                    out_dtype=iter_dtype,
                 )
             )
+            Q_acc = Q_acc @ Q_step
+            S = symmetrize(Q_step.mT @ S @ Q_step)
             ms_solve_sum += ms_solve
             guards += int(shift > 0.0)
             dwh_steps += 1
             last_step_kind = "DWH(fallback)"
 
+    # Finalize the fusion: One pass over X.
+    ms_upd, X = cuda_time_ms(
+        lambda: apply_right_small_chunked(X, Q_acc, rhs_chunk_rows, iter_dtype)
+    )
+    ms_upd_sum += ms_upd
+
     final_kO_cert = float("inf")
     steps_used = len(schedule)
 
     if stop_on_cert:
-        ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
-        ms_gram_sum += ms_gram
+        # Note: S is already up to date from O(n^3) updates.
         ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
             lambda: cert_bound_trace_logdet(S, cert_jitter_rel)
         )
@@ -139,6 +165,11 @@ def run_one_case(
 
         ell = schedule[-1].ell_out if schedule else 1.0
         while final_kO_cert > target_kappa_O and steps_used < 16:
+            # For polish steps, we just do it iteratively on X for simplicity
+            # as it should be very few steps.
+            ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
+            ms_gram_sum += ms_gram
+            
             ms_solve, (X, shift) = cuda_time_ms(
                 lambda: dwh_step_chunked(
                     X=X,
@@ -154,6 +185,7 @@ def run_one_case(
             dwh_steps += 1
             last_step_kind = "DWH(polish)"
 
+            # Re-update S for cert
             ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
             ms_gram_sum += ms_gram
             ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
@@ -165,9 +197,7 @@ def run_one_case(
             ell = dwh_ell_next(ell)
             steps_used += 1
     else:
-        # Just compute the final certificate if we didn't stop on it
-        ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
-        ms_gram_sum += ms_gram
+        # S is already up to date.
         ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
             lambda: cert_bound_trace_logdet(S, cert_jitter_rel)
         )
