@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # polar_dwh_bf16_honest_baseline.py
 #
-# Correctness-first DWH/QDWH-style polar baseline for tall matrices.
+# Correctness-first DWH-style polar baseline for tall matrices.
 #
 # Key choices:
 #   - Uses actual DWH coefficients from Nakatsukasa-Bai-Gygi.
+#   - Use Cholesky instead of QR for small-side updates.
 #   - Uses the numerically safer update:
 #       X_{k+1} = (b/c) X + (a - b/c) X (I + c X^T X)^(-1)
 #   - Computes the small Gram in chunked fp64.
@@ -117,14 +118,14 @@ def chol_with_jitter_fp64(
         raise RuntimeError("non-finite matrix before Cholesky")
 
     n = A.shape[0]
-    I = torch.eye(n, device=A.device, dtype=torch.float64)
+    Id_mat = torch.eye(n, device=A.device, dtype=torch.float64)
 
     scale = float((torch.trace(A).abs() / max(n, 1)).item())
     base = max(float(jitter_rel) * max(scale, 1.0), 1e-30)
 
     delta = 0.0
     for _ in range(max_tries):
-        At = A if delta == 0.0 else (A + delta * I)
+        At = A if delta == 0.0 else (A + delta * Id_mat)
         L, info = torch.linalg.cholesky_ex(At)
         if int(info.item()) == 0:
             return L, float(delta)
@@ -183,10 +184,10 @@ def build_q_from_s(
     """
     S = symmetrize(S.to(torch.float64))
     n = S.shape[0]
-    I = torch.eye(n, device=S.device, dtype=torch.float64)
+    Id_mat = torch.eye(n, device=S.device, dtype=torch.float64)
 
-    M = symmetrize(I + float(c) * S)
-    R = symmetrize(float(a) * I + float(b) * S)
+    M = symmetrize(Id_mat + float(c) * S)
+    R = symmetrize(float(a) * Id_mat + float(b) * S)
 
     L, shift = chol_with_jitter_fp64(M, jitter_rel=jitter_rel)
     Q = torch.cholesky_solve(R, L)
