@@ -137,6 +137,10 @@ def main() -> None:
         )
 
     if args.mode == "demo":
+        # Warmup
+        for _ in range(2):
+            _ = run_case(make_case(args.m, args.n, args.seed))
+        
         summarize_demo(args, run_case(make_case(args.m, args.n, args.seed)))
         return
 

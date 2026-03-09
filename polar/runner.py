@@ -74,7 +74,7 @@ def run_one_case(
     last_step_kind = "none"
     final_kO_cert = float("inf")
 
-    for step in schedule:
+    for i, step in enumerate(schedule):
         ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
         ms_gram_sum += ms_gram
         try:
@@ -124,17 +124,19 @@ def run_one_case(
             dwh_steps += 1
             last_step_kind = "DWH(fallback)"
 
-    ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
-    ms_gram_sum += ms_gram
-    ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
-        lambda: cert_bound_trace_logdet(S, cert_jitter_rel)
-    )
-    ms_cert_sum += ms_cert
-    guards += int(cert_shift > 0.0)
-    final_kO_cert = float(kO_cert)
+    final_kO_cert = float("inf")
     steps_used = len(schedule)
 
     if stop_on_cert:
+        ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
+        ms_gram_sum += ms_gram
+        ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
+            lambda: cert_bound_trace_logdet(S, cert_jitter_rel)
+        )
+        ms_cert_sum += ms_cert
+        guards += int(cert_shift > 0.0)
+        final_kO_cert = float(kO_cert)
+
         ell = schedule[-1].ell_out if schedule else 1.0
         while final_kO_cert > target_kappa_O and steps_used < 16:
             ms_solve, (X, shift) = cuda_time_ms(
@@ -162,6 +164,16 @@ def run_one_case(
             final_kO_cert = float(kO_cert)
             ell = dwh_ell_next(ell)
             steps_used += 1
+    else:
+        # Just compute the final certificate if we didn't stop on it
+        ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
+        ms_gram_sum += ms_gram
+        ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
+            lambda: cert_bound_trace_logdet(S, cert_jitter_rel)
+        )
+        ms_cert_sum += ms_cert
+        guards += int(cert_shift > 0.0)
+        final_kO_cert = float(kO_cert)
 
     ms_exact_verify, final_kO_exact = cuda_time_ms(
         lambda: exact_final_kappa_O(X, gram_chunk_rows, exact_verify_device)
