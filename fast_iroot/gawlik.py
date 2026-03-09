@@ -53,13 +53,9 @@ def build_w_from_M(
 
     if alpha >= 1.0 - 1e-15:
         # If alpha is 1, mu is 1, a1 is p, b1 is p-1.
-        # h(z, 1) = p / (z + p - 1).
-        # But we also know M should be I, so h(I, 1) = I.
-        # Let's check if M is actually I-like.
-        # For now, if alpha is very high, just return identity to save Cholesky.
         return torch.eye(M.shape[0], device=M.device, dtype=M.dtype), float(b1), float(mu), 0.0
 
-    # A = M + b1 * I. Since M is symmetric, A is symmetric.
+    # A = M + b1 * I.
     A = M.clone()
     A.diagonal().add_(b1)
     
@@ -73,12 +69,12 @@ def build_w_from_M(
 @torch.no_grad()
 def update_M(M: Tensor, W: Tensor, p: int) -> Tensor:
     # M_{k+1} = h(M_k, alpha_k)^p M_k = W^p M_k
-    # If W is identity, M remains M.
     if alpha_is_identity_heuristic(W):
         return M
 
     # Core state M MUST be updated in float64 to maintain eigenvalues as small as 1e-7.
     if p == 4:
+        # W^4 = (W^2)^2
         W2 = symmetrize(W @ W)
         W4 = symmetrize(W2 @ W2)
         return symmetrize(W4 @ M)
