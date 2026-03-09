@@ -44,19 +44,31 @@ def dwh_ell_next(ell: float) -> float:
 
 
 @torch.no_grad()
-def dwh_small_right_update(
-    S: Tensor, ell: float, jitter_rel: float
+def dwh_step_chunked(
+    X: Tensor,
+    S: Tensor,
+    ell: float,
+    rhs_chunk_rows: int,
+    jitter_rel: float,
+    out_dtype: torch.dtype,
 ) -> Tuple[Tensor, float]:
     a, b, c = dwh_coeffs_from_ell(ell)
     n = S.shape[0]
     I = torch.eye(n, device=S.device, dtype=torch.float64)
     M = symmetrize(I + float(c) * S)
     L, shift = chol_with_jitter_fp64(M, jitter_rel=jitter_rel)
-    InvM = torch.cholesky_solve(I, L)
     alpha = float(b / c)
     beta = float(a - b / c)
-    U = symmetrize(alpha * I + beta * InvM)
-    return U, float(shift)
+
+    X_next = torch.empty_like(X, dtype=out_dtype)
+    for i in range(0, X.shape[0], rhs_chunk_rows):
+        Xi = X[i : i + rhs_chunk_rows].float().to(torch.float64)
+        Yi_t = torch.cholesky_solve(Xi.T.contiguous(), L)
+        Yi = Yi_t.T
+        Zi = alpha * Xi + beta * Yi
+        X_next[i : i + rhs_chunk_rows] = Zi.to(dtype=out_dtype)
+
+    return X_next, float(shift)
 
 
 @dataclasses.dataclass(frozen=True)

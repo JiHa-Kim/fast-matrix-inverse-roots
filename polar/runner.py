@@ -6,15 +6,9 @@ from typing import Sequence
 
 import torch
 
-from polar.ops import (
-    apply_right_small_chunked,
-    cert_bound_trace_logdet,
-    cuda_time_ms,
-    exact_eigvalsh,
-    gram_xtx_chunked_fp64,
-)
+from polar.ops import cert_bound_trace_logdet, cuda_time_ms, exact_eigvalsh, gram_xtx_chunked_fp64
 from polar.schedules import StepSpec
-from polar.zolo import dwh_ell_next, dwh_small_right_update, zolo_coeffs_from_ell, zolo_product_step_chunked
+from polar.zolo import dwh_ell_next, dwh_step_chunked, zolo_coeffs_from_ell, zolo_product_step_chunked
 
 Tensor = torch.Tensor
 
@@ -85,13 +79,16 @@ def run_one_case(
         ms_gram_sum += ms_gram
         try:
             if step.kind == "DWH":
-                ms_solve, (U, shift) = cuda_time_ms(
-                    lambda: dwh_small_right_update(S, step.ell_in, jitter_rel)
+                ms_solve, (X, shift) = cuda_time_ms(
+                    lambda: dwh_step_chunked(
+                        X=X,
+                        S=S,
+                        ell=step.ell_in,
+                        rhs_chunk_rows=rhs_chunk_rows,
+                        jitter_rel=jitter_rel,
+                        out_dtype=iter_dtype,
+                    )
                 )
-                ms_upd, X = cuda_time_ms(
-                    lambda: apply_right_small_chunked(X, U, rhs_chunk_rows, iter_dtype)
-                )
-                ms_upd_sum += ms_upd
                 dwh_steps += 1
                 last_step_kind = "DWH"
             else:
@@ -112,14 +109,17 @@ def run_one_case(
             guards += int(shift > 0.0)
         except Exception:
             fallbacks += 1
-            ms_solve, (U, shift) = cuda_time_ms(
-                lambda: dwh_small_right_update(S, step.ell_in, jitter_rel)
-            )
-            ms_upd, X = cuda_time_ms(
-                lambda: apply_right_small_chunked(X, U, rhs_chunk_rows, iter_dtype)
+            ms_solve, (X, shift) = cuda_time_ms(
+                lambda: dwh_step_chunked(
+                    X=X,
+                    S=S,
+                    ell=step.ell_in,
+                    rhs_chunk_rows=rhs_chunk_rows,
+                    jitter_rel=jitter_rel,
+                    out_dtype=iter_dtype,
+                )
             )
             ms_solve_sum += ms_solve
-            ms_upd_sum += ms_upd
             guards += int(shift > 0.0)
             dwh_steps += 1
             last_step_kind = "DWH(fallback)"
@@ -137,14 +137,17 @@ def run_one_case(
     if stop_on_cert:
         ell = schedule[-1].ell_out if schedule else 1.0
         while final_kO_cert > target_kappa_O and steps_used < 16:
-            ms_solve, (U, shift) = cuda_time_ms(
-                lambda: dwh_small_right_update(S, ell, jitter_rel)
-            )
-            ms_upd, X = cuda_time_ms(
-                lambda: apply_right_small_chunked(X, U, rhs_chunk_rows, iter_dtype)
+            ms_solve, (X, shift) = cuda_time_ms(
+                lambda: dwh_step_chunked(
+                    X=X,
+                    S=S,
+                    ell=ell,
+                    rhs_chunk_rows=rhs_chunk_rows,
+                    jitter_rel=jitter_rel,
+                    out_dtype=iter_dtype,
+                )
             )
             ms_solve_sum += ms_solve
-            ms_upd_sum += ms_upd
             guards += int(shift > 0.0)
             dwh_steps += 1
             last_step_kind = "DWH(polish)"
