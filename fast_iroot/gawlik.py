@@ -99,9 +99,9 @@ def cert_action_rel_from_M(
     cert_mode: str,
     exact_threshold: int,
 ) -> ActionCert:
-    M = symmetrize(M.to(torch.float64))
+    # We expect M to be in float64 already, but symmetrize it to be sure.
+    M = symmetrize(M)
     n = M.shape[0]
-    I = torch.eye(n, device=M.device, dtype=torch.float64)
 
     use_exact = (cert_mode == "exact") or (cert_mode == "auto" and n <= exact_threshold)
     inv_p = 1.0 / float(p)
@@ -119,8 +119,13 @@ def cert_action_rel_from_M(
             resid_M_exact=float(resid_M),
         )
 
-    E = M - I
-    eta = float(torch.linalg.matrix_norm(E, ord="fro").item())
+    # ||M - I||_F^2 = ||M||_F^2 - 2*trace(M) + n
+    # This is much faster than E = M - I.
+    m_fro_sq = torch.linalg.matrix_norm(M, ord="fro").item() ** 2
+    m_trace = torch.trace(M).item()
+    eta_sq = max(0.0, m_fro_sq - 2.0 * m_trace + n)
+    eta = float(eta_sq**0.5)
+
     if eta >= 1.0:
         action_rel_ub = float("inf")
     else:

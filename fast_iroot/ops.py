@@ -67,19 +67,21 @@ def chol_with_jitter_fp64(
     jitter_rel: float,
     max_tries: int = 8,
 ) -> Tuple[Tensor, float]:
-    A = symmetrize(A.to(torch.float64))
-    if not torch.isfinite(A).all():
+    # A is expected to be symmetric. We work on a copy to avoid corrupting input.
+    At = A.clone()
+    if not torch.isfinite(At).all():
         raise RuntimeError("non-finite matrix before Cholesky")
 
-    n = A.shape[0]
-    I = torch.eye(n, device=A.device, dtype=torch.float64)
-
-    scale = float((torch.trace(A).abs() / max(n, 1)).item())
+    n = At.shape[0]
+    scale = float((torch.trace(At).abs() / max(n, 1)).item())
     base = max(float(jitter_rel) * max(scale, 1.0), 1e-30)
 
     delta = 0.0
     for _ in range(max_tries):
-        At = A if delta == 0.0 else (A + delta * I)
+        if delta > 0.0:
+            # Add delta to diagonal. We add to the original copy to be precise.
+            At = A + delta * torch.eye(n, device=A.device, dtype=torch.float64)
+            
         L, info = torch.linalg.cholesky_ex(At)
         if int(info.item()) == 0:
             return L, float(delta)
@@ -91,17 +93,16 @@ def chol_with_jitter_fp64(
 @torch.no_grad()
 def make_spd_honest_fp64(P: Tensor, jitter_rel: float) -> Tuple[Tensor, float]:
     P = symmetrize(P.to(torch.float64))
-    _, shift = chol_with_jitter_fp64(P, jitter_rel=jitter_rel)
+    L, shift = chol_with_jitter_fp64(P, jitter_rel=jitter_rel)
     if shift > 0.0:
-        n = P.shape[0]
-        I = torch.eye(n, device=P.device, dtype=torch.float64)
-        P = symmetrize(P + shift * I)
+        P.diagonal().add_(shift)
     return P, float(shift)
 
 
 @torch.no_grad()
 def init_spectrum_exact_fp64(P: Tensor) -> Tuple[float, float]:
-    evals = torch.linalg.eigvalsh(symmetrize(P.to(torch.float64)))
+    # eigvalsh is faster if we specify UPLO
+    evals = torch.linalg.eigvalsh(P, UPLO='U')
     lam_min = max(float(evals[0].item()), 1e-300)
     lam_max = max(float(evals[-1].item()), lam_min)
     return float(lam_min), float(lam_max)
