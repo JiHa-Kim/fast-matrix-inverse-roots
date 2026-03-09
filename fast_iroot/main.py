@@ -6,7 +6,7 @@ from typing import Tuple
 
 import torch
 
-from .ops import seed_all, pct
+from .ops import pct
 from .synthetic import make_eig_bank, make_spd_from_eigs, make_tall_random, suite_shapes_default
 from .runner import run_one_case, RunSummary
 

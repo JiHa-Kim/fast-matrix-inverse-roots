@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import dataclasses
-import math
 import torch
-from typing import Tuple
 
 from .ops import (
     symmetrize,
@@ -13,7 +11,7 @@ from .ops import (
     rel_fro,
     rel_spec,
 )
-from .gawlik import mu_from_alpha, alpha_next, build_w_from_M, update_M, cert_action_rel_from_M
+from .gawlik import alpha_next, build_w_from_M, update_M, cert_action_rel_from_M
 from .oracle import exact_invroot_fp64, exact_root_resid_fp64
 
 Tensor = torch.Tensor
