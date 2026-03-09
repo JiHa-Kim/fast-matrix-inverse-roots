@@ -74,27 +74,19 @@ def build_w_from_M(
 def update_M(M: Tensor, W: Tensor, p: int) -> Tensor:
     # M_{k+1} = h(M_k, alpha_k)^p M_k = W^p M_k
     # If W is identity, M remains M.
-    # We check if W is actually the identity from build_w.
-    # In build_w, we return a newly created identity if alpha is close to 1.
-    # We can use this to skip.
     if alpha_is_identity_heuristic(W):
         return M
 
-    # For large n, MMM is O(n^3). On consumer GPUs, f64 is very slow.
-    W32 = W.to(torch.float32)
-    M32 = M.to(torch.float32)
-
+    # Core state M MUST be updated in float64 to maintain eigenvalues as small as 1e-7.
     if p == 4:
-        W2 = symmetrize(W32 @ W32)
+        W2 = symmetrize(W @ W)
         W4 = symmetrize(W2 @ W2)
-        res32 = symmetrize(W4 @ M32)
-        return res32.to(torch.float64)
+        return symmetrize(W4 @ M)
     
-    Wk = W32
+    Wk = W
     for _ in range(p - 1):
-        Wk = symmetrize(Wk @ W32)
-    res32 = symmetrize(Wk @ M32)
-    return res32.to(torch.float64)
+        Wk = symmetrize(Wk @ W)
+    return symmetrize(Wk @ M)
 
 
 def alpha_is_identity_heuristic(W: Tensor) -> bool:
