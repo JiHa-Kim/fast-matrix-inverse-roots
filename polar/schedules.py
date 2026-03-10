@@ -76,6 +76,28 @@ def _dwh_tuned_fp32_step(ell: float) -> StepSpec:
     )
 
 
+def _dwh_mixed_step(ell: float) -> StepSpec:
+    ell_out = dwh_ell_next(ell)
+    return StepSpec(
+        kind="DWH_MIXED",
+        ell_in=float(ell),
+        ell_out=float(ell_out),
+        pred_kappa_after=float(1.0 / max(ell_out, 1e-300)),
+        r=1,
+    )
+
+
+def _dwh_mixed_solve_step(ell: float) -> StepSpec:
+    ell_out = dwh_ell_next(ell)
+    return StepSpec(
+        kind="DWH_MIXED_SOLVE",
+        ell_in=float(ell),
+        ell_out=float(ell_out),
+        pred_kappa_after=float(1.0 / max(ell_out, 1e-300)),
+        r=1,
+    )
+
+
 def _poly_step(ell: float, degree: int) -> StepSpec:
     coeffs = poly_inv_sqrt_coeffs_from_ell(degree, ell)
     sigma_min = max(coeffs.pred_sigma_min, 1e-300)
@@ -191,6 +213,36 @@ def _build_pe_schedule(ell: float, basis: str, degree_pattern: tuple[int, ...], 
     return out
 
 
+def _select_best_pe_hybrid(ell: float, basis: str) -> List[StepSpec]:
+    # Search a small family of cubic-prefix / quadratic-suffix patterns offline.
+    # The target is the relaxed bf16 objective; among schedules that hit it in
+    # theory, prefer fewer steps, then tighter final interval.
+    target_kappa = 1.0 + 2.0**-6
+    candidate_patterns = [
+        (3, 2),
+        (3, 3, 2),
+        (3, 2, 2),
+        (3, 3, 2, 2),
+        (3, 3, 3, 2),
+    ]
+
+    best_schedule: List[StepSpec] | None = None
+    best_key: tuple[float, float, float] | None = None
+    for pattern in candidate_patterns:
+        schedule = _build_pe_schedule(ell, basis, pattern)
+        final = schedule[-1]
+        reaches_target = float(final.pred_kappa_after <= target_kappa)
+        # Prefer hitting the relaxed target, then fewer steps, then tighter final
+        # predicted kappa. If none hit the target, the highest reaches_target term
+        # disappears and we fall back to best final kappa.
+        key = (reaches_target, -float(len(schedule)), -float(final.pred_kappa_after))
+        if best_key is None or key > best_key:
+            best_key = key
+            best_schedule = schedule
+    assert best_schedule is not None
+    return best_schedule
+
+
 def build_schedule(schedule_name: str, ell0: float, zolo_coeff_dps: int) -> List[StepSpec]:
     ell = float(ell0)
 
@@ -219,6 +271,18 @@ def build_schedule(schedule_name: str, ell0: float, zolo_coeff_dps: int) -> List
         s1 = _dwh_stable_solve_step(ell)
         s2 = _dwh_stable_solve_step(s1.ell_out)
         s3 = _dwh_stable_solve_step(s2.ell_out)
+        return [s1, s2, s3]
+
+    if schedule_name == "dwh3_mixed":
+        s1 = _dwh_mixed_step(ell)
+        s2 = _dwh_mixed_step(s1.ell_out)
+        s3 = _dwh_mixed_step(s2.ell_out)
+        return [s1, s2, s3]
+
+    if schedule_name == "dwh3_mixed_solve":
+        s1 = _dwh_mixed_solve_step(ell)
+        s2 = _dwh_mixed_solve_step(s1.ell_out)
+        s3 = _dwh_mixed_solve_step(s2.ell_out)
         return [s1, s2, s3]
 
     if schedule_name == "dwh_tuned_fp32":
@@ -252,7 +316,7 @@ def build_schedule(schedule_name: str, ell0: float, zolo_coeff_dps: int) -> List
         return _build_pe_schedule(ell, "chebyshev", (3,))
 
     if schedule_name == "pe32hyb12":
-        return _build_pe_schedule(ell, "chebyshev", (3, 2))
+        return _select_best_pe_hybrid(ell, "chebyshev")
 
     raise ValueError(f"unknown schedule_name: {schedule_name}")
 

@@ -327,6 +327,25 @@ def polar_express_step_matrix_only(
             n = S.shape[0]
             I = torch.eye(n, device=S.device, dtype=matmul_dtype)
             Q = symmetrize(I + (S_work - I) @ R)
+        elif coeffs.degree_q == 2:
+            c0, c1, c2 = (float(v) for v in coeffs.coeffs)
+            n = S.shape[0]
+            I = torch.eye(n, device=S.device, dtype=matmul_dtype)
+            mid = 0.5 * (coeffs.interval_lo + coeffs.interval_hi)
+            radius = 0.5 * (coeffs.interval_hi - coeffs.interval_lo)
+            T = symmetrize((S_work - float(mid) * I) / max(float(radius), 1e-30))
+            T2 = symmetrize(T @ T)
+            Q = symmetrize((c0 - c2) * I + c1 * T + (2.0 * c2) * T2)
+        elif coeffs.degree_q == 3:
+            c0, c1, c2, c3 = (float(v) for v in coeffs.coeffs)
+            n = S.shape[0]
+            I = torch.eye(n, device=S.device, dtype=matmul_dtype)
+            mid = 0.5 * (coeffs.interval_lo + coeffs.interval_hi)
+            radius = 0.5 * (coeffs.interval_hi - coeffs.interval_lo)
+            T = symmetrize((S_work - float(mid) * I) / max(float(radius), 1e-30))
+            T2 = symmetrize(T @ T)
+            T3 = symmetrize(T2 @ T)
+            Q = symmetrize((c0 - c2) * I + (c1 - 3.0 * c3) * T + (2.0 * c2) * T2 + (4.0 * c3) * T3)
         else:
             Q = chebyshev_clenshaw_matrix(
                 S_work,
@@ -371,20 +390,40 @@ def polar_express_action_chunked(
         T = symmetrize((S_work - float(mid) * I) / max(float(radius), 1e-30))
         for i in range(0, m, rhs_chunk_rows):
             Xi = X[i : i + rhs_chunk_rows].to(dtype=out_dtype)
-            rhs = Xi
             if coeffs.anchored:
                 rhs = Xi @ symmetrize(S_work - I)
-            b_kplus1 = torch.zeros_like(rhs)
-            b_kplus2 = torch.zeros_like(rhs)
-            for ck in reversed(coeffs.coeffs[1:]):
-                b_k = 2.0 * (b_kplus1 @ T) - b_kplus2 + float(ck) * rhs
-                b_kplus2 = b_kplus1
-                b_kplus1 = b_k
-            Ri = (b_kplus1 @ T) - b_kplus2 + float(coeffs.coeffs[0]) * rhs
-            if coeffs.anchored:
+                b_kplus1 = torch.zeros_like(rhs)
+                b_kplus2 = torch.zeros_like(rhs)
+                for ck in reversed(coeffs.coeffs[1:]):
+                    b_k = 2.0 * (b_kplus1 @ T) - b_kplus2 + float(ck) * rhs
+                    b_kplus2 = b_kplus1
+                    b_kplus1 = b_k
+                Ri = (b_kplus1 @ T) - b_kplus2 + float(coeffs.coeffs[0]) * rhs
                 Y[i : i + rhs_chunk_rows] = Xi + Ri
+            elif coeffs.degree_q == 2:
+                c0, c1, c2 = (float(v) for v in coeffs.coeffs)
+                XiT = Xi @ T
+                XiT2 = XiT @ T
+                Y[i : i + rhs_chunk_rows] = (c0 - c2) * Xi + c1 * XiT + (2.0 * c2) * XiT2
+            elif coeffs.degree_q == 3:
+                c0, c1, c2, c3 = (float(v) for v in coeffs.coeffs)
+                XiT = Xi @ T
+                XiT2 = XiT @ T
+                XiT3 = XiT2 @ T
+                Y[i : i + rhs_chunk_rows] = (
+                    (c0 - c2) * Xi
+                    + (c1 - 3.0 * c3) * XiT
+                    + (2.0 * c2) * XiT2
+                    + (4.0 * c3) * XiT3
+                )
             else:
-                Y[i : i + rhs_chunk_rows] = Ri
+                b_kplus1 = torch.zeros_like(Xi)
+                b_kplus2 = torch.zeros_like(Xi)
+                for ck in reversed(coeffs.coeffs[1:]):
+                    b_k = 2.0 * (b_kplus1 @ T) - b_kplus2 + float(ck) * Xi
+                    b_kplus2 = b_kplus1
+                    b_kplus1 = b_k
+                Y[i : i + rhs_chunk_rows] = (b_kplus1 @ T) - b_kplus2 + float(coeffs.coeffs[0]) * Xi
     else:
         raise ValueError(f"unknown basis: {coeffs.basis}")
 

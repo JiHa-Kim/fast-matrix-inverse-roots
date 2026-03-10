@@ -27,7 +27,7 @@ def print_schedule(schedule_name: str, schedule: list[StepSpec]) -> None:
     print(f"chosen schedule: {schedule_name}")
     print("theory schedule:")
     for i, st in enumerate(schedule, 1):
-        if st.kind in {"DWH", "DWH_STABLE_SOLVE", "DWH_TUNED_FP32"}:
+        if st.kind in {"DWH", "DWH_STABLE_SOLVE", "DWH_TUNED_FP32", "DWH_MIXED", "DWH_MIXED_SOLVE"}:
             print(f"  step {i}: {st.kind:<18s} ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
         elif st.kind == "POLY":
             print(f"  step {i}: POLY d={st.degree:<2d}       ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
@@ -58,6 +58,8 @@ def make_parser() -> argparse.ArgumentParser:
             "zolo32",
             "dwh3",
             "dwh3_stable_solve",
+            "dwh3_mixed",
+            "dwh3_mixed_solve",
             "dwh_tuned_fp32",
             "poly16x2",
             "poly24x2",
