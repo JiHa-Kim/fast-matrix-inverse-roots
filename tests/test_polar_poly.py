@@ -1,6 +1,6 @@
 import torch
 
-from polar.polynomial.express import polar_express_action, polar_express_step, polar_express_step_matrix_only
+from polar.polynomial.express import PaperPolarExpressStep, polar_express_paper5_step_matrix_only
 from polar.polynomial.minimax import (
     chebyshev_clenshaw_matrix,
     newton_schulz_inv_sqrt_matrix_only,
@@ -94,56 +94,14 @@ def test_poly_schedule_smoke_bf16() -> None:
     assert res.last_step_kind == "POLY(d=16)"
 
 
-def test_polar_express_chebyshev_matches_monomial() -> None:
-    S = torch.diag(torch.tensor([0.2, 0.6, 1.0], dtype=torch.bfloat16, device=_device()))
-    step_mono = polar_express_step(0.2, 1.0, degree_q=2, basis="monomial")
-    step_cheb = polar_express_step(0.2, 1.0, degree_q=2, basis="chebyshev")
-    Q_mono, _ = polar_express_step_matrix_only(S, step_mono, torch.float32)
-    Q_cheb, _ = polar_express_step_matrix_only(S, step_cheb, torch.float32)
-    out_mono = torch.diagonal(S.float() @ Q_mono.float()).sqrt()
-    out_cheb = torch.diagonal(S.float() @ Q_cheb.float()).sqrt()
-    assert torch.isfinite(Q_mono).all()
-    assert torch.isfinite(Q_cheb).all()
-    assert out_mono.min().item() > 0.2
-    assert out_cheb.min().item() > 0.2
-
-
-def test_polar_express_action_matches_matrix_only() -> None:
-    torch.manual_seed(0)
-    G = torch.randn(64, 16, dtype=torch.float32, device=_device())
-    S = G.mT @ G
-    step = polar_express_step(0.2, 1.0, degree_q=3, basis="chebyshev")
-    Q, _ = polar_express_step_matrix_only(S, step, torch.float32)
-    Y_action, _ = polar_express_action(G, S, step, out_dtype=torch.float32)
-    Y_matrix = G @ Q
-    err = torch.linalg.matrix_norm(Y_action - Y_matrix).item()
-    ref = torch.linalg.matrix_norm(Y_matrix).item()
-    assert err / max(ref, 1e-12) < 5e-5
-
-
-def test_polar_express_schedule_smoke() -> None:
-    singulars = torch.logspace(0.0, -1.0, 32, base=10.0, dtype=torch.float32)
-    G = make_matrix_from_singulars(
-        m=128,
-        singulars=singulars,
-        seed=1,
-        device=_device(),
-        storage_dtype=torch.bfloat16,
-    )
-    from polar.schedules import build_schedule
-
-    res = run_one_case(
-        G_storage=G,
-        target_kappa_O=1.1,
-        schedule=build_schedule("pe2cheb12", 1.0 / 10.0, 100),
-        iter_dtype=torch.bfloat16,
-        jitter_rel=1e-15,
-        tf32=False,
-        exact_verify_device="cpu",
-        zolo_coeff_dps=100,
-    )
-    assert torch.isfinite(torch.tensor(res.final_kO_exact))
-    assert res.final_kO_exact < 2.0
+def test_polar_express_paper_matrix_only_smoke() -> None:
+    S = torch.diag(torch.tensor([0.1, 0.5, 0.9], dtype=torch.bfloat16, device=_device()))
+    coeffs = PaperPolarExpressStep(1.875, -1.25, 0.375)
+    Q, shift = polar_express_paper5_step_matrix_only(S, coeffs, torch.bfloat16)
+    out = torch.diagonal(S.float() @ Q.float()).sqrt()
+    assert shift == 0.0
+    assert torch.isfinite(Q).all()
+    assert out.min().item() > 0.1
 
 
 def test_polar_express_paper_schedule_smoke() -> None:

@@ -11,7 +11,12 @@ from polar.rational.ops import (
 )
 from polar.rational.dwh import dwh_ell_next
 from polar.rational.dwh_stable_solve import dwh_step_matrix_only_stable_solve
-from polar.polynomial.express import polar_express_action, polar_express_fro_scale
+from polar.polynomial.express import (
+    paper_polar_express_coeff,
+    PaperPolarExpressStep,
+    polar_express_paper5_step_matrix_only,
+    polar_express_paper_fro_scale,
+)
 from polar.schedules import StepSpec
 from polar.runner import RunSummary
 
@@ -71,32 +76,26 @@ def run_one_case_business(
         # Switch to BF16 for peak Tensor Core throughput.
         X_bf16 = X.to(dtype=torch.bfloat16)
         
-        # Fro-scale to protect BF16 range
-        ms_upd, (X_bf16, _) = cuda_time_ms(lambda: polar_express_fro_scale(X_bf16))
+        # Fro-scale to protect BF16 range.
+        ms_upd, (X_bf16, _) = cuda_time_ms(lambda: polar_express_paper_fro_scale(X_bf16))
         ms_upd_sum += ms_upd
-        
-        curr_sigma_lo = ell
-        curr_sigma_hi = 1.1 # Relaxed bound
-        
-        from polar.polynomial.express import polar_express_step
-        for _ in range(2): # 2 high-degree steps are plenty
+
+        for step_idx in range(5):
             ms_gram, S_bf16 = cuda_time_ms(lambda: gram_xtx_fast(X_bf16, torch.bfloat16))
             ms_gram_sum += ms_gram
-            
-            # Use degree 12 for maximum mapping progress per pass
-            pe_coeffs = polar_express_step(curr_sigma_lo, curr_sigma_hi, degree_q=12, basis="chebyshev")
-            
-            # Action step
-            ms_solve, (X_bf16, _) = cuda_time_ms(
-                lambda: polar_express_action(X_bf16, S_bf16, pe_coeffs, torch.bfloat16)
+
+            coeffs = paper_polar_express_coeff(step_idx)
+            ms_solve, (Q_step, _) = cuda_time_ms(
+                lambda: polar_express_paper5_step_matrix_only(
+                    S_bf16,
+                    PaperPolarExpressStep(coeffs.a, coeffs.b, coeffs.c),
+                    torch.bfloat16,
+                )
             )
             ms_solve_sum += ms_solve
             zolo_steps += 1
-            
-            curr_sigma_lo = pe_coeffs.pred_sigma_min
-            curr_sigma_hi = pe_coeffs.pred_sigma_max
-            if curr_sigma_lo >= 0.999:
-                break
+            ms_upd, X_bf16 = cuda_time_ms(lambda: apply_right_fast(X_bf16, Q_step, torch.bfloat16))
+            ms_upd_sum += ms_upd
 
         X = X_bf16.to(dtype=iter_dtype)
 

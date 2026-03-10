@@ -24,7 +24,7 @@ from polar.rational.zolo import (
     zolo_coeffs_from_ell,
     zolo_step_matrix_only,
 )
-from polar.runner import RunSummary, exact_final_kappa_O, polar_express_fro_scale
+from polar.runner import RunSummary, exact_final_kappa_O
 
 Tensor = torch.Tensor
 

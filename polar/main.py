@@ -32,11 +32,6 @@ def print_schedule(schedule_name: str, schedule: list[StepSpec]) -> None:
             print(f"  step {i}: {st.kind:<18s} ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
         elif st.kind == "POLY":
             print(f"  step {i}: POLY d={st.degree:<2d}       ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
-        elif st.kind == "PE":
-            print(
-                f"  step {i}: PE qdeg={st.pe_degree:<2d} {st.basis:<9s} "
-                f"sigma_in=[{st.ell_in:.3e}, {st.u_in:.3e}]  pred_kappa(O)_after={st.pred_kappa_after:.8g}"
-            )
         elif st.kind == "PEPAPER5":
             a, b, c = st.paper_coeffs
             print(f"  step {i}: PEPAPER5          a={a:.6g} b={b:.6g} c={c:.6g}")
@@ -68,10 +63,6 @@ def make_parser() -> argparse.ArgumentParser:
             "dwh_tuned_fp32",
             "poly16x2",
             "poly24x2",
-            "pe2mono12",
-            "pe2cheb12",
-            "pe3cheb12",
-            "pe32hyb12",
             "pe5paper",
         ],
         default="auto",

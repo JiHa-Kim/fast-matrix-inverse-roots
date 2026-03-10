@@ -17,11 +17,8 @@ from polar.ops import (
 )
 from polar.polynomial.express import (
     PaperPolarExpressStep,
-    PolarExpressStep,
-    polar_express_fro_scale,
     polar_express_paper5_step_matrix_only,
     polar_express_paper_fro_scale,
-    polar_express_step_matrix_only,
 )
 from polar.polynomial.minimax import poly_inv_sqrt_coeffs_from_ell, poly_step_matrix_only
 from polar.rational.dwh import dwh_step_matrix_only
@@ -93,15 +90,12 @@ def run_one_case(
     fallbacks = 0
     last_step_kind = "none"
     # Polynomial schedules are intended to stay in the iteration dtype end to end.
-    poly_schedule = any(step.kind in {"POLY", "PE", "PEPAPER5"} for step in schedule)
-    paper_schedule = any(step.kind == "PEPAPER5" for step in schedule)
-
+    poly_schedule = any(step.kind in {"POLY", "PEPAPER5"} for step in schedule)
     # Q_acc accumulates all updates to X. X_final = X_init @ Q_acc.
     q_acc_dtype = iter_dtype if poly_schedule else torch.float64
     Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=q_acc_dtype)
     if poly_schedule:
-        scaler = polar_express_paper_fro_scale if paper_schedule else polar_express_fro_scale
-        ms_upd, (X, _fro_scale) = cuda_time_ms(lambda: scaler(X))
+        ms_upd, (X, _fro_scale) = cuda_time_ms(lambda: polar_express_paper_fro_scale(X))
         ms_upd_sum += ms_upd
     # The Gram matrix S is updated in O(n^3) to avoid O(mn^2) passes.
     if poly_schedule:
@@ -110,7 +104,7 @@ def run_one_case(
         ms_gram, S = cuda_time_ms(lambda: gram_xtx_fp64(X))
     ms_gram_sum += ms_gram
 
-    for i, step in enumerate(schedule):
+    for step in schedule:
         try:
             if step.kind == "DWH":
                 ms_solve, (Q_step, shift) = cuda_time_ms(
@@ -160,32 +154,6 @@ def run_one_case(
                     )
                 )
                 last_step_kind = f"POLY(d={step.degree})"
-            elif step.kind == "PE":
-                coeffs = PolarExpressStep(
-                    sigma_lo=step.ell_in,
-                    sigma_hi=step.u_in,
-                    degree_q=step.pe_degree,
-                    basis=step.basis,
-                    anchored=step.pe_anchored,
-                    interval_lo=step.pe_interval_lo,
-                    interval_hi=step.pe_interval_hi,
-                    coeffs=step.pe_coeffs,
-                    shifted_coeffs=step.pe_shifted_coeffs,
-                    shift_center=step.pe_shift_center,
-                    shift_scale=step.pe_shift_scale,
-                    shift_gain=step.pe_shift_gain,
-                    max_step_err=float("nan"),
-                    pred_sigma_min=step.ell_out,
-                    pred_sigma_max=step.u_out,
-                )
-                ms_solve, (Q_step, shift) = cuda_time_ms(
-                    lambda: polar_express_step_matrix_only(
-                        S=S,
-                        coeffs=coeffs,
-                        matmul_dtype=iter_dtype,
-                    )
-                )
-                last_step_kind = f"PEq{step.pe_degree}({step.basis})"
             elif step.kind == "PEPAPER5":
                 coeffs = PaperPolarExpressStep(*step.paper_coeffs)
                 ms_solve, (Q_step, shift) = cuda_time_ms(
@@ -196,17 +164,6 @@ def run_one_case(
                     )
                 )
                 last_step_kind = "PEPAPER5"
-                if Q_step.dtype != iter_dtype:
-                    Q_step = Q_step.to(dtype=iter_dtype)
-                ms_upd, X = cuda_time_ms(
-                    lambda: apply_right_typed(X, Q_step, iter_dtype, iter_dtype)
-                )
-                ms_upd_sum += ms_upd
-                ms_gram, S = cuda_time_ms(lambda: gram_xtx(X, iter_dtype))
-                ms_gram_sum += ms_gram
-                ms_solve_sum += ms_solve
-                guards += int(shift > 0.0)
-                continue
             else:
                 coeffs = zolo_coeffs_from_ell(step.r, step.ell_in, dps=zolo_coeff_dps)
                 ms_solve, (Q_step, shift) = cuda_time_ms(
