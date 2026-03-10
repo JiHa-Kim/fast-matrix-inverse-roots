@@ -86,6 +86,7 @@ def make_parser() -> argparse.ArgumentParser:
     ap.add_argument("--fast_runner", action="store_true", default=False)
     ap.add_argument("--ultra_fast_runner", action="store_true", default=False)
     ap.add_argument("--hybrid_runner", action="store_true", default=False)
+    ap.add_argument("--business_runner", action="store_true", default=False)
     ap.add_argument("--bank_size", type=int, default=12)
     ap.add_argument("--suite_cases", type=int, default=6)
     ap.add_argument("--suite_shapes", choices=["kimi_glm5"], default="kimi_glm5")
