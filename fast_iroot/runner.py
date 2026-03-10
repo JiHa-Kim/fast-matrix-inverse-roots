@@ -140,9 +140,9 @@ def run_one_case(
     oracle_root_resid = float("nan")
 
     if do_oracle:
-        scale = (tau**(-1.0 / float(p_root))) * ((1.0 + alpha) / (2.0 * alpha))
-        Z_tilde = scale * Z
-        B_tilde = B.float().to(torch.float64) * scale
+        # Z_tilde is the approximate inverse root A^{-1/p}.
+        Z_tilde = W_final
+        B_tilde = B.to(torch.float64)
 
         def oracle_step():
             X_exact = exact_invroot_fp64(P_honest, p=p_root)
