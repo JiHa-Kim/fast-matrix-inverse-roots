@@ -86,10 +86,23 @@ def run_one_case_fast(
 
     # Q_acc accumulates all updates to X in lower precision
     Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=iter_dtype)
+    q_acc_dirty = False
     
     # Gram matrix S in lower precision
     ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fast(X, gram_chunk_rows, iter_dtype))
     ms_gram_sum += ms_gram
+
+    def flush_q_acc() -> None:
+        nonlocal X, Q_acc, q_acc_dirty, ms_upd_sum
+        if not q_acc_dirty:
+            return
+        ms_upd, X_next = cuda_time_ms(
+            lambda: apply_right_small_chunked_fast(X, Q_acc, rhs_chunk_rows, iter_dtype)
+        )
+        ms_upd_sum += ms_upd
+        X = X_next
+        Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=iter_dtype)
+        q_acc_dirty = False
 
     for i, step in enumerate(schedule):
         try:
@@ -194,6 +207,9 @@ def run_one_case_fast(
                 zolo_steps += 1
                 last_step_kind = f"ZOLO_MIXED(r={step.r})"
                 
+                # Flush prior fused updates before switching to direct X updates.
+                flush_q_acc()
+
                 # Direct update on X and recompute S for maximum accuracy in pure FP32
                 if Q_step.dtype != iter_dtype:
                     Q_step = Q_step.to(dtype=iter_dtype)
@@ -220,6 +236,7 @@ def run_one_case_fast(
         if Q_step.dtype != iter_dtype:
             Q_step = Q_step.to(dtype=iter_dtype)
         Q_acc = Q_acc @ Q_step
+        q_acc_dirty = True
         S = symmetrize(Q_step @ S @ Q_step)
         
         ms_solve_sum += ms_solve

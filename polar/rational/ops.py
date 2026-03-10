@@ -77,18 +77,63 @@ def apply_right_small_chunked_fast(
 @torch.no_grad()
 def gram_xtx_chunked_fast(X: Tensor, chunk_rows: int, accum_dtype: torch.dtype) -> Tensor:
     """
-    Optimized Gram matrix calculation using TF32.
+    Chunked Gram matrix calculation for the fused fast runners.
     """
     m, n = X.shape
+    S = torch.zeros((n, n), device=X.device, dtype=accum_dtype)
+
     orig_precision = torch.get_float32_matmul_precision()
-    if X.dtype == torch.float32:
+    if X.dtype == torch.float32 or accum_dtype == torch.float32:
         torch.set_float32_matmul_precision("high")
-        
+
     try:
-        S = torch.zeros((n, n), device=X.device, dtype=accum_dtype)
         for i in range(0, m, chunk_rows):
             Xi = X[i : i + chunk_rows].to(dtype=accum_dtype)
-            S.addmm_(Xi.T, Xi)
+            S.addmm_(Xi.mT, Xi)
         return symmetrize(S)
     finally:
         torch.set_float32_matmul_precision(orig_precision)
+
+
+@torch.no_grad()
+def gram_xtx_fast(X: Tensor, accum_dtype: torch.dtype) -> Tensor:
+    """
+    Ultra-fast Gram matrix calculation. No chunking.
+    """
+    orig_precision = torch.get_float32_matmul_precision()
+    if X.dtype == torch.float32:
+        torch.set_float32_matmul_precision("high")
+    try:
+        # Full matmul for peak occupancy
+        S = X.mT @ X
+        return symmetrize(S.to(dtype=accum_dtype))
+    finally:
+        torch.set_float32_matmul_precision(orig_precision)
+
+
+@torch.no_grad()
+def apply_right_fast(X: Tensor, Q: Tensor, out_dtype: torch.dtype) -> Tensor:
+    """
+    Ultra-fast matrix update. No chunking.
+    """
+    orig_precision = torch.get_float32_matmul_precision()
+    if X.dtype == torch.float32 or Q.dtype == torch.float32:
+        torch.set_float32_matmul_precision("high")
+    try:
+        # Full matmul for peak occupancy
+        return (X @ Q).to(dtype=out_dtype)
+    finally:
+        torch.set_float32_matmul_precision(orig_precision)
+
+
+@torch.no_grad()
+def exact_final_kappa_O_fast(X: Tensor) -> float:
+    """
+    Faster exact verification using pure FP32/TF32 if acceptable.
+    Actually, for 'exact' we should stay in FP64 but we can use no-chunking.
+    """
+    X_64 = X.to(torch.float64)
+    S = X_64.mT @ X_64
+    evals = torch.linalg.eigvalsh(S)
+    kappa = float(torch.sqrt(evals[-1] / evals[0].clamp_min(1e-30)).item())
+    return kappa
