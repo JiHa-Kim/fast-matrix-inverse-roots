@@ -113,6 +113,20 @@ def _basis_vander(xs: np.ndarray, degree_q: int, basis: str, x_lo: float, x_hi: 
     raise ValueError(f"unknown basis: {basis}")
 
 
+def eval_scaled_power_values(
+    xs: np.ndarray,
+    shifted_coeffs: tuple[float, ...],
+    shift_center: float,
+    shift_scale: float,
+    shift_gain: float,
+) -> np.ndarray:
+    v = (xs - float(shift_center)) / max(float(shift_scale), 1e-30)
+    out = np.zeros_like(xs, dtype=np.float64)
+    for ck in reversed(shifted_coeffs):
+        out = out * v + float(ck)
+    return float(shift_gain) * out
+
+
 def _eval_q_values(
     xs: np.ndarray,
     degree_q: int,
@@ -172,15 +186,25 @@ def scalar_map_bounds(
 ) -> tuple[float, float]:
     grid = _sigma_grid(sigma_lo, sigma_hi, num_log=num_log, num_lin=num_lin)
     xs = grid * grid
-    sigma_out = grid * _eval_q_values(
-        xs,
-        coeffs.degree_q,
-        coeffs.basis,
-        coeffs.anchored,
-        coeffs.interval_lo,
-        coeffs.interval_hi,
-        np.array(coeffs.coeffs, dtype=np.float64),
-    )
+    if coeffs.basis == "scaled_power":
+        q_vals = eval_scaled_power_values(
+            xs,
+            coeffs.shifted_coeffs,
+            coeffs.shift_center,
+            coeffs.shift_scale,
+            coeffs.shift_gain,
+        )
+    else:
+        q_vals = _eval_q_values(
+            xs,
+            coeffs.degree_q,
+            coeffs.basis,
+            coeffs.anchored,
+            coeffs.interval_lo,
+            coeffs.interval_hi,
+            np.array(coeffs.coeffs, dtype=np.float64),
+        )
+    sigma_out = grid * q_vals
     return float(np.min(sigma_out)), float(np.max(sigma_out))
 
 
@@ -363,6 +387,125 @@ def polar_express_step(
     )
 
 
+def polar_express_step_bf16_quadratic(
+    sigma_lo: float,
+    sigma_hi: float,
+    robust_pad: float = 1.0,
+    eps_rel: float = 2e-3,
+    l1_reg: float = 5e-5,
+) -> PolarExpressStep:
+    sigma_lo = float(max(sigma_lo, 1e-8))
+    sigma_hi = float(max(sigma_hi, sigma_lo))
+    solve_lo = max(sigma_lo / max(robust_pad, 1.0), 1e-8)
+    solve_hi = sigma_hi * max(robust_pad, 1.0)
+    x_lo = float(solve_lo * solve_lo)
+    x_hi = float(solve_hi * solve_hi)
+    grid = _sigma_grid(solve_lo, solve_hi, num_log=768, num_lin=768)
+    xs = grid * grid
+
+    best: tuple[tuple[float, float, float], PolarExpressStep] | None = None
+    centers = np.unique(np.concatenate([np.linspace(x_lo, x_hi, 17, dtype=np.float64), np.array([1.0], dtype=np.float64)]))
+    for center in centers:
+        center = float(center)
+        scale = max(abs(x_lo - center), abs(x_hi - center), 1e-30)
+        vs = (xs - center) / scale
+        rows = np.stack([np.ones_like(vs), vs, vs * vs], axis=1)
+        v1 = (1.0 - center) / scale
+
+        # Variables: a0,a1,a2,t,u0,u1,u2
+        c = np.zeros((7,), dtype=np.float64)
+        c[3] = 1.0
+        c[4:] = float(max(l1_reg, 0.0))
+
+        A_rows: list[np.ndarray] = []
+        b_rows: list[float] = []
+        A_eq_rows: list[np.ndarray] = []
+        b_eq_rows: list[float] = []
+        A_eq_rows.append(np.array([1.0, v1, v1 * v1, 0.0, 0.0, 0.0, 0.0], dtype=np.float64))
+        b_eq_rows.append(1.0)
+
+        cap = max(1.10, sigma_hi * 1.01)
+        for sigma, row in zip(grid, rows):
+            beta = float(abs(row[0]) + abs(row[1]) + abs(row[2]))
+            d = eps_rel * float(sigma) * beta
+            # Robust minimax around 1.
+            A_rows.append(np.array([sigma * row[0], sigma * row[1], sigma * row[2], -1.0, d, d, d], dtype=np.float64))
+            b_rows.append(1.0)
+            A_rows.append(np.array([-sigma * row[0], -sigma * row[1], -sigma * row[2], -1.0, d, d, d], dtype=np.float64))
+            b_rows.append(-1.0)
+            # Positivity.
+            A_rows.append(np.array([-sigma * row[0], -sigma * row[1], -sigma * row[2], 0.0, d, d, d], dtype=np.float64))
+            b_rows.append(-1e-6)
+            if sigma <= 1.0:
+                # sigma q - delta >= sigma
+                A_rows.append(np.array([-sigma * row[0], -sigma * row[1], -sigma * row[2], 0.0, d, d, d], dtype=np.float64))
+                b_rows.append(-sigma)
+            else:
+                # sigma q + delta <= sigma
+                A_rows.append(np.array([sigma * row[0], sigma * row[1], sigma * row[2], 0.0, d, d, d], dtype=np.float64))
+                b_rows.append(sigma)
+            A_rows.append(np.array([sigma * row[0], sigma * row[1], sigma * row[2], 0.0, d, d, d], dtype=np.float64))
+            b_rows.append(cap)
+
+        for j in range(3):
+            rowp = np.zeros((7,), dtype=np.float64)
+            rowm = np.zeros((7,), dtype=np.float64)
+            rowp[j] = 1.0
+            rowp[4 + j] = -1.0
+            rowm[j] = -1.0
+            rowm[4 + j] = -1.0
+            A_rows.append(rowp)
+            b_rows.append(0.0)
+            A_rows.append(rowm)
+            b_rows.append(0.0)
+
+        res = linprog(
+            c=c,
+            A_ub=np.stack(A_rows, axis=0),
+            b_ub=np.array(b_rows, dtype=np.float64),
+            A_eq=np.stack(A_eq_rows, axis=0),
+            b_eq=np.array(b_eq_rows, dtype=np.float64),
+            bounds=[(None, None), (None, None), (None, None), (0.0, None), (0.0, None), (0.0, None), (0.0, None)],
+            method="highs",
+        )
+        if not res.success:
+            continue
+
+        coeffs = np.array(res.x[:3], dtype=np.float64)
+        gain = float(max(np.max(np.abs(coeffs)), 1e-30))
+        shifted = tuple(float(v / gain) for v in coeffs)
+        tmp = PolarExpressStep(
+            sigma_lo=sigma_lo,
+            sigma_hi=sigma_hi,
+            degree_q=2,
+            basis="scaled_power",
+            anchored=False,
+            interval_lo=x_lo,
+            interval_hi=x_hi,
+            coeffs=(),
+            shifted_coeffs=shifted,
+            shift_center=center,
+            shift_scale=scale,
+            shift_gain=gain,
+            max_step_err=float(res.x[3]),
+            pred_sigma_min=0.0,
+            pred_sigma_max=0.0,
+        )
+        sigma_min, sigma_max = scalar_map_bounds(tmp, sigma_lo, sigma_hi)
+        key = (
+            -float(max(sigma_max - 1.0, 0.0)),
+            float(sigma_min / max(sigma_max, 1e-300)),
+            -float(gain * np.sum(np.abs(coeffs / gain))),
+        )
+        tmp = dataclasses.replace(tmp, pred_sigma_min=float(sigma_min), pred_sigma_max=float(sigma_max))
+        if best is None or key > best[0]:
+            best = (key, tmp)
+
+    if best is None:
+        raise RuntimeError(f"bf16 quadratic solve failed on sigma interval [{sigma_lo:.3e}, {sigma_hi:.3e}]")
+    return best[1]
+
+
 @torch.no_grad()
 def polar_express_step_matrix_only(
     S: Tensor,
@@ -375,10 +518,13 @@ def polar_express_step_matrix_only(
         I = torch.eye(n, device=S.device, dtype=matmul_dtype)
         V = symmetrize((S_work - float(coeffs.shift_center) * I) / max(float(coeffs.shift_scale), 1e-30))
         Q = _scaled_horner_matrix(V, coeffs.shifted_coeffs, coeffs.shift_gain, matmul_dtype)
-    elif coeffs.basis == "chebyshev":
+    elif coeffs.basis in {"chebyshev", "scaled_power"}:
         n = S.shape[0]
         I = torch.eye(n, device=S.device, dtype=matmul_dtype)
-        if coeffs.anchored:
+        if coeffs.basis == "scaled_power":
+            V = symmetrize((S_work - float(coeffs.shift_center) * I) / max(float(coeffs.shift_scale), 1e-30))
+            Q = _scaled_horner_matrix(V, coeffs.shifted_coeffs, coeffs.shift_gain, matmul_dtype)
+        elif coeffs.anchored:
             R = chebyshev_clenshaw_matrix(
                 S_work,
                 coeffs.coeffs,
@@ -424,11 +570,13 @@ def polar_express_action_chunked(
         for i in range(0, m, rhs_chunk_rows):
             Xi = X[i : i + rhs_chunk_rows].to(dtype=out_dtype)
             Y[i : i + rhs_chunk_rows] = _scaled_horner_action(Xi, V, coeffs.shifted_coeffs, coeffs.shift_gain)
-    elif coeffs.basis == "chebyshev":
+    elif coeffs.basis in {"chebyshev", "scaled_power"}:
         I = torch.eye(n, device=S.device, dtype=out_dtype)
         T = None
         V = None
-        if coeffs.anchored or coeffs.degree_q > 3:
+        if coeffs.basis == "scaled_power":
+            V = symmetrize((S_work - float(coeffs.shift_center) * I) / max(float(coeffs.shift_scale), 1e-30))
+        elif coeffs.anchored or coeffs.degree_q > 3:
             mid = 0.5 * (coeffs.interval_lo + coeffs.interval_hi)
             radius = 0.5 * (coeffs.interval_hi - coeffs.interval_lo)
             T = symmetrize((S_work - float(mid) * I) / max(float(radius), 1e-30))
@@ -436,7 +584,9 @@ def polar_express_action_chunked(
             V = symmetrize((S_work - float(coeffs.shift_center) * I) / max(float(coeffs.shift_scale), 1e-30))
         for i in range(0, m, rhs_chunk_rows):
             Xi = X[i : i + rhs_chunk_rows].to(dtype=out_dtype)
-            if coeffs.anchored:
+            if coeffs.basis == "scaled_power":
+                Y[i : i + rhs_chunk_rows] = _scaled_horner_action(Xi, V, coeffs.shifted_coeffs, coeffs.shift_gain)
+            elif coeffs.anchored:
                 rhs = Xi @ symmetrize(S_work - I)
                 b_kplus1 = torch.zeros_like(rhs)
                 b_kplus2 = torch.zeros_like(rhs)

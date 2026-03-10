@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from polar.polynomial.express import polar_express_step, scalar_map_bounds
+from polar.polynomial.express import polar_express_step, polar_express_step_bf16_quadratic, scalar_map_bounds
 from polar.polynomial.minimax import poly_inv_sqrt_coeffs_from_ell
 from polar.schedule_spec import StepSpec
 
@@ -28,6 +28,32 @@ def _pe_step_from_interval(
     pe_degree: int,
     next_degree: int | None = None,
 ) -> StepSpec:
+    if basis == "chebyshev" and pe_degree == 2:
+        try:
+            coeffs = polar_express_step_bf16_quadratic(sigma_lo, sigma_hi)
+            sigma_min = max(coeffs.pred_sigma_min, 1e-300)
+            sigma_max = max(coeffs.pred_sigma_max, sigma_min)
+            return StepSpec(
+                kind="PE",
+                ell_in=float(sigma_lo),
+                ell_out=float(sigma_min),
+                pred_kappa_after=float(sigma_max / sigma_min),
+                u_in=float(sigma_hi),
+                u_out=float(sigma_max),
+                pe_degree=2,
+                basis=coeffs.basis,
+                pe_anchored=bool(coeffs.anchored),
+                pe_coeffs=tuple(coeffs.coeffs),
+                pe_shifted_coeffs=tuple(coeffs.shifted_coeffs),
+                pe_interval_lo=float(coeffs.interval_lo),
+                pe_interval_hi=float(coeffs.interval_hi),
+                pe_shift_center=float(coeffs.shift_center),
+                pe_shift_scale=float(coeffs.shift_scale),
+                pe_shift_gain=float(coeffs.shift_gain),
+            )
+        except RuntimeError:
+            pass
+
     def _stress_interval(lo: float, hi: float, degree: int) -> tuple[float, float]:
         if degree <= 2:
             return max(1e-8, lo), hi * 1.01
@@ -145,13 +171,27 @@ def _pe_quadratic_candidates(sigma_lo: float, sigma_hi: float, basis: str) -> Li
         stress_min, stress_max = scalar_map_bounds(coeffs_try, stress_lo, stress_hi)
         if stress_min <= 0.0 or not (stress_max > 0.0):
             continue
+        # Surrogate bf16 fragility: normalized Horner helps only if the gain and
+        # coefficient l1 mass remain controlled. Use that to define a slightly
+        # more pessimistic stressed interval before ranking candidates.
+        coeff_l1 = float(sum(abs(v) for v in coeffs_try.shifted_coeffs))
+        gain = float(abs(coeffs_try.shift_gain))
+        fragility = gain * coeff_l1
+        probe_pad = 1.0 + min(0.02, 0.0025 * max(fragility - 1.0, 0.0))
+        probe_lo = max(1e-8, stress_lo / probe_pad)
+        probe_hi = stress_hi * probe_pad
+        probe_min, probe_max = scalar_map_bounds(coeffs_try, probe_lo, probe_hi)
+        robust_min = min(stress_min, probe_min)
+        robust_max = max(stress_max, probe_max)
+        if robust_min <= 0.0 or not (robust_max > 0.0):
+            continue
         step = StepSpec(
             kind="PE",
             ell_in=float(sigma_lo),
-            ell_out=float(max(stress_min, 1e-300)),
-            pred_kappa_after=float(max(stress_max, stress_min) / max(stress_min, 1e-300)),
+            ell_out=float(max(robust_min, 1e-300)),
+            pred_kappa_after=float(max(robust_max, robust_min) / max(robust_min, 1e-300)),
             u_in=float(sigma_hi),
-            u_out=float(max(stress_max, stress_min)),
+            u_out=float(max(robust_max, robust_min)),
             pe_degree=2,
             basis=basis,
             pe_anchored=bool(coeffs_try.anchored),
@@ -166,7 +206,7 @@ def _pe_quadratic_candidates(sigma_lo: float, sigma_hi: float, basis: str) -> Li
         key = (
             -float(max(step.u_out - 1.0, 0.0)),
             float(step.ell_out / max(step.u_out, 1e-300)),
-            -abs(float(step.pe_shift_center) - 1.0),
+            -float(fragility),
         )
         out.append((key, step))
     out.sort(key=lambda item: item[0], reverse=True)
@@ -182,8 +222,8 @@ def _build_pe_quadratic_schedule_joint(ell: float, basis: str, total_steps: int 
                 path_next = path + [cand]
                 state_next = (cand.ell_out, cand.u_out)
                 key = (
-                    float(cand.ell_out / max(cand.u_out, 1e-300)),
                     -float(max(cand.u_out - 1.0, 0.0)),
+                    float(cand.ell_out / max(cand.u_out, 1e-300)),
                     -float(cand.pred_kappa_after),
                 )
                 expanded.append((key, path_next, state_next))
@@ -195,8 +235,8 @@ def _build_pe_quadratic_schedule_joint(ell: float, basis: str, total_steps: int 
         beams,
         key=lambda item: (
             float(item[0][-1].pred_kappa_after <= target),
-            -float(item[0][-1].pred_kappa_after),
             -float(max(item[0][-1].u_out - 1.0, 0.0)),
+            -float(item[0][-1].pred_kappa_after),
         ),
     )
     return best_path
@@ -242,9 +282,6 @@ def build_polynomial_schedule(schedule_name: str, ell: float) -> List[StepSpec] 
         return _build_pe_schedule(ell, "monomial", (2,))
 
     if schedule_name == "pe2cheb12":
-        joint = _build_pe_quadratic_schedule_joint(ell, "chebyshev", total_steps=8)
-        if joint[-1].pred_kappa_after <= 1.0 + 2.0**-6:
-            return joint
         return _build_pe_schedule(ell, "chebyshev", (2,))
 
     if schedule_name == "pe3cheb12":

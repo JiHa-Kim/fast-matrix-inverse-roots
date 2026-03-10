@@ -145,10 +145,11 @@ def run_one_case_fast(
                 dwh_steps += 1
                 last_step_kind = "DWH_MIXED_SOLVE"
             elif step.kind == "DWH_SCALED_FP32_SOLVE":
-                # For scaled fp32 solve, S must be computed accurately in fp64
+                # For scaled fp32 solve, we can use the pre-computed S (in iter_dtype)
+                # and just cast it to fp64 for the stable formulation of the scaled matrix.
                 ms_solve, (Q_step, shift) = cuda_time_ms(
                     lambda: dwh_step_scaled_fp32_solve(
-                        S_fp64=X.to(torch.float64).T @ X.to(torch.float64),
+                        S_fp64=S.to(torch.float64),
                         ell=step.ell_in,
                         jitter_rel=jitter_rel,
                     )
