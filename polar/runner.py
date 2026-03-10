@@ -8,6 +8,7 @@ import torch
 
 from polar.ops import (
     apply_right_small_chunked,
+    apply_right_small_chunked_typed,
     cert_bound_trace_logdet,
     cuda_time_ms,
     exact_eigvalsh,
@@ -15,7 +16,7 @@ from polar.ops import (
     gram_xtx_chunked_fp64,
     symmetrize,
 )
-from polar.polynomial.express import PolarExpressStep, polar_express_action_chunked, polar_express_fro_scale
+from polar.polynomial.express import PolarExpressStep, polar_express_fro_scale, polar_express_step_matrix_only
 from polar.polynomial.minimax import poly_inv_sqrt_coeffs_from_ell, poly_step_matrix_only
 from polar.rational.dwh import dwh_ell_next, dwh_step_chunked, dwh_step_matrix_only
 from polar.rational.dwh_stable_solve import (
@@ -97,13 +98,13 @@ def run_one_case(
 
     # Q_acc accumulates all updates to X. X_final = X_init @ Q_acc.
     Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=torch.float64)
-    pe_direct = any(step.kind == "PE" for step in schedule)
-    if pe_direct:
+    pe_schedule = any(step.kind == "PE" for step in schedule)
+    if pe_schedule:
         ms_upd, (X, _fro_scale) = cuda_time_ms(lambda: polar_express_fro_scale(X))
         ms_upd_sum += ms_upd
         Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=iter_dtype)
     # The Gram matrix S is updated in O(n^3) to avoid O(mn^2) passes.
-    if pe_direct:
+    if pe_schedule:
         ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked(X, gram_chunk_rows, iter_dtype))
     else:
         ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fp64(X, gram_chunk_rows))
@@ -178,21 +179,14 @@ def run_one_case(
                     pred_sigma_min=step.ell_out,
                     pred_sigma_max=step.u_out,
                 )
-                ms_solve, (X, shift) = cuda_time_ms(
-                    lambda: polar_express_action_chunked(
-                        X=X,
+                ms_solve, (Q_step, shift) = cuda_time_ms(
+                    lambda: polar_express_step_matrix_only(
                         S=S,
                         coeffs=coeffs,
-                        rhs_chunk_rows=rhs_chunk_rows,
-                        out_dtype=iter_dtype,
+                        matmul_dtype=iter_dtype,
                     )
                 )
-                ms_solve_sum += ms_solve
-                guards += int(shift > 0.0)
                 last_step_kind = f"PEq{step.pe_degree}({step.basis})"
-                ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked(X, gram_chunk_rows, iter_dtype))
-                ms_gram_sum += ms_gram
-                continue
             else:
                 coeffs = zolo_coeffs_from_ell(step.r, step.ell_in, dps=zolo_coeff_dps)
                 ms_solve, (Q_step, shift) = cuda_time_ms(
@@ -216,17 +210,6 @@ def run_one_case(
             )
             dwh_steps += 1
             last_step_kind = "DWH(fallback)"
-            if pe_direct:
-                if Q_step.dtype != iter_dtype:
-                    Q_step = Q_step.to(dtype=iter_dtype)
-                ms_upd, X = cuda_time_ms(
-                    lambda: apply_right_small_chunked(X, Q_step, rhs_chunk_rows, iter_dtype)
-                )
-                ms_upd_sum += ms_upd
-                ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked(X, gram_chunk_rows, iter_dtype))
-                ms_gram_sum += ms_gram
-                guards += int(shift > 0.0)
-                continue
 
         # Update the accumulated transform and the Gram matrix.
         # S_next = Q_step^T @ S @ Q_step. In Zolo/DWH, Q is symmetric.
@@ -239,18 +222,22 @@ def run_one_case(
         guards += int(shift > 0.0)
 
     # Finalize the fusion: One pass over X.
-    if not pe_direct:
+    if pe_schedule:
+        ms_upd, X = cuda_time_ms(
+            lambda: apply_right_small_chunked_typed(X, Q_acc, rhs_chunk_rows, iter_dtype, iter_dtype)
+        )
+    else:
         ms_upd, X = cuda_time_ms(
             lambda: apply_right_small_chunked(X, Q_acc, rhs_chunk_rows, iter_dtype)
         )
-        ms_upd_sum += ms_upd
+    ms_upd_sum += ms_upd
 
     final_kO_cert = float("inf")
     steps_used = len(schedule)
 
     if stop_on_cert:
         # Note: S is already up to date from O(n^3) updates.
-        S_cert = S if not pe_direct else gram_xtx_chunked_fp64(X, gram_chunk_rows)
+        S_cert = S
         ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
             lambda: cert_bound_trace_logdet(S_cert, cert_jitter_rel)
         )
@@ -308,7 +295,7 @@ def run_one_case(
             steps_used += 1
     else:
         # S is already up to date.
-        S_cert = S if not pe_direct else gram_xtx_chunked_fp64(X, gram_chunk_rows)
+        S_cert = S
         ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
             lambda: cert_bound_trace_logdet(S_cert, cert_jitter_rel)
         )

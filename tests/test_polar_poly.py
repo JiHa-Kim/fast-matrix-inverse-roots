@@ -1,6 +1,6 @@
 import torch
 
-from polar.polynomial.express import polar_express_step, polar_express_step_matrix_only
+from polar.polynomial.express import polar_express_action_chunked, polar_express_step, polar_express_step_matrix_only
 from polar.polynomial.minimax import (
     chebyshev_clenshaw_matrix,
     newton_schulz_inv_sqrt_matrix_only,
@@ -85,6 +85,19 @@ def test_polar_express_chebyshev_matches_monomial() -> None:
     assert torch.isfinite(Q_cheb).all()
     assert out_mono.min().item() > 0.2
     assert out_cheb.min().item() > 0.2
+
+
+def test_polar_express_action_matches_matrix_only() -> None:
+    torch.manual_seed(0)
+    G = torch.randn(64, 16, dtype=torch.float32, device=_device())
+    S = G.mT @ G
+    step = polar_express_step(0.2, 1.0, degree_q=3, basis="chebyshev")
+    Q, _ = polar_express_step_matrix_only(S, step, torch.float32)
+    Y_action, _ = polar_express_action_chunked(G, S, step, rhs_chunk_rows=32, out_dtype=torch.float32)
+    Y_matrix = G @ Q
+    err = torch.linalg.matrix_norm(Y_action - Y_matrix).item()
+    ref = torch.linalg.matrix_norm(Y_matrix).item()
+    assert err / max(ref, 1e-12) < 5e-5
 
 
 def test_polar_express_schedule_smoke() -> None:

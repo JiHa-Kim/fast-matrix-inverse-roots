@@ -151,3 +151,29 @@ def apply_right_small_chunked(
         X_next[i : i + rhs_chunk_rows] = Zi.to(dtype=out_dtype)
 
     return X_next
+
+
+@torch.no_grad()
+def apply_right_small_chunked_typed(
+    X: Tensor,
+    U: Tensor,
+    rhs_chunk_rows: int,
+    matmul_dtype: torch.dtype,
+    out_dtype: torch.dtype,
+) -> Tensor:
+    m, n = X.shape
+    X_next = torch.empty((m, n), device=X.device, dtype=out_dtype)
+    orig_precision = torch.get_float32_matmul_precision()
+    if matmul_dtype == torch.float32:
+        torch.set_float32_matmul_precision("high")
+
+    try:
+        U_work = U.to(dtype=matmul_dtype)
+        for i in range(0, m, rhs_chunk_rows):
+            Xi = X[i : i + rhs_chunk_rows].to(dtype=matmul_dtype)
+            Zi = Xi @ U_work
+            X_next[i : i + rhs_chunk_rows] = Zi.to(dtype=out_dtype)
+    finally:
+        torch.set_float32_matmul_precision(orig_precision)
+
+    return X_next

@@ -560,54 +560,14 @@ def polar_express_action_chunked(
     rhs_chunk_rows: int,
     out_dtype: torch.dtype,
 ) -> tuple[Tensor, float]:
-    S_work = symmetrize(S.to(dtype=out_dtype))
     m, n = X.shape
     Y = torch.empty((m, n), device=X.device, dtype=out_dtype)
+    Q, _ = polar_express_step_matrix_only(S, coeffs, out_dtype)
+    Q_work = Q.to(dtype=out_dtype)
 
-    if coeffs.basis == "monomial":
-        I = torch.eye(n, device=S.device, dtype=out_dtype)
-        V = symmetrize((S_work - float(coeffs.shift_center) * I) / max(float(coeffs.shift_scale), 1e-30))
-        for i in range(0, m, rhs_chunk_rows):
-            Xi = X[i : i + rhs_chunk_rows].to(dtype=out_dtype)
-            Y[i : i + rhs_chunk_rows] = _scaled_horner_action(Xi, V, coeffs.shifted_coeffs, coeffs.shift_gain)
-    elif coeffs.basis in {"chebyshev", "scaled_power"}:
-        I = torch.eye(n, device=S.device, dtype=out_dtype)
-        T = None
-        V = None
-        if coeffs.basis == "scaled_power":
-            V = symmetrize((S_work - float(coeffs.shift_center) * I) / max(float(coeffs.shift_scale), 1e-30))
-        elif coeffs.anchored or coeffs.degree_q > 3:
-            mid = 0.5 * (coeffs.interval_lo + coeffs.interval_hi)
-            radius = 0.5 * (coeffs.interval_hi - coeffs.interval_lo)
-            T = symmetrize((S_work - float(mid) * I) / max(float(radius), 1e-30))
-        else:
-            V = symmetrize((S_work - float(coeffs.shift_center) * I) / max(float(coeffs.shift_scale), 1e-30))
-        for i in range(0, m, rhs_chunk_rows):
-            Xi = X[i : i + rhs_chunk_rows].to(dtype=out_dtype)
-            if coeffs.basis == "scaled_power":
-                Y[i : i + rhs_chunk_rows] = _scaled_horner_action(Xi, V, coeffs.shifted_coeffs, coeffs.shift_gain)
-            elif coeffs.anchored:
-                rhs = Xi @ symmetrize(S_work - I)
-                b_kplus1 = torch.zeros_like(rhs)
-                b_kplus2 = torch.zeros_like(rhs)
-                for ck in reversed(coeffs.coeffs[1:]):
-                    b_k = 2.0 * (b_kplus1 @ T) - b_kplus2 + float(ck) * rhs
-                    b_kplus2 = b_kplus1
-                    b_kplus1 = b_k
-                Ri = (b_kplus1 @ T) - b_kplus2 + float(coeffs.coeffs[0]) * rhs
-                Y[i : i + rhs_chunk_rows] = Xi + Ri
-            elif coeffs.degree_q <= 3:
-                Y[i : i + rhs_chunk_rows] = _scaled_horner_action(Xi, V, coeffs.shifted_coeffs, coeffs.shift_gain)
-            else:
-                b_kplus1 = torch.zeros_like(Xi)
-                b_kplus2 = torch.zeros_like(Xi)
-                for ck in reversed(coeffs.coeffs[1:]):
-                    b_k = 2.0 * (b_kplus1 @ T) - b_kplus2 + float(ck) * Xi
-                    b_kplus2 = b_kplus1
-                    b_kplus1 = b_k
-                Y[i : i + rhs_chunk_rows] = (b_kplus1 @ T) - b_kplus2 + float(coeffs.coeffs[0]) * Xi
-    else:
-        raise ValueError(f"unknown basis: {coeffs.basis}")
+    for i in range(0, m, rhs_chunk_rows):
+        Xi = X[i : i + rhs_chunk_rows].to(dtype=out_dtype)
+        Y[i : i + rhs_chunk_rows] = Xi @ Q_work
 
     if not torch.isfinite(Y).all():
         raise RuntimeError("non-finite restricted polynomial action")
