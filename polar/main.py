@@ -30,6 +30,11 @@ def print_schedule(schedule_name: str, schedule: list[StepSpec]) -> None:
             print(f"  step {i}: {st.kind:<18s} ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
         elif st.kind == "POLY":
             print(f"  step {i}: POLY d={st.degree:<2d}       ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
+        elif st.kind == "PE":
+            print(
+                f"  step {i}: PE qdeg={st.pe_degree:<2d} {st.basis:<9s} "
+                f"sigma_in=[{st.ell_in:.3e}, {st.u_in:.3e}]  pred_kappa(O)_after={st.pred_kappa_after:.8g}"
+            )
         else:
             print(f"  step {i}: ZOLO r={st.r:<2d} ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
 
@@ -45,7 +50,21 @@ def make_parser() -> argparse.ArgumentParser:
     ap.add_argument("--target_kappa_O", type=float, default=0.0)
     ap.add_argument(
         "--schedule",
-        choices=["auto", "zolo22", "zolo23", "zolo32", "dwh3", "dwh3_stable_solve", "dwh_tuned_fp32", "poly16x2", "poly24x2"],
+        choices=[
+            "auto",
+            "zolo22",
+            "zolo23",
+            "zolo32",
+            "dwh3",
+            "dwh3_stable_solve",
+            "dwh_tuned_fp32",
+            "poly16x2",
+            "poly24x2",
+            "pe2mono12",
+            "pe2cheb12",
+            "pe3cheb12",
+            "pe32hyb12",
+        ],
         default="auto",
     )
     ap.add_argument("--input_dtype", choices=["float32", "bfloat16", "float64"], default="float32")

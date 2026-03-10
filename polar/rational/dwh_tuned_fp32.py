@@ -84,11 +84,12 @@ def dwh_step_tuned_fp32(
     # Direct update: X_next = alpha * X + beta * (X @ invM)
     # We do this in chunks to save memory and potentially gain speed.
     X_next = torch.empty_like(X, dtype=out_dtype)
+    invM_work = invM.to(dtype=X.dtype)
     for i in range(0, X.shape[0], rhs_chunk_rows):
         end = min(i + rhs_chunk_rows, X.shape[0])
         Xi = X[i:end]
         # Zi = alpha * Xi + beta * (Xi @ invM)
-        Zi = torch.addmm(Xi, Xi, invM, beta=alpha, alpha=beta)
+        Zi = torch.addmm(Xi, Xi, invM_work, beta=alpha, alpha=beta)
         X_next[i:end] = Zi.to(dtype=out_dtype)
         
     return X_next, float(shift)

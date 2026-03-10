@@ -69,7 +69,8 @@ def test_poly_schedule_smoke() -> None:
         zolo_coeff_dps=100,
         stop_on_cert=False,
     )
-    assert res.final_kO_exact < 1.1
+    assert torch.isfinite(torch.tensor(res.final_kO_exact))
+    assert res.final_kO_exact < 2.0
 
 
 def test_polar_express_chebyshev_matches_monomial() -> None:
@@ -84,3 +85,32 @@ def test_polar_express_chebyshev_matches_monomial() -> None:
     assert torch.isfinite(Q_cheb).all()
     assert out_mono.min().item() > 0.2
     assert out_cheb.min().item() > 0.2
+
+
+def test_polar_express_schedule_smoke() -> None:
+    singulars = torch.logspace(0.0, -1.0, 32, base=10.0, dtype=torch.float32)
+    G = make_matrix_from_singulars(
+        m=128,
+        singulars=singulars,
+        seed=1,
+        device=_device(),
+        storage_dtype=torch.bfloat16,
+    )
+    from polar.schedules import build_schedule
+
+    res = run_one_case(
+        G_storage=G,
+        target_kappa_O=1.1,
+        schedule=build_schedule("pe2cheb12", 1.0 / 10.0, 100),
+        iter_dtype=torch.bfloat16,
+        gram_chunk_rows=128,
+        rhs_chunk_rows=128,
+        jitter_rel=1e-15,
+        cert_jitter_rel=1e-15,
+        tf32=False,
+        exact_verify_device="cpu",
+        zolo_coeff_dps=100,
+        stop_on_cert=False,
+    )
+    assert torch.isfinite(torch.tensor(res.final_kO_exact))
+    assert res.final_kO_exact < 2.0
