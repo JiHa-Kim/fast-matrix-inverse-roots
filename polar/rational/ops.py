@@ -49,21 +49,46 @@ def apply_right_small_chunked_fast(
 ) -> Tensor:
     """
     Lower-precision version of apply_right_small_chunked.
+    Optimized for speed using TF32.
     """
     m, n = X.shape
     X_next = torch.empty((m, n), device=X.device, dtype=out_dtype)
     
-    # Use the higher precision of X or U for the intermediate multiplication
-    work_dtype = torch.promote_types(X.dtype, U.dtype)
-    if work_dtype == torch.float16 or work_dtype == torch.bfloat16:
-        # Avoid half precision for the actual matmul if possible for stability
-        work_dtype = torch.float32
+    # Enable TF32 for the matmul if we are in float32
+    orig_precision = torch.get_float32_matmul_precision()
+    if X.dtype == torch.float32 or U.dtype == torch.float32:
+        torch.set_float32_matmul_precision("high")
         
-    U_work = U.to(dtype=work_dtype)
+    try:
+        # Use the requested out_dtype for the matmul to gain speed
+        U_work = U.to(dtype=out_dtype)
 
-    for i in range(0, m, rhs_chunk_rows):
-        Xi = X[i : i + rhs_chunk_rows].to(dtype=work_dtype)
-        Zi = Xi @ U_work
-        X_next[i : i + rhs_chunk_rows] = Zi.to(dtype=out_dtype)
+        for i in range(0, m, rhs_chunk_rows):
+            Xi = X[i : i + rhs_chunk_rows].to(dtype=out_dtype)
+            # This matmul will use TF32 on modern GPUs
+            Zi = Xi @ U_work
+            X_next[i : i + rhs_chunk_rows] = Zi
+    finally:
+        torch.set_float32_matmul_precision(orig_precision)
 
     return X_next
+
+
+@torch.no_grad()
+def gram_xtx_chunked_fast(X: Tensor, chunk_rows: int, accum_dtype: torch.dtype) -> Tensor:
+    """
+    Optimized Gram matrix calculation using TF32.
+    """
+    m, n = X.shape
+    orig_precision = torch.get_float32_matmul_precision()
+    if X.dtype == torch.float32:
+        torch.set_float32_matmul_precision("high")
+        
+    try:
+        S = torch.zeros((n, n), device=X.device, dtype=accum_dtype)
+        for i in range(0, m, chunk_rows):
+            Xi = X[i : i + chunk_rows].to(dtype=accum_dtype)
+            S.addmm_(Xi.T, Xi)
+        return symmetrize(S)
+    finally:
+        torch.set_float32_matmul_precision(orig_precision)

@@ -8,10 +8,13 @@ import torch
 
 from polar.ops import (
     cuda_time_ms,
-    gram_xtx_chunked,
     symmetrize,
 )
-from polar.rational.ops import cert_bound_trace_logdet_stable, apply_right_small_chunked_fast
+from polar.rational.ops import (
+    cert_bound_trace_logdet_stable,
+    apply_right_small_chunked_fast,
+    gram_xtx_chunked_fast,
+)
 from polar.rational.dwh import (
     dwh_ell_next,
     dwh_step_chunked,
@@ -82,7 +85,7 @@ def run_one_case_fast(
     Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=iter_dtype)
     
     # Gram matrix S in lower precision
-    ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked(X, gram_chunk_rows, iter_dtype))
+    ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fast(X, gram_chunk_rows, iter_dtype))
     ms_gram_sum += ms_gram
 
     for i, step in enumerate(schedule):
@@ -180,7 +183,7 @@ def run_one_case_fast(
                 if Q_step.dtype != iter_dtype:
                     Q_step = Q_step.to(dtype=iter_dtype)
                 X = X @ Q_step
-                ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked(X, gram_chunk_rows, iter_dtype))
+                ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fast(X, gram_chunk_rows, iter_dtype))
                 ms_gram_sum += ms_gram
                 ms_solve_sum += ms_solve
                 guards += int(shift > 0.0)
@@ -228,7 +231,7 @@ def run_one_case_fast(
 
         ell = schedule[-1].ell_out if schedule else 1.0
         while final_kO_cert > target_kappa_O and steps_used < 16:
-            ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked(X, gram_chunk_rows, iter_dtype))
+            ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fast(X, gram_chunk_rows, iter_dtype))
             ms_gram_sum += ms_gram
             
             # Use stable solve for polishing in pure fp32
@@ -248,7 +251,7 @@ def run_one_case_fast(
             last_step_kind = "DWH_STABLE_SOLVE(polish)"
 
             # Re-update S for cert
-            ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked(X, gram_chunk_rows, iter_dtype))
+            ms_gram, S = cuda_time_ms(lambda: gram_xtx_chunked_fast(X, gram_chunk_rows, iter_dtype))
             ms_gram_sum += ms_gram
             ms_cert, (kO_cert, cert_shift) = cuda_time_ms(
                 lambda: cert_bound_trace_logdet_stable(S, cert_jitter_rel)

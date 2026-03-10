@@ -220,7 +220,10 @@ def _build_pe_schedule(ell: float, basis: str, degree_pattern: tuple[int, ...], 
 def _select_best_pe_hybrid(ell: float, basis: str) -> List[StepSpec]:
     # Search a small family of cubic-prefix / quadratic-suffix patterns offline.
     # The target is the relaxed bf16 objective; among schedules that hit it in
-    # theory, prefer fewer steps, then tighter final interval.
+    # theory, prefer lower polynomial work, then fewer steps, then tighter final
+    # interval. This better matches the wall-clock objective for the bf16 path:
+    # a 2-cubic prefix can save a whole iteration without exceeding the total
+    # small-side polynomial work of the quadratic baseline.
     target_kappa = 1.0 + 2.0**-6
     candidate_patterns = [
         (3, 2),
@@ -231,15 +234,17 @@ def _select_best_pe_hybrid(ell: float, basis: str) -> List[StepSpec]:
     ]
 
     best_schedule: List[StepSpec] | None = None
-    best_key: tuple[float, float, float] | None = None
+    best_key: tuple[float, float, float, float] | None = None
     for pattern in candidate_patterns:
         schedule = _build_pe_schedule(ell, basis, pattern)
         final = schedule[-1]
         reaches_target = float(final.pred_kappa_after <= target_kappa)
-        # Prefer hitting the relaxed target, then fewer steps, then tighter final
-        # predicted kappa. If none hit the target, the highest reaches_target term
-        # disappears and we fall back to best final kappa.
-        key = (reaches_target, -float(len(schedule)), -float(final.pred_kappa_after))
+        work = float(sum(st.pe_degree for st in schedule if st.kind == "PE"))
+        # Prefer hitting the relaxed target, then lower polynomial work, then
+        # fewer steps, then tighter final predicted kappa. If none hit the
+        # target, the highest reaches_target term disappears and we fall back
+        # to the best predicted hybrid.
+        key = (reaches_target, -work, -float(len(schedule)), -float(final.pred_kappa_after))
         if best_key is None or key > best_key:
             best_key = key
             best_schedule = schedule
