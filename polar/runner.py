@@ -17,10 +17,10 @@ from polar.ops import (
 )
 from polar.polynomial.express import (
     PaperPolarExpressStep,
+    polar_express_deg5_step_matrix_only,
     polar_express_paper5_step_matrix_only,
     polar_express_paper_fro_scale,
 )
-from polar.polynomial.minimax import poly_inv_sqrt_coeffs_from_ell, poly_step_matrix_only
 from polar.rational.dwh import dwh_step_matrix_only
 from polar.rational.dwh_stable_solve import (
     dwh_step_matrix_only_stable_solve,
@@ -89,8 +89,8 @@ def run_one_case(
     guards = 0
     fallbacks = 0
     last_step_kind = "none"
-    # Polynomial schedules are intended to stay in the iteration dtype end to end.
-    poly_schedule = any(step.kind in {"POLY", "PEPAPER5"} for step in schedule)
+    # Polar Express schedules are intended to stay in the iteration dtype end to end.
+    poly_schedule = any(step.kind in {"PEADD5", "PEPAPER5"} for step in schedule)
     # Q_acc accumulates all updates to X. X_final = X_init @ Q_acc.
     q_acc_dtype = iter_dtype if poly_schedule else torch.float64
     Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=q_acc_dtype)
@@ -144,16 +144,18 @@ def run_one_case(
                 ms_gram, S = cuda_time_ms(lambda: gram_xtx_fp64(X))
                 ms_gram_sum += ms_gram
                 continue
-            elif step.kind == "POLY":
-                coeffs = poly_inv_sqrt_coeffs_from_ell(step.degree, step.ell_in)
+            elif step.kind == "PEADD5":
+                a, b, c = step.coeffs
                 ms_solve, (Q_step, shift) = cuda_time_ms(
-                    lambda: poly_step_matrix_only(
+                    lambda: polar_express_deg5_step_matrix_only(
                         S=S,
-                        coeffs=coeffs,
+                        a=a,
+                        b=b,
+                        c=c,
                         matmul_dtype=iter_dtype,
                     )
                 )
-                last_step_kind = f"POLY(d={step.degree})"
+                last_step_kind = "PEADD5"
             elif step.kind == "PEPAPER5":
                 coeffs = PaperPolarExpressStep(*step.paper_coeffs)
                 ms_solve, (Q_step, shift) = cuda_time_ms(

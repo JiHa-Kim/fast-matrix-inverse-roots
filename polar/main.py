@@ -30,8 +30,13 @@ def print_schedule(schedule_name: str, schedule: list[StepSpec]) -> None:
     for i, st in enumerate(schedule, 1):
         if st.kind in {"DWH", "DWH_STABLE_SOLVE", "DWH_TUNED_FP32", "DWH_MIXED", "DWH_MIXED_SOLVE"}:
             print(f"  step {i}: {st.kind:<18s} ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
-        elif st.kind == "POLY":
-            print(f"  step {i}: POLY d={st.degree:<2d}       ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
+        elif st.kind == "PEADD5":
+            a, b, c = st.coeffs
+            print(
+                f"  step {i}: PEADD5 "
+                f"ell_in={st.ell_in:.3e} pred_kappa(O)_after={st.pred_kappa_after:.8g} "
+                f"a={a:.6g} b={b:.6g} c={c:.6g}"
+            )
         elif st.kind == "PEPAPER5":
             a, b, c = st.paper_coeffs
             print(f"  step {i}: PEPAPER5          a={a:.6g} b={b:.6g} c={c:.6g}")
@@ -61,8 +66,7 @@ def make_parser() -> argparse.ArgumentParser:
             "dwh3_mixed_solve",
             "dwh3_scaled_fp32",
             "dwh_tuned_fp32",
-            "poly16x2",
-            "poly24x2",
+            "pe5add",
             "pe5paper",
         ],
         default="auto",

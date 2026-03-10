@@ -6,7 +6,12 @@ from polar.polynomial.minimax import (
     poly_step_matrix_only,
 )
 from polar.polynomial.express import (
+    AppendixGAdditiveStep,
     PaperPolarExpressStep,
+    additive_appendix_g_coeff,
+    additive_appendix_g_composition,
+    optimal_quintic,
+    polar_express_deg5_step_matrix_only,
     polar_express_aol_scale,
     paper_polar_express_coeff,
     polar_express_paper5_step_matrix_only,
@@ -14,7 +19,12 @@ from polar.polynomial.express import (
 )
 
 __all__ = [
+    "AppendixGAdditiveStep",
     "PaperPolarExpressStep",
+    "additive_appendix_g_coeff",
+    "additive_appendix_g_composition",
+    "optimal_quintic",
+    "polar_express_deg5_step_matrix_only",
     "paper_polar_express_coeff",
     "polar_express_aol_scale",
     "polar_express_paper5_step_matrix_only",
