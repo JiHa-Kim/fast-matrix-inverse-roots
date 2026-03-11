@@ -1,8 +1,10 @@
 from polar.polynomial.minimax import (
     PolyInvSqrtCoeffs,
     chebyshev_clenshaw_matrix,
+    monomial_matrix_poly,
     newton_schulz_inv_sqrt_matrix_only,
     poly_inv_sqrt_coeffs_from_ell,
+    poly_sigma_map_coeffs_from_ell,
     poly_step_matrix_only,
 )
 from polar.polynomial.express import (
@@ -31,7 +33,9 @@ __all__ = [
     "polar_express_paper_fro_scale",
     "PolyInvSqrtCoeffs",
     "chebyshev_clenshaw_matrix",
+    "monomial_matrix_poly",
     "newton_schulz_inv_sqrt_matrix_only",
     "poly_inv_sqrt_coeffs_from_ell",
+    "poly_sigma_map_coeffs_from_ell",
     "poly_step_matrix_only",
 ]

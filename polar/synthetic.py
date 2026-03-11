@@ -20,6 +20,13 @@ def pct(xs: List[float], p: float) -> float:
     return float(ys[i])
 
 
+def mean_finite(xs: List[float]) -> float:
+    ys = [float(x) for x in xs if math.isfinite(float(x))]
+    if not ys:
+        return float("nan")
+    return float(sum(ys) / len(ys))
+
+
 def seed_all(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed % (2**32))
@@ -109,4 +116,16 @@ def suite_shapes_kimi_glm5() -> List[Tuple[int, int]]:
         (28672, 4096),
         (28672, 7168),
         (32768, 8192),
+    ]
+
+
+def suite_shapes_light() -> List[Tuple[int, int]]:
+    return [
+        (2048, 256),
+        (4096, 256),
+        (8192, 256),
+        (8192, 1024),
+        (16384, 1024),
+        (8192, 2048),
+        (16384, 2048),
     ]

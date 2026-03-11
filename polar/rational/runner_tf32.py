@@ -4,6 +4,7 @@ from typing import Sequence
 
 import torch
 
+from polar.polynomial.minimax import PolyInvSqrtCoeffs, poly_step_matrix_only
 from polar.ops import cuda_time_ms
 from polar.rational.dwh_stable_solve import dwh_step_matrix_only_stable_solve
 from polar.rational.dwh_tuned_fp32 import dwh_step_tuned_fp32
@@ -63,6 +64,32 @@ def run_one_case_tf32_rational(
                 last_step_kind = "DWH_TUNED_FP32"
                 ms_solve_sum += ms_solve
                 guards += int(shift > 0.0)
+                continue
+
+            if step.kind == "POLY_SIGMA_MAP":
+                coeffs = PolyInvSqrtCoeffs(
+                    degree=step.degree,
+                    ell=step.ell_in,
+                    interval_lo=step.interval_lo,
+                    interval_hi=step.interval_hi,
+                    coeffs=tuple(float(v) for v in step.coeffs),
+                    max_rel_err=0.0,
+                    pred_sigma_min=step.ell_out,
+                    pred_sigma_max=1.0,
+                    fit_kind=step.fit_kind or "sigma_map",
+                    basis_kind=step.basis_kind or "chebyshev",
+                )
+                ms_solve, (Q_step, shift) = cuda_time_ms(
+                    lambda: poly_step_matrix_only(
+                        S=S,
+                        coeffs=coeffs,
+                        matmul_dtype=torch.float32,
+                    )
+                )
+                last_step_kind = "POLY_SIGMA_MAP"
+                ms_upd, X = cuda_time_ms(lambda: (X @ Q_step.to(dtype=torch.float32)).to(dtype=torch.float32))
+                ms_upd_sum += ms_upd
+                ms_solve_sum += ms_solve
                 continue
 
             if step.kind not in {"DWH", "DWH_STABLE_SOLVE", "DWH_SCALED_FP32_SOLVE"}:

@@ -17,11 +17,29 @@ from polar.synthetic import (
     dtype_from_name,
     make_matrix_from_singulars,
     make_spectrum_bank,
+    mean_finite,
     pct,
     suite_shapes_kimi_glm5,
+    suite_shapes_light,
 )
 
 Tensor = torch.Tensor
+SCHEDULE_CHOICES = [
+    "auto",
+    "dwh3",
+    "dwh3_stable_solve",
+    "dwh3_mixed",
+    "dwh3_mixed_solve",
+    "dwh3_scaled_fp32",
+    "dwh_tuned_fp32",
+    "dwh3_sigma3x2",
+    "dwh3_sigma3x3",
+    "dwh4_cubic",
+    "dwh4_cubic_cheb",
+    "dwh4_sigma2x2",
+    "pe5add",
+    "pe5paper",
+]
 
 
 def print_schedule(schedule_name: str, schedule: list[StepSpec]) -> None:
@@ -30,6 +48,13 @@ def print_schedule(schedule_name: str, schedule: list[StepSpec]) -> None:
     for i, st in enumerate(schedule, 1):
         if st.kind in {"DWH", "DWH_STABLE_SOLVE", "DWH_TUNED_FP32", "DWH_MIXED", "DWH_MIXED_SOLVE"}:
             print(f"  step {i}: {st.kind:<18s} ell_in={st.ell_in:.3e}  pred_kappa(O)_after={st.pred_kappa_after:.8g}")
+        elif st.kind == "POLY_SIGMA_MAP":
+            coeffs = ", ".join(f"{v:.6g}" for v in st.coeffs)
+            print(
+                f"  step {i}: POLY_SIGMA_MAP "
+                f"ell_in={st.ell_in:.3e} pred_kappa(O)_after={st.pred_kappa_after:.8g} "
+                f"deg={st.degree} fit={st.fit_kind or 'n/a'} basis={st.basis_kind or 'n/a'} coeffs=({coeffs})"
+            )
         elif st.kind == "PEADD5":
             a, b, c = st.coeffs
             print(
@@ -55,18 +80,15 @@ def make_parser() -> argparse.ArgumentParser:
     ap.add_argument("--target_kappa_O", type=float, default=0.0)
     ap.add_argument(
         "--schedule",
-        choices=[
-            "auto",
-            "dwh3",
-            "dwh3_stable_solve",
-            "dwh3_mixed",
-            "dwh3_mixed_solve",
-            "dwh3_scaled_fp32",
-            "dwh_tuned_fp32",
-            "pe5add",
-            "pe5paper",
-        ],
+        choices=SCHEDULE_CHOICES,
         default="auto",
+    )
+    ap.add_argument(
+        "--compare_schedules",
+        nargs="+",
+        choices=[name for name in SCHEDULE_CHOICES if name != "auto"],
+        default=None,
+        help="Run a paired benchmark on the same generated cases for each listed schedule.",
     )
     ap.add_argument("--input_dtype", choices=["float32", "bfloat16", "float64"], default="float32")
     ap.add_argument("--iter_dtype", choices=["float32", "bfloat16", "float64"], default="float32")
@@ -86,7 +108,7 @@ def make_parser() -> argparse.ArgumentParser:
     ap.add_argument("--business_runner", action="store_true", default=False)
     ap.add_argument("--bank_size", type=int, default=12)
     ap.add_argument("--suite_cases", type=int, default=6)
-    ap.add_argument("--suite_shapes", choices=["kimi_glm5"], default="kimi_glm5")
+    ap.add_argument("--suite_shapes", choices=["kimi_glm5", "light"], default="kimi_glm5")
     ap.add_argument("--seed", type=int, default=0)
     return ap
 
@@ -121,6 +143,7 @@ def main() -> None:
     if schedule_name == "auto":
         schedule_name = auto_schedule_name(target_kappa_O)
     schedule = build_schedule(schedule_name, ell0)
+    compare_schedule_names = list(args.compare_schedules or [])
 
     print(
         f"device={args.device}  mode={args.mode}  kappa_G<={args.kappa_G:.3g}  target_kappa(O)<={target_kappa_O:.8g}"
@@ -133,6 +156,8 @@ def main() -> None:
     )
     print(f"control: ell0={ell0:.6g} target_mode={args.target_mode}")
     print_schedule(schedule_name, schedule)
+    if compare_schedule_names:
+        print(f"compare schedules: {', '.join(compare_schedule_names)}")
 
     def make_case(m: int, n: int, case_seed: int) -> Tensor:
         spectra = make_spectrum_bank(n, args.kappa_G, bank_size=1, seed=case_seed + n)
@@ -144,12 +169,12 @@ def main() -> None:
             storage_dtype=input_dtype,
         )
 
-    def run_case(G: Tensor) -> RunSummary:
+    def run_case_with_schedule(G: Tensor, sched: list[StepSpec]) -> RunSummary:
         if args.business_runner:
             return run_one_case_business(
                 G_storage=G,
                 target_kappa_O=target_kappa_O,
-                schedule=schedule,
+                schedule=sched,
                 iter_dtype=iter_dtype,
                 jitter_rel=args.jitter_rel,
                 tf32=args.tf32,
@@ -160,7 +185,7 @@ def main() -> None:
             return run_one_case_hybrid(
                 G_storage=G,
                 target_kappa_O=target_kappa_O,
-                schedule=schedule,
+                schedule=sched,
                 iter_dtype=iter_dtype,
                 jitter_rel=args.jitter_rel,
                 tf32=args.tf32,
@@ -170,7 +195,7 @@ def main() -> None:
             return run_one_case_ultra_fast(
                 G_storage=G,
                 target_kappa_O=target_kappa_O,
-                schedule=schedule,
+                schedule=sched,
                 iter_dtype=iter_dtype,
                 jitter_rel=args.jitter_rel,
                 tf32=args.tf32,
@@ -180,7 +205,7 @@ def main() -> None:
             return run_one_case_fast(
                 G_storage=G,
                 target_kappa_O=target_kappa_O,
-                schedule=schedule,
+                schedule=sched,
                 iter_dtype=iter_dtype,
                 jitter_rel=args.jitter_rel,
                 tf32=args.tf32,
@@ -190,7 +215,7 @@ def main() -> None:
             return run_one_case_tf32_rational(
                 G_storage=G,
                 target_kappa_O=target_kappa_O,
-                schedule=schedule,
+                schedule=sched,
                 iter_dtype=iter_dtype,
                 jitter_rel=args.jitter_rel,
                 tf32=args.tf32,
@@ -199,12 +224,15 @@ def main() -> None:
         return run_one_case(
             G_storage=G,
             target_kappa_O=target_kappa_O,
-            schedule=schedule,
+            schedule=sched,
             iter_dtype=iter_dtype,
             jitter_rel=args.jitter_rel,
             tf32=args.tf32,
             exact_verify_device=args.exact_verify_device,
         )
+
+    def run_case(G: Tensor) -> RunSummary:
+        return run_case_with_schedule(G, schedule)
 
     if args.mode == "demo":
         # Warmup
@@ -214,8 +242,83 @@ def main() -> None:
         summarize_demo(args, run_case(make_case(args.m, args.n, args.seed)))
         return
 
-    shapes = suite_shapes_kimi_glm5() if args.mode == "suite" else [(args.m, args.n)]
+    if args.mode == "suite":
+        if args.suite_shapes == "kimi_glm5":
+            shapes = suite_shapes_kimi_glm5()
+        elif args.suite_shapes == "light":
+            shapes = suite_shapes_light()
+        else:
+            raise ValueError(f"Unsupported suite shape preset: {args.suite_shapes}")
+    else:
+        shapes = [(args.m, args.n)]
     num_cases = args.suite_cases if args.mode == "suite" else args.bank_size
+
+    def summarize_stats(
+        finals: list[float],
+        steps_used: list[int],
+        dwh_steps_used: list[int],
+        zolo_steps_used: list[int],
+        guards_used: list[int],
+        fallbacks_used: list[int],
+        ms_total: list[float],
+        ms_gram: list[float],
+        ms_solve: list[float],
+        ms_upd: list[float],
+        ms_exact_verify: list[float],
+        successes: int,
+        num_cases_local: int,
+        elapsed_s: float,
+        label: str | None = None,
+    ) -> None:
+        if label is not None:
+            print(f"  schedule={label}")
+        print(f"  ran {num_cases_local} cases in {elapsed_s:.2f}s")
+        print(f"  success <= target: {successes}/{num_cases_local}")
+        print(
+            f"  worst kappa(O)_exact: {max(finals):.8g}  mean: {mean_finite(finals):.8g} "
+            f"median: {pct(finals, 0.5):.8g}  p90: {pct(finals, 0.9):.8g}"
+        )
+        print(f"  steps median: {pct(steps_used, 0.5):.6g}  p90: {pct(steps_used, 0.9):.6g}")
+        print(f"  dwh_steps median: {pct(dwh_steps_used, 0.5):.6g}  p90: {pct(dwh_steps_used, 0.9):.6g}")
+        print(f"  zolo_steps median: {pct(zolo_steps_used, 0.5):.6g}  p90: {pct(zolo_steps_used, 0.9):.6g}")
+        print(f"  fallbacks median: {pct(fallbacks_used, 0.5):.6g}  p90: {pct(fallbacks_used, 0.9):.6g}")
+        print(f"  guards median: {pct(guards_used, 0.5):.6g}  p90: {pct(guards_used, 0.9):.6g}")
+        print(
+            f"  ms timed total mean: {mean_finite(ms_total):.3f}  "
+            f"median: {pct(ms_total, 0.5):.3f}  p90: {pct(ms_total, 0.9):.3f}"
+        )
+        print(
+            f"    ms gram  mean: {mean_finite(ms_gram):.3f}  "
+            f"median: {pct(ms_gram, 0.5):.3f}  p90: {pct(ms_gram, 0.9):.3f}"
+        )
+        print(
+            f"    ms solve mean: {mean_finite(ms_solve):.3f}  "
+            f"median: {pct(ms_solve, 0.5):.3f}  p90: {pct(ms_solve, 0.9):.3f}"
+        )
+        print(
+            f"    ms upd   mean: {mean_finite(ms_upd):.3f}  "
+            f"median: {pct(ms_upd, 0.5):.3f}  p90: {pct(ms_upd, 0.9):.3f}"
+        )
+        print(
+            f"    ms exact_verify mean: {mean_finite(ms_exact_verify):.3f}  "
+            f"median: {pct(ms_exact_verify, 0.5):.3f}  p90: {pct(ms_exact_verify, 0.9):.3f}  (excluded)"
+        )
+
+    def make_summary_bucket() -> dict[str, list[float] | int]:
+        return {
+            "finals": [],
+            "steps_used": [],
+            "dwh_steps_used": [],
+            "zolo_steps_used": [],
+            "guards_used": [],
+            "fallbacks_used": [],
+            "ms_total": [],
+            "ms_gram": [],
+            "ms_solve": [],
+            "ms_upd": [],
+            "ms_exact_verify": [],
+            "successes": 0,
+        }
 
     for m, n in shapes:
         if args.device.startswith("cuda"):
@@ -223,6 +326,99 @@ def main() -> None:
             print(f"\nshape m={m} n={n}  (cuda mem free={free / 1e9:.2f}GB total={total / 1e9:.2f}GB)")
         else:
             print(f"\nshape m={m} n={n}")
+
+        if compare_schedule_names:
+            compare_schedules = {
+                name: build_schedule(name, ell0)
+                for name in compare_schedule_names
+            }
+            summaries = {name: make_summary_bucket() for name in compare_schedule_names}
+            win_counts = {name: 0 for name in compare_schedule_names}
+            t0 = time.time()
+            for i in range(num_cases):
+                case_seed = args.seed + 10000 + i
+                try:
+                    G = make_case(m, n, case_seed)
+                    case_results: dict[str, RunSummary] = {}
+                    for name, sched in compare_schedules.items():
+                        res = run_case_with_schedule(G, sched)
+                        case_results[name] = res
+                        bucket = summaries[name]
+                        bucket["finals"].append(res.final_kO_exact)
+                        bucket["steps_used"].append(res.steps)
+                        bucket["dwh_steps_used"].append(res.dwh_steps)
+                        bucket["zolo_steps_used"].append(res.zolo_steps)
+                        bucket["guards_used"].append(res.guards)
+                        bucket["fallbacks_used"].append(res.fallbacks)
+                        bucket["ms_total"].append(res.ms_total_timed)
+                        bucket["ms_gram"].append(res.ms_gram)
+                        bucket["ms_solve"].append(res.ms_solve)
+                        bucket["ms_upd"].append(res.ms_upd)
+                        bucket["ms_exact_verify"].append(res.ms_exact_verify)
+                        bucket["successes"] += int(res.success)
+                    successful_case_results = [
+                        (name, res.ms_total_timed) for name, res in case_results.items() if res.success
+                    ]
+                    if successful_case_results:
+                        best_name, _ = min(successful_case_results, key=lambda item: item[1])
+                        win_counts[best_name] += 1
+                    del G
+                    if args.device.startswith("cuda"):
+                        torch.cuda.empty_cache()
+                except torch.cuda.OutOfMemoryError:
+                    print(f"  case {i:02d} OOM (paired skip)")
+                    for bucket in summaries.values():
+                        bucket["finals"].append(float('inf'))
+                        bucket["steps_used"].append(0)
+                        bucket["dwh_steps_used"].append(0)
+                        bucket["zolo_steps_used"].append(0)
+                        bucket["guards_used"].append(0)
+                        bucket["fallbacks_used"].append(0)
+                        bucket["ms_total"].append(float('inf'))
+                        bucket["ms_gram"].append(float('inf'))
+                        bucket["ms_solve"].append(float('inf'))
+                        bucket["ms_upd"].append(float('inf'))
+                        bucket["ms_exact_verify"].append(float('inf'))
+                    if args.device.startswith("cuda"):
+                        torch.cuda.empty_cache()
+                except Exception as ex:
+                    print(f"  case {i:02d} FAILED: {type(ex).__name__}: {ex}")
+                    for bucket in summaries.values():
+                        bucket["finals"].append(float('inf'))
+                        bucket["steps_used"].append(0)
+                        bucket["dwh_steps_used"].append(0)
+                        bucket["zolo_steps_used"].append(0)
+                        bucket["guards_used"].append(0)
+                        bucket["fallbacks_used"].append(0)
+                        bucket["ms_total"].append(float('inf'))
+                        bucket["ms_gram"].append(float('inf'))
+                        bucket["ms_solve"].append(float('inf'))
+                        bucket["ms_upd"].append(float('inf'))
+                        bucket["ms_exact_verify"].append(float('inf'))
+                    if args.device.startswith("cuda"):
+                        torch.cuda.empty_cache()
+            dt = time.time() - t0
+            for name in compare_schedule_names:
+                bucket = summaries[name]
+                summarize_stats(
+                    finals=bucket["finals"],
+                    steps_used=bucket["steps_used"],
+                    dwh_steps_used=bucket["dwh_steps_used"],
+                    zolo_steps_used=bucket["zolo_steps_used"],
+                    guards_used=bucket["guards_used"],
+                    fallbacks_used=bucket["fallbacks_used"],
+                    ms_total=bucket["ms_total"],
+                    ms_gram=bucket["ms_gram"],
+                    ms_solve=bucket["ms_solve"],
+                    ms_upd=bucket["ms_upd"],
+                    ms_exact_verify=bucket["ms_exact_verify"],
+                    successes=int(bucket["successes"]),
+                    num_cases_local=num_cases,
+                    elapsed_s=dt,
+                    label=name,
+                )
+                print(f"    paired fastest successful cases: {win_counts[name]}/{num_cases}")
+            continue
 
         finals = []
         steps_used = []
@@ -289,21 +485,22 @@ def main() -> None:
                     torch.cuda.empty_cache()
 
         dt = time.time() - t0
-        print(f"  ran {num_cases} cases in {dt:.2f}s")
-        print(f"  success <= target: {successes}/{num_cases}")
-        print(
-            f"  worst kappa(O)_exact: {max(finals):.8g}  median: {pct(finals, 0.5):.8g}  p90: {pct(finals, 0.9):.8g}"
+        summarize_stats(
+            finals=finals,
+            steps_used=steps_used,
+            dwh_steps_used=dwh_steps_used,
+            zolo_steps_used=zolo_steps_used,
+            guards_used=guards_used,
+            fallbacks_used=fallbacks_used,
+            ms_total=ms_total,
+            ms_gram=ms_gram,
+            ms_solve=ms_solve,
+            ms_upd=ms_upd,
+            ms_exact_verify=ms_exact_verify,
+            successes=successes,
+            num_cases_local=num_cases,
+            elapsed_s=dt,
         )
-        print(f"  steps median: {pct(steps_used, 0.5):.6g}  p90: {pct(steps_used, 0.9):.6g}")
-        print(f"  dwh_steps median: {pct(dwh_steps_used, 0.5):.6g}  p90: {pct(dwh_steps_used, 0.9):.6g}")
-        print(f"  zolo_steps median: {pct(zolo_steps_used, 0.5):.6g}  p90: {pct(zolo_steps_used, 0.9):.6g}")
-        print(f"  fallbacks median: {pct(fallbacks_used, 0.5):.6g}  p90: {pct(fallbacks_used, 0.9):.6g}")
-        print(f"  guards median: {pct(guards_used, 0.5):.6g}  p90: {pct(guards_used, 0.9):.6g}")
-        print(f"  ms timed total median: {pct(ms_total, 0.5):.3f}  p90: {pct(ms_total, 0.9):.3f}")
-        print(f"    ms gram  median: {pct(ms_gram, 0.5):.3f}  p90: {pct(ms_gram, 0.9):.3f}")
-        print(f"    ms solve median: {pct(ms_solve, 0.5):.3f}  p90: {pct(ms_solve, 0.9):.3f}")
-        print(f"    ms upd   median: {pct(ms_upd, 0.5):.3f}  p90: {pct(ms_upd, 0.9):.3f}")
-        print(f"    ms exact_verify median: {pct(ms_exact_verify, 0.5):.3f}  p90: {pct(ms_exact_verify, 0.9):.3f}  (excluded)")
 
 
 if __name__ == "__main__":

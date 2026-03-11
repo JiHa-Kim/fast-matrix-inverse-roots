@@ -21,6 +21,7 @@ from polar.polynomial.express import (
     polar_express_paper5_step_matrix_only,
     polar_express_paper_fro_scale,
 )
+from polar.polynomial.minimax import PolyInvSqrtCoeffs, poly_step_matrix_only
 from polar.rational.dwh import dwh_step_matrix_only
 from polar.rational.dwh_stable_solve import (
     dwh_step_matrix_only_stable_solve,
@@ -87,16 +88,16 @@ def run_one_case(
     guards = 0
     fallbacks = 0
     last_step_kind = "none"
-    # Polar Express schedules are intended to stay in the iteration dtype end to end.
-    poly_schedule = any(step.kind in {"PEADD5", "PEPAPER5"} for step in schedule)
+    matrix_poly_schedule = any(step.kind in {"PEADD5", "PEPAPER5", "POLY_SIGMA_MAP"} for step in schedule)
+    pure_pe_schedule = bool(schedule) and all(step.kind in {"PEADD5", "PEPAPER5"} for step in schedule)
     # Q_acc accumulates all updates to X. X_final = X_init @ Q_acc.
-    q_acc_dtype = iter_dtype if poly_schedule else torch.float64
+    q_acc_dtype = iter_dtype if matrix_poly_schedule else torch.float64
     Q_acc = torch.eye(G_storage.shape[1], device=device, dtype=q_acc_dtype)
-    if poly_schedule:
+    if pure_pe_schedule:
         ms_upd, (X, _fro_scale) = cuda_time_ms(lambda: polar_express_paper_fro_scale(X))
         ms_upd_sum += ms_upd
     # The Gram matrix S is updated in O(n^3) to avoid O(mn^2) passes.
-    if poly_schedule:
+    if matrix_poly_schedule:
         ms_gram, S = cuda_time_ms(lambda: gram_xtx(X, iter_dtype))
     else:
         ms_gram, S = cuda_time_ms(lambda: gram_xtx_fp64(X))
@@ -139,7 +140,10 @@ def run_one_case(
                 dwh_steps += 1
                 last_step_kind = "DWH_TUNED_FP32"
                 # For direct updates, we must recompute S for the next step.
-                ms_gram, S = cuda_time_ms(lambda: gram_xtx_fp64(X))
+                if matrix_poly_schedule:
+                    ms_gram, S = cuda_time_ms(lambda: gram_xtx(X, iter_dtype))
+                else:
+                    ms_gram, S = cuda_time_ms(lambda: gram_xtx_fp64(X))
                 ms_gram_sum += ms_gram
                 continue
             elif step.kind == "PEADD5":
@@ -164,6 +168,27 @@ def run_one_case(
                     )
                 )
                 last_step_kind = "PEPAPER5"
+            elif step.kind == "POLY_SIGMA_MAP":
+                coeffs = PolyInvSqrtCoeffs(
+                    degree=step.degree,
+                    ell=step.ell_in,
+                    interval_lo=step.interval_lo,
+                    interval_hi=step.interval_hi,
+                    coeffs=tuple(float(v) for v in step.coeffs),
+                    max_rel_err=0.0,
+                    pred_sigma_min=step.ell_out,
+                    pred_sigma_max=1.0,
+                    fit_kind=step.fit_kind or "sigma_map",
+                    basis_kind=step.basis_kind or "chebyshev",
+                )
+                ms_solve, (Q_step, shift) = cuda_time_ms(
+                    lambda: poly_step_matrix_only(
+                        S=S,
+                        coeffs=coeffs,
+                        matmul_dtype=iter_dtype,
+                    )
+                )
+                last_step_kind = "POLY_SIGMA_MAP"
             else:
                 raise ValueError(f"Unsupported step kind: {step.kind}")
         except Exception:
@@ -190,7 +215,7 @@ def run_one_case(
         guards += int(shift > 0.0)
 
     # Finalize the fusion: One pass over X.
-    if poly_schedule:
+    if matrix_poly_schedule:
         ms_upd, X = cuda_time_ms(
             lambda: apply_right_typed(X, Q_acc, iter_dtype, iter_dtype)
         )

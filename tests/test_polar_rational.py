@@ -4,6 +4,8 @@ from polar.rational.runner_fast import run_one_case_fast
 from polar.rational.runner_tf32 import run_one_case_tf32_rational
 from polar.runner import run_one_case
 from polar.schedule_spec import StepSpec
+from polar.schedules import build_schedule
+from polar.synthetic import make_matrix_from_singulars
 
 
 def test_fast_runner_matches_baseline_on_dwh_schedule() -> None:
@@ -59,4 +61,35 @@ def test_tf32_rational_runner_matches_baseline_on_dwh_schedule() -> None:
     assert tf32_rational.dwh_steps == 3
     assert tf32_rational.fallbacks == 0
     assert tf32_rational.last_step_kind == "DWH_STABLE_SOLVE"
+    assert abs(tf32_rational.final_kO_exact - baseline.final_kO_exact) < 2e-3
+
+
+def test_tf32_rational_runner_matches_baseline_on_sigma_hybrid_schedule() -> None:
+    torch.manual_seed(0)
+    m, n = 128, 32
+    singulars = torch.logspace(0.0, -1.0, n, base=10.0, dtype=torch.float32)
+    G = make_matrix_from_singulars(
+        m=m,
+        singulars=singulars,
+        seed=7,
+        device="cpu",
+        storage_dtype=torch.float32,
+    )
+    schedule = build_schedule("dwh3_sigma3x2", 0.1)
+    kwargs = dict(
+        G_storage=G,
+        target_kappa_O=10.0,
+        schedule=schedule,
+        iter_dtype=torch.float32,
+        jitter_rel=1e-12,
+        tf32=False,
+        exact_verify_device="cpu",
+    )
+
+    baseline = run_one_case(**kwargs)
+    tf32_rational = run_one_case_tf32_rational(**kwargs)
+
+    assert tf32_rational.fallbacks == 0
+    assert tf32_rational.dwh_steps == 3
+    assert tf32_rational.last_step_kind == "POLY_SIGMA_MAP"
     assert abs(tf32_rational.final_kO_exact - baseline.final_kO_exact) < 2e-3

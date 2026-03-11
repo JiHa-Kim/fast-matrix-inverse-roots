@@ -1,6 +1,7 @@
 import torch
 
 from polar.polynomial.express import PaperPolarExpressStep, polar_express_paper5_step_matrix_only
+from polar.polynomial.minimax import poly_sigma_map_coeffs_from_ell
 from polar.runner import run_one_case
 from polar.synthetic import make_matrix_from_singulars
 
@@ -67,3 +68,28 @@ def test_polar_express_additive_schedule_smoke() -> None:
     )
     assert torch.isfinite(torch.tensor(res.final_kO_exact))
     assert res.last_step_kind == "PEADD5"
+
+
+def test_direct_sigma_map_coeffs_improve_interval() -> None:
+    coeffs = poly_sigma_map_coeffs_from_ell(3, 0.45)
+    assert coeffs.fit_kind == "sigma_map_lawson"
+    assert coeffs.basis_kind == "chebyshev"
+    assert coeffs.pred_sigma_min > 0.45
+    assert coeffs.pred_sigma_max < 1.05
+
+
+def test_direct_sigma_map_remez_improves_uniform_error() -> None:
+    lawson = poly_sigma_map_coeffs_from_ell(3, 0.45, method="lawson", basis_kind="chebyshev")
+    remez = poly_sigma_map_coeffs_from_ell(3, 0.45, method="remez", basis_kind="chebyshev")
+    assert remez.pred_sigma_min > 0.45
+    assert remez.pred_sigma_max < 1.05
+    assert remez.max_rel_err <= lawson.max_rel_err
+
+
+def test_direct_sigma_map_remez_monomial_matches_chebyshev_quality() -> None:
+    cheb = poly_sigma_map_coeffs_from_ell(3, 0.45, method="remez", basis_kind="chebyshev")
+    mono = poly_sigma_map_coeffs_from_ell(3, 0.45, method="remez", basis_kind="monomial")
+    assert cheb.pred_sigma_min > 0.45
+    assert mono.pred_sigma_min > 0.45
+    assert abs(cheb.pred_sigma_min - mono.pred_sigma_min) < 1e-9
+    assert abs(cheb.pred_sigma_max - mono.pred_sigma_max) < 1e-9

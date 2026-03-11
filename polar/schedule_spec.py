@@ -11,5 +11,9 @@ class StepSpec:
     pred_kappa_after: float
     r: int = 0
     degree: int = 0
+    interval_lo: float = 0.0
+    interval_hi: float = 0.0
+    fit_kind: str = ""
+    basis_kind: str = ""
     coeffs: tuple[float, ...] = ()
     paper_coeffs: tuple[float, ...] = ()
